@@ -44,7 +44,7 @@ import {
   Dimensions, Platform, Animated,
 } from 'react-native';
 
-import { Icon, COLORS } from '../../core/AcheiAqui_Core';
+import { Icon, COLORS } from '../../core/AchAqui_Core';
 import { BusinessEngine } from '../../core/BusinessEngine';
 import { HospitalityModule } from '../../operations/HospitalityModule';
 

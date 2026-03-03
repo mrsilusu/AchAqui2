@@ -3,7 +3,7 @@
  * CancelReservationSheet  (v2.11.0 — Fase 3.5)
  * ============================================================================
  * Bottom sheet para cancelar reservas de mesa (Dining) ou quarto (Hospitality).
- * Extrai de AcheiAqui_Main os estados locais e o JSX do bloco:
+ * Extrai de AchAqui_Main os estados locais e o JSX do bloco:
  *   «CANCEL RESERVATION MODAL — v2.9.5e»
  *
  * Props:
@@ -22,7 +22,7 @@ import {
   Modal, View, Text, ScrollView, TouchableOpacity,
   TextInput, Keyboard, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
-import { COLORS } from '../../core/AcheiAqui_Core';
+import { COLORS } from '../../core/AchAqui_Core';
 
 // ─── Estilos locais do sheet ──────────────────────────────────────────────────
 // Mantidos aqui para que o componente seja completamente independente.

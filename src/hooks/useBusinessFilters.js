@@ -3,7 +3,7 @@
  * useBusinessFilters  (v2.11.0 — Fase 3.5)
  * ============================================================================
  * Hook que centraliza toda a lógica de filtro e pesquisa da home screen.
- * Extrai de AcheiAqui_Main os estados:
+ * Extrai de AchAqui_Main os estados:
  *   searchWhat, searchWhere, showAutocomplete, recentSearches
  *   activeFilter, sortBy, activeCategoryId
  *   priceFilter, distanceFilter, selectedAmenities, includeClosed
@@ -37,7 +37,7 @@ import {
   ALL_CAT_IDS, CATEGORY_TO_BUSINESS_TYPES, isAccommodationBusiness,
   SORT_OPTIONS, PRICE_FILTERS, DISTANCE_FILTERS,
   AUTOCOMPLETE_SUGGESTIONS, OWNER_BUSINESS,
-} from '../core/AcheiAqui_Core';
+} from '../core/AchAqui_Core';
 
 /**
  * @param {Array} businesses — lista completa de negócios (do AppContext ou useState)

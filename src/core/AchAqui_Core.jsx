@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — CORE  (v2.10.0)
+ * ACHAQUI — CORE  (v2.10.0)
  * ============================================================================
  * Responsabilidades:
  *   - Sistema de Ícones SVG (IconSystem)
@@ -52,7 +52,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // ─────────────────────────────────────────────────────────────────────────────
 // ICON SYSTEM (SVG inline via react-native-svg)
 // Copiado aqui para independência total deste ficheiro.
-// Outros módulos importam { Icon } de AcheiAqui_Core.
+// Outros módulos importam { Icon } de AchAqui_Core.
 // ─────────────────────────────────────────────────────────────────────────────
 let Svg, Path, Circle, Line, Polyline, Polygon, Rect, G;
 try {
@@ -370,7 +370,7 @@ export const OWNER_BUSINESS = {
     health: false, education: false, professional: false,
     logistics: false, customorder: true, delivery: true,
   },
-  // Comissão AcheiAqui (configurável por negócio — calculada no backend)
+  // Comissão AchAqui (configurável por negócio — calculada no backend)
   // NUNCA usar no cliente para cálculos de split. Apenas informativo.
   commissionRate: 0.10,
   address: 'Rua Comandante Valodia, 123, Talatona',
@@ -492,7 +492,7 @@ export function AppProvider({ children, initialBusinesses }) {
   }, []);
 
   const requestLocationPermission = useCallback(() => {
-    Alert.alert('Permitir Localização', 'AcheiAqui precisa da sua localização para mostrar negócios perto de si.', [
+    Alert.alert('Permitir Localização', 'AchAqui precisa da sua localização para mostrar negócios perto de si.', [
       { text: 'Não Permitir', onPress: () => setLocationPermission('denied') },
       { text: 'Permitir',     onPress: () => setLocationPermission('granted') },
     ]);
@@ -610,7 +610,7 @@ export function SearchHeader({ onMenuPress, onNotifPress, onModeToggle }) {
       {/* Top row: logo + actions */}
       <View style={headerStyles.topRow}>
         <View style={headerStyles.logoWrap}>
-          <Text style={headerStyles.logo}>AcheiAqui</Text>
+          <Text style={headerStyles.logo}>AchAqui</Text>
           <Text style={headerStyles.version}>v2.10.0</Text>
         </View>
         <View style={headerStyles.actions}>
@@ -685,7 +685,7 @@ const headerStyles = StyleSheet.create({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APP SHELL — wrapper raiz que fornece SafeAreaProvider + AppContext
-// Usado em AcheiAqui_Main.jsx como <AppShell businesses={data}>{children}</AppShell>
+// Usado em AchAqui_Main.jsx como <AppShell businesses={data}>{children}</AppShell>
 // ─────────────────────────────────────────────────────────────────────────────
 export function AppShell({ children, businesses }) {
   return (

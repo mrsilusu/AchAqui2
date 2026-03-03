@@ -2,7 +2,7 @@
  * ============================================================================
  * Main.styles.js  (v2.11.0 — Fase 3.5)
  * ============================================================================
- * Centraliza todos os StyleSheets do AcheiAqui_Main2.jsx.
+ * Centraliza todos os StyleSheets do AchAqui_Main2.jsx.
  * Migrado 1:1 do monolito — zero alterações visuais.
  *
  * Exporta:
@@ -23,7 +23,7 @@
  *   calS  — CalendarPicker (componente autónomo)
  *
  * NÃO incluídos aqui (já no Core):
- *   NAV_BAR_STYLES — exportado por AcheiAqui_Core (Fase 3)
+ *   NAV_BAR_STYLES — exportado por AchAqui_Core (Fase 3)
  * ============================================================================
  */
 

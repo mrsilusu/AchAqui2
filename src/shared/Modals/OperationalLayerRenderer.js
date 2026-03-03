@@ -29,7 +29,7 @@ import {
   Animated, Platform, Dimensions, PanResponder,
 } from 'react-native';
 
-import { Icon, COLORS } from '../../core/AcheiAqui_Core';
+import { Icon, COLORS } from '../../core/AchAqui_Core';
 
 import { HospitalityModule }    from '../../operations/HospitalityModule';
 import { DiningModule }         from '../../operations/DiningModule';

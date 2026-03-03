@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — DINING MODULE  (v3.0.0 — Fase 3)
+ * ACHAQUI — DINING MODULE  (v3.0.0 — Fase 3)
  * ============================================================================
  * Funcionalidades:
  *   ✅ Reserva de mesas por turnos (almoço / jantar / brunch)
@@ -24,7 +24,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, Switch, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AchAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 const SHIFTS = [

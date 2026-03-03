@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — DELIVERY EXTENSION  (v4.0.0 — Fase 4)
+ * ACHAQUI — DELIVERY EXTENSION  (v4.0.0 — Fase 4)
  * ============================================================================
  * Extensão injectável — funciona sobre qualquer módulo principal (Dining,
  * Hospitality, etc.) sem aceder aos dados internos desse módulo.
@@ -35,7 +35,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from '../core/AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from '../core/AchAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
  * AdvancedFiltersModal  (v1.0.0 — Fase 3.5)
  * ============================================================================
  * Modal de filtros avançados: Fechados, Preço, Distância, Comodidades.
- * Extraído de AcheiAqui_Main.jsx.
+ * Extraído de AchAqui_Main.jsx.
  *
  * Props:
  *   visible           — bool
@@ -27,7 +27,7 @@ import {
   Icon, COLORS,
   PRICE_FILTERS, DISTANCE_FILTERS,
   AMENITY_FILTER_CATEGORIES,
-} from '../../core/AcheiAqui_Core';
+} from '../../core/AchAqui_Core';
 
 import { afS } from '../../styles/Main.styles';
 
