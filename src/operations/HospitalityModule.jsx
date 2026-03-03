@@ -38,7 +38,7 @@ import {
 import {
   sanitizeInput, validateExternalUrl, Icon, COLORS,
   AppContext,
-} from './AcheiAqui_Core';
+} from '../core/AcheiAqui_Core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES

@@ -27,7 +27,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext } from './AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AcheiAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];

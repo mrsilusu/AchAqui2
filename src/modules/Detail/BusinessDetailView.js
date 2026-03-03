@@ -44,9 +44,9 @@ import {
   Dimensions, Platform, Animated,
 } from 'react-native';
 
-import { Icon, COLORS } from './AcheiAqui_Core';
-import { BusinessEngine } from './BusinessEngine';
-import { HospitalityModule } from './HospitalityModule';
+import { Icon, COLORS } from '../../core/AcheiAqui_Core';
+import { BusinessEngine } from '../../core/BusinessEngine';
+import { HospitalityModule } from '../../operations/HospitalityModule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes locais

@@ -55,9 +55,9 @@ import {
   TRENDING_SEARCHES, AUTOCOMPLETE_SUGGESTIONS,
   renderStars, renderHeroStars, getBusinessStatus,
   OWNER_BUSINESS,
-} from './AcheiAqui_Core';
+} from '../../core/AcheiAqui_Core';
 
-import { hS, acS, fbS, spS, profS, bizS } from './Main.styles';
+import { hS, acS, fbS, spS, profS, bizS } from '../../styles/Main.styles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

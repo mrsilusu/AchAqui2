@@ -32,12 +32,12 @@ import {
   Icon, COLORS, OWNER_BUSINESS,
   OPERATIONAL_MODULES, NAV_BAR_STYLES,
   renderStars, getBusinessStatus, AMENITY_ICON_MAP,
-} from './AcheiAqui_Core';
-import { HospitalityModule }  from './HospitalityModule';
-import { DiningModule }       from './DiningModule';
-import { ProfessionalModule } from './ProfessionalModule';
+} from '../../core/AcheiAqui_Core';
+import { HospitalityModule }  from '../../operations/HospitalityModule';
+import { DiningModule }       from '../../operations/DiningModule';
+import { ProfessionalModule } from '../../operations/ProfessionalModule';
 
-import { editorS, configS, polS, photoS, bizS, profS, hS } from './Main.styles';
+import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

@@ -30,7 +30,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, Platform, Switch,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from './AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from '../core/AcheiAqui_Core';
 
 // ─── TIPOS DE CAMPO ───────────────────────────────────────────────────────────
 const FIELD_TYPES = [

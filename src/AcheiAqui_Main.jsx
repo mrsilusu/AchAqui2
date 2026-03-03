@@ -354,13 +354,25 @@ function AppContent() {
                 </TouchableOpacity>
               </View>
               <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-                {ALL_CATEGORIES.map((cat) => (
-                  <TouchableOpacity key={cat.id} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine }}
-                    onPress={() => { filters.setActiveCategoryId(prev => prev === cat.id ? null : cat.id); meta.closeAppLayer(); }}>
-                    <Text style={{ fontSize: 18, width: 32 }}>{ALL_CAT_ICON[cat.id] || '●'}</Text>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.darkText, flex: 1 }}>{ALL_CAT_LABEL[cat.id] || cat.label}</Text>
-                    <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
-                  </TouchableOpacity>
+                {ALL_CATEGORIES.map((section) => (
+                  <View key={section.section}>
+                    <View style={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8, backgroundColor: COLORS.grayBg }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.8 }}>{section.section}</Text>
+                    </View>
+                    {section.items.map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine, backgroundColor: COLORS.white }}
+                        onPress={() => { filters.setActiveCategoryId(cat.id); meta.closeAppLayer(); }}
+                      >
+                        <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: COLORS.grayBg, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                          <Icon name={cat.icon} size={16} color={COLORS.darkText} strokeWidth={1.8} />
+                        </View>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.darkText, flex: 1 }}>{cat.label}</Text>
+                        <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 ))}
               </ScrollView>
             </SafeAreaView>

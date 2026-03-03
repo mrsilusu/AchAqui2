@@ -37,7 +37,7 @@ import {
   ALL_CAT_IDS, CATEGORY_TO_BUSINESS_TYPES, isAccommodationBusiness,
   SORT_OPTIONS, PRICE_FILTERS, DISTANCE_FILTERS,
   AUTOCOMPLETE_SUGGESTIONS, OWNER_BUSINESS,
-} from './AcheiAqui_Core';
+} from '../core/AcheiAqui_Core';
 
 /**
  * @param {Array} businesses — lista completa de negócios (do AppContext ou useState)

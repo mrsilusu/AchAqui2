@@ -24,7 +24,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, Switch, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext } from './AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AcheiAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 const SHIFTS = [

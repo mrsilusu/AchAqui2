@@ -22,7 +22,7 @@ import {
   Modal, View, Text, ScrollView, TouchableOpacity,
   TextInput, Keyboard, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
-import { COLORS } from './AcheiAqui_Core';
+import { COLORS } from '../../core/AcheiAqui_Core';
 
 // ─── Estilos locais do sheet ──────────────────────────────────────────────────
 // Mantidos aqui para que o componente seja completamente independente.

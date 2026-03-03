@@ -27,9 +27,9 @@ import {
   Icon, COLORS,
   PRICE_FILTERS, DISTANCE_FILTERS,
   AMENITY_FILTER_CATEGORIES,
-} from './AcheiAqui_Core';
+} from '../../core/AcheiAqui_Core';
 
-import { afS } from './Main.styles';
+import { afS } from '../../styles/Main.styles';
 
 export function AdvancedFiltersModal({
   visible,

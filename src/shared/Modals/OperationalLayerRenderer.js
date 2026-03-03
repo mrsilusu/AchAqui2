@@ -29,12 +29,12 @@ import {
   Animated, Platform, Dimensions, PanResponder,
 } from 'react-native';
 
-import { Icon, COLORS } from './AcheiAqui_Core';
+import { Icon, COLORS } from '../../core/AcheiAqui_Core';
 
-import { HospitalityModule }    from './HospitalityModule';
-import { DiningModule }         from './DiningModule';
-import { BeautyWellnessModule } from './BeautyWellnessModule';
-import { ProfessionalModule }   from './ProfessionalModule';
+import { HospitalityModule }    from '../../operations/HospitalityModule';
+import { DiningModule }         from '../../operations/DiningModule';
+import { BeautyWellnessModule } from '../../operations/BeautyWellnessModule';
+import { ProfessionalModule }   from '../../operations/ProfessionalModule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAPA: layer id → { Component, title, emoji }

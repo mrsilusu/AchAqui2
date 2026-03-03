@@ -31,7 +31,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, COLORS } from './AcheiAqui_Core';
+import { Icon, COLORS } from '../../core/AcheiAqui_Core';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 300;

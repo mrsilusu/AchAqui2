@@ -35,7 +35,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from './AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext, formatCurrency } from '../core/AcheiAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 

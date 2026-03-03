@@ -37,16 +37,16 @@ import {
 import { AppContext, Icon, COLORS } from './AcheiAqui_Core';
 
 // ── Fase 2: Módulos FUNCIONAIS ───────────────────────────────────────────────
-import { HospitalityModule }   from './HospitalityModule';
-import { BeautyWellnessModule } from './BeautyWellnessModule';
+import { HospitalityModule }   from '../operations/HospitalityModule';
+import { BeautyWellnessModule } from '../operations/BeautyWellnessModule';
 
 // ── Fase 3: Módulos FUNCIONAIS ────────────────────────────────────────────────
-import { DiningModule }        from './DiningModule';
-import { ProfessionalModule }  from './ProfessionalModule';
+import { DiningModule }        from '../operations/DiningModule';
+import { ProfessionalModule }  from '../operations/ProfessionalModule';
 
 // ── Fase 4: Extensões injectáveis FUNCIONAIS ────────────────────────────────
-import { DeliveryExtension }      from './DeliveryExtension';
-import { CustomOrdersExtension }  from './CustomOrdersExtension';
+import { DeliveryExtension }      from '../extensions/DeliveryExtension';
+import { CustomOrdersExtension }  from '../extensions/CustomOrdersExtension';
 // ── Fase 4+: Placeholders (módulos futuros) ──────────────────────────────────
 // import { EducationModule }   from './modules/EducationModule';
 // import { EventsModule }      from './modules/EventsModule';

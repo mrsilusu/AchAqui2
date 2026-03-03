@@ -41,7 +41,7 @@ import {
 } from 'react-native';
 import {
   sanitizeInput, Icon, COLORS, AppContext,
-} from './AcheiAqui_Core';
+} from '../core/AcheiAqui_Core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES DO MÓDULO
