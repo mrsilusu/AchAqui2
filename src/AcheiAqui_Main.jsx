@@ -29,17 +29,17 @@ import {
   Icon, COLORS, AppProvider,
   ALL_CATEGORIES, ALL_CAT_LABEL, ALL_CAT_ICON,
   OWNER_BUSINESS, SORT_OPTIONS, NAV_BAR_STYLES,
-} from './AcheiAqui_Core';
-import { BusinessDetailModal }  from './BusinessDetailModal';
-import { useOperationalLayer }  from './useOperationalLayer';
-import { OperationalLayerRenderer } from './OperationalLayerRenderer';
-import { OwnerModule }          from './OwnerModule';
-import { HomeModuleFull }       from './HomeModule';
-import { AdvancedFiltersModal } from './AdvancedFiltersModal';
-import { useBusinessFilters }   from './useBusinessFilters';
-import { useMetaAnimation }     from './useMetaAnimation';
+} from './core/AcheiAqui_Core';
+import { BusinessDetailModal }  from './modules/Detail/BusinessDetailModal';
+import { useOperationalLayer }  from './hooks/useOperationalLayer';
+import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
+import { OwnerModule }          from './modules/Owner/OwnerModule';
+import { HomeModuleFull }       from './modules/Home/HomeModule';
+import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
+import { useBusinessFilters }   from './hooks/useBusinessFilters';
+import { useMetaAnimation }     from './hooks/useMetaAnimation';
 
-import { sortS } from './Main.styles';
+import { sortS } from './styles/Main.styles';
 
 const USER_PROFILE = { id:'user_001', name:'João Silva', email:'joao.silva@email.ao', location:'Luanda, Angola', memberSince:'Janeiro 2024', avatar:null, stats:{businessesViewed:127,reviewsWritten:23,checkIns:45,photosUploaded:156,favoritesSaved:34,achievementsUnlocked:12} };
 
