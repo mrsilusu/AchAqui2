@@ -826,7 +826,9 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
                 </View>
               </View>
             ))}
-            <TouchableOpacity style={vS.qaViewAll}><Text style={vS.qaViewAllText}>Ver todas as perguntas →</Text></TouchableOpacity>
+            <TouchableOpacity style={vS.qaViewAll} onPress={() => onOpenSubLayer?.('qa')}>
+              <Text style={vS.qaViewAllText}>Ver todas as perguntas →</Text>
+            </TouchableOpacity>
           </View>
           {/* Referral */}
           {business.referralCode && (

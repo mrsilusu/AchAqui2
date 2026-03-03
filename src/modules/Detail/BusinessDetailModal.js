@@ -758,7 +758,7 @@ export function BusinessDetailModal({
                 </View>
               </View>
             ))}
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => Alert.alert('Perguntas', 'Ver todas as perguntas em breve.') }>
               <Text style={s.viewAllText}>Ver todas as perguntas →</Text>
             </TouchableOpacity>
           </View>

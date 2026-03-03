@@ -225,6 +225,7 @@ export function OwnerModule({
   const appLayerX        = useRef(new Animated.Value(SCREEN_WIDTH)).current;
   const appLayerProgress = useRef(new Animated.Value(0)).current;
   const [activeAppLayer, setActiveAppLayer] = useState(null);
+  const [ownerStatsPeriod, setOwnerStatsPeriod] = useState('30 dias');
 
   const openAppLayer = useCallback((layerName) => {
     appLayerX.setValue(SCREEN_WIDTH); appLayerProgress.setValue(0);
@@ -1117,9 +1118,21 @@ export function OwnerModule({
           <ScrollView contentContainerStyle={{padding:16,gap:16}}>
             {/* Period selector */}
             <View style={{flexDirection:'row',gap:8}}>
-              {['7 dias','30 dias','3 meses'].map((p,i)=>(
-                <TouchableOpacity key={p} style={{flex:1,paddingVertical:8,borderRadius:10,borderWidth:1.5,borderColor:i===1?COLORS.red:COLORS.grayLine,backgroundColor:i===1?COLORS.redLight:COLORS.white,alignItems:'center'}}>
-                  <Text style={{fontSize:12,fontWeight:'700',color:i===1?COLORS.red:COLORS.grayText}}>{p}</Text>
+              {['7 dias','30 dias','3 meses'].map((p)=>(
+                <TouchableOpacity
+                  key={p}
+                  onPress={() => setOwnerStatsPeriod(p)}
+                  style={{
+                    flex:1,
+                    paddingVertical:8,
+                    borderRadius:10,
+                    borderWidth:1.5,
+                    borderColor:ownerStatsPeriod===p?COLORS.red:COLORS.grayLine,
+                    backgroundColor:ownerStatsPeriod===p?COLORS.redLight:COLORS.white,
+                    alignItems:'center'
+                  }}
+                >
+                  <Text style={{fontSize:12,fontWeight:'700',color:ownerStatsPeriod===p?COLORS.red:COLORS.grayText}}>{p}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -3370,25 +3383,41 @@ export function OwnerModule({
 
             {/* Action Buttons Grid */}
             <View style={profS.actionGrid}>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Avaliações', 'Abra um negócio para avaliar.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
                 <Text style={profS.actionLabel}>Avaliação</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Fotos e vídeos', 'Abra um negócio para adicionar conteúdo.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
                 <Text style={profS.actionLabel}>Fotos e vídeos</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="checkCircle" size={22} color={COLORS.darkText} strokeWidth={2} fill={COLORS.darkText} />
                 </View>
                 <Text style={profS.actionLabel}>Check-in</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
@@ -3432,12 +3461,20 @@ export function OwnerModule({
             {/* Contribuições */}
             <View style={profS.section}>
               <Text style={profS.sectionTitle}>Contribuições</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Avaliações', 'Aqui ficará o histórico das suas avaliações.')}
+              >
                 <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Avaliações</Text>
                 <Text style={profS.menuCount}>{USER_PROFILE.stats.reviewsWritten}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Negócios adicionados', 'Funcionalidade disponível em breve.')}
+              >
                 <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Negócios adicionados</Text>
                 <Text style={profS.menuCount}>0</Text>
@@ -3449,7 +3486,11 @@ export function OwnerModule({
             {/* Sua Atividade */}
             <View style={profS.section}>
               <Text style={profS.sectionTitle}>Sua atividade</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Reservas', 'Histórico de reservas será exibido nesta secção.')}
+              >
                 <Icon name="calendar" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Reservas</Text>
                 <Text style={profS.menuCount}>0</Text>
@@ -3461,27 +3502,47 @@ export function OwnerModule({
             {/* Conta */}
             <View style={profS.section}>
               <Text style={profS.sectionTitle}>Conta</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Preferências', 'Configuração de preferências disponível em breve.')}
+              >
                 <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Preferências</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Perfil', 'Edição de perfil será disponibilizada nesta secção.')}
+              >
                 <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Perfil</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Ajuda e suporte', 'Centro de ajuda será integrado em breve.')}
+              >
                 <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Ajuda e suporte</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Configurações', 'Configurações avançadas serão adicionadas em breve.')}
+              >
                 <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Configurações</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Sobre AchAqui', 'AchAqui v2. Informações detalhadas em breve.')}
+              >
                 <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Sobre AchAqui</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />

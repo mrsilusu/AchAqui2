@@ -45,7 +45,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   Image, ImageBackground, TextInput,
-  Dimensions, Keyboard,
+  Dimensions, Keyboard, Alert,
 } from 'react-native';
 
 import {
@@ -469,7 +469,12 @@ export function HomeModule({
               <Text style={[hS.filterItemText, hasActiveFilters && hS.filterItemTextActive]}>Filtros</Text>
               {hasActiveFilters && <View style={hS.controlBadge}><Text style={hS.controlBadgeText}>{activeFiltersCount}</Text></View>}
             </TouchableOpacity>
-            <TouchableOpacity style={hS.filterItem}>
+            <TouchableOpacity
+              style={hS.filterItem}
+              onPress={() =>
+                Alert.alert('Mapa', 'Visualização em mapa será ativada nesta secção.')
+              }
+            >
               <Icon name="map" size={13} color={COLORS.darkText} strokeWidth={2} />
               <Text style={hS.filterItemText}>Mapa</Text>
             </TouchableOpacity>
@@ -812,25 +817,41 @@ function ProfileTab({
 
             {/* Action Buttons Grid */}
             <View style={profS.actionGrid}>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Avaliações', 'Abra um negócio para avaliar.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
                 <Text style={profS.actionLabel}>Avaliação</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Fotos e vídeos', 'Abra um negócio para adicionar conteúdo.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
                 <Text style={profS.actionLabel}>Fotos e vídeos</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="checkCircle" size={22} color={COLORS.darkText} strokeWidth={2} fill={COLORS.darkText} />
                 </View>
                 <Text style={profS.actionLabel}>Check-in</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.actionButton} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.actionButton}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+              >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
                 </View>
@@ -874,12 +895,20 @@ function ProfileTab({
             {/* Contribuições */}
             <View style={profS.section}>
               <Text style={profS.sectionTitle}>Contribuições</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Avaliações', 'Aqui ficará o histórico das suas avaliações.')}
+              >
                 <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Avaliações</Text>
                 <Text style={profS.menuCount}>{USER_PROFILE.stats.reviewsWritten}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Negócios adicionados', 'Funcionalidade disponível em breve.')}
+              >
                 <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Negócios adicionados</Text>
                 <Text style={profS.menuCount}>0</Text>
@@ -903,27 +932,47 @@ function ProfileTab({
             {/* Conta */}
             <View style={profS.section}>
               <Text style={profS.sectionTitle}>Conta</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Preferências', 'Configuração de preferências disponível em breve.')}
+              >
                 <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Preferências</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Perfil', 'Edição de perfil será disponibilizada nesta secção.')}
+              >
                 <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Perfil</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Ajuda e suporte', 'Centro de ajuda será integrado em breve.')}
+              >
                 <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Ajuda e suporte</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Configurações', 'Configurações avançadas serão adicionadas em breve.')}
+              >
                 <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Configurações</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={profS.menuRow}
+                activeOpacity={0.7}
+                onPress={() => Alert.alert('Sobre AchAqui', 'AchAqui v2. Informações detalhadas em breve.')}
+              >
                 <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Sobre AchAqui</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />

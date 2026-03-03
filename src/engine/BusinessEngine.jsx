@@ -48,7 +48,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Platform,
+  Platform, Alert,
 } from 'react-native';
 
 // ── Importações do Core ───────────────────────────────────────────────────────
@@ -342,7 +342,11 @@ function BeautyWellnessModule({ business, mode, onBookingDone }) {
 }`}
         auxiliaries={['delivery']}
       />
-      <TouchableOpacity style={[engS.ctaBtn, { backgroundColor: '#EC4899' }]} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={[engS.ctaBtn, { backgroundColor: '#EC4899' }]}
+        activeOpacity={0.85}
+        onPress={() => Alert.alert('Marcar Hora', 'Este fluxo será ativado na próxima fase deste módulo.')}
+      >
         <Icon name="appointment" size={18} color={COLORS.white} strokeWidth={2} />
         <Text style={engS.ctaBtnText}>Marcar Hora</Text>
         <Text style={engS.ctaBtnSub}>Disponível na Fase 2</Text>
@@ -391,7 +395,11 @@ function DiningModule({ business, mode, onBookingDone }) {
 }`}
         auxiliaries={['delivery', 'custom_orders']}
       />
-      <TouchableOpacity style={[engS.ctaBtn, { backgroundColor: '#EA580C' }]} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={[engS.ctaBtn, { backgroundColor: '#EA580C' }]}
+        activeOpacity={0.85}
+        onPress={() => Alert.alert('Reservar Mesa', 'Este fluxo será ativado na próxima fase deste módulo.')}
+      >
         <Icon name="reservation" size={18} color={COLORS.white} strokeWidth={2} />
         <Text style={engS.ctaBtnText}>Reservar Mesa</Text>
         <Text style={engS.ctaBtnSub}>Disponível na Fase 3</Text>
