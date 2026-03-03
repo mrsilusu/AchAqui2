@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -23,6 +24,20 @@ export class BusinessController {
   @Public()
   findAll() {
     return this.businessService.findAll();
+  }
+
+  @Get('search')
+  @Public()
+  search(
+    @Query('latitude') latitude: string,
+    @Query('longitude') longitude: string,
+    @Query('radiusKm') radiusKm?: string,
+  ) {
+    return this.businessService.searchNearby({
+      latitude,
+      longitude,
+      radiusKm,
+    });
   }
 
   @Get(':id')
