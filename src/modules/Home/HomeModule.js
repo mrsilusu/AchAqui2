@@ -7,6 +7,7 @@
  *
  * Props obrigatórias:
  *   businesses        — array de negócios JÁ filtrados (vem de useBusinessFilters)
+ *   featuredBusinesses— array base para o carrossel "Em Destaque" (sem filtro de categoria)
  *   onSelectBusiness  — callback ao premir um negócio (handleBusinessPress)
  *
  * Props do hook useBusinessFilters (spread ou individuais):
@@ -40,7 +41,7 @@
  * ============================================================================
  */
 
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   Image, ImageBackground, TextInput,
@@ -188,6 +189,7 @@ const BusinessListCell = React.memo(function BusinessListCell({
 export function HomeModule({
   // Dados
   businesses = [],
+  featuredBusinesses = [],
   onSelectBusiness,
 
   // Do hook useBusinessFilters
@@ -230,9 +232,28 @@ export function HomeModule({
   const unreadNotifs = notifications.filter(n => !n.read).length;
 
   const SPONSORED = useMemo(
-    () => businesses.filter(b => b.isPremium || b.promo).slice(0, 5),
-    [businesses],
+    () => (featuredBusinesses.length > 0 ? featuredBusinesses : businesses)
+      .filter(b => b.isPublic !== false && b.id !== OWNER_BUSINESS.id)
+      .filter(b => b.isPremium || b.promo)
+      .slice(0, 5),
+    [featuredBusinesses, businesses],
   );
+
+  useEffect(() => {
+    carouselIndex.current = 0;
+    setCarouselActiveIndex(0);
+
+    if (SPONSORED.length <= 1) return undefined;
+
+    const timer = setInterval(() => {
+      const next = (carouselIndex.current + 1) % SPONSORED.length;
+      carouselIndex.current = next;
+      setCarouselActiveIndex(next);
+      carouselRef.current?.scrollTo?.({ x: next * SCREEN_WIDTH, animated: true });
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [SPONSORED]);
 
   // ── RENDER HEADER ─────────────────────────────────────────────────────────
   const renderHeader = () => (
@@ -661,9 +682,11 @@ function SearchTab({
 
 // ── FEATURED TAB ──────────────────────────────────────────────────────────────
 function FeaturedTab({
-  businesses = [], onSelectBusiness,
+  businesses = [], featuredBusinesses = [], onSelectBusiness,
   insets = { top: 0 }, onSetActiveNavTab = () => {},
 }) {
+  const BASE_FEATURED = featuredBusinesses.length > 0 ? featuredBusinesses : businesses;
+
   return (
 <View style={{flex:1,backgroundColor:COLORS.grayBg}}>
       <View style={{backgroundColor:COLORS.white,paddingHorizontal:16,paddingTop:insets.top+10,paddingBottom:16,borderBottomWidth:1,borderBottomColor:COLORS.grayLine}}>
@@ -674,7 +697,7 @@ function FeaturedTab({
         {/* Premium businesses */}
         <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText,paddingHorizontal:16,paddingTop:16,paddingBottom:10}}>👑 Premium</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:16,gap:12,paddingBottom:8}}>
-          {businesses.filter(b=>b.isPremium).map(b=>(
+          {BASE_FEATURED.filter(b => b.isPublic !== false && b.id !== OWNER_BUSINESS.id).filter(b=>b.isPremium).map(b=>(
             <TouchableOpacity key={b.id} style={{width:220,backgroundColor:COLORS.white,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:COLORS.grayLine}} onPress={()=>onSelectBusiness(b)}>
               {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:120}} resizeMode="cover"/>:<View style={{width:'100%',height:120,backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:40}}>{b.icon}</Text></View>}
               <View style={{padding:10}}>
@@ -690,7 +713,7 @@ function FeaturedTab({
         </ScrollView>
         {/* Top rated */}
         <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText,paddingHorizontal:16,paddingTop:16,paddingBottom:10}}>⭐ Mais Avaliados</Text>
-        {[...businesses].filter(b=>b.isPublic!==false&&b.id!==OWNER_BUSINESS.id).sort((a,b)=>b.rating-a.rating).slice(0,5).map(b=>(
+        {[...BASE_FEATURED].filter(b=>b.isPublic!==false&&b.id!==OWNER_BUSINESS.id).sort((a,b)=>b.rating-a.rating).slice(0,5).map(b=>(
           <TouchableOpacity key={b.id} style={{flexDirection:'row',backgroundColor:COLORS.white,marginHorizontal:16,marginBottom:8,borderRadius:14,padding:12,borderWidth:1,borderColor:COLORS.grayLine}} onPress={()=>onSelectBusiness(b)}>
             <View style={{width:56,height:56,borderRadius:10,marginRight:12,overflow:'hidden',backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}>
               {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:'100%'}} resizeMode="cover"/>:<Text style={{fontSize:24}}>{b.icon}</Text>}
@@ -707,7 +730,7 @@ function FeaturedTab({
         ))}
         {/* Promos */}
         <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText,paddingHorizontal:16,paddingTop:16,paddingBottom:10}}>🔥 Com Promoções</Text>
-        {businesses.filter(b=>b.promo&&b.isPublic!==false&&b.id!==OWNER_BUSINESS.id).map(b=>(
+        {BASE_FEATURED.filter(b=>b.promo&&b.isPublic!==false&&b.id!==OWNER_BUSINESS.id).map(b=>(
           <TouchableOpacity key={b.id} style={{marginHorizontal:16,marginBottom:10,borderRadius:14,overflow:'hidden',backgroundColor:COLORS.white,borderWidth:1,borderColor:'#FFE082'}} onPress={()=>onSelectBusiness(b)}>
             <View style={{backgroundColor:'#FFFDE7',paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:8}}>
               <Text style={{fontSize:14}}>🔥</Text>

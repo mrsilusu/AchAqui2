@@ -279,6 +279,7 @@ function AppContent() {
               setActiveBusinessTab={setActiveBusinessTab}
               USER_PROFILE={USER_PROFILE}
               businesses={filters.filteredBusinesses}
+              featuredBusinesses={businesses}
               onSelectBusiness={handleBusinessPress}
               bookmarkedIds={bookmarkedIds}
               onToggleBookmark={toggleBookmark}
