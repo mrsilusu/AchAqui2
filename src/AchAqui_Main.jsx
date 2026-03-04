@@ -314,7 +314,10 @@ function AppContent() {
   }), [ownerDashboardData]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
-  const [businesses, setBusinesses] = useState([OWNER_BUSINESS, ...(MOCK_BUSINESSES_INITIAL || [])]);
+  const [businesses, setBusinesses] = useState([
+    OWNER_BUSINESS,
+    ...((MOCK_BUSINESSES_INITIAL || []).filter((business) => business.name !== OWNER_BUSINESS.name)),
+  ]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;

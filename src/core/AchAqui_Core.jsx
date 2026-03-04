@@ -355,7 +355,7 @@ export const DISTANCE_FILTERS = [
 // }
 // ─────────────────────────────────────────────────────────────────────────────
 export const OWNER_BUSINESS = {
-  id: 'biz_owner_1',
+  id: '92701d2d-36ba-4988-8896-e383e4129e54',
   name: 'Pizzaria Bela Vista',
   category: 'Restaurante Italiano',
   businessType: 'accommodation',

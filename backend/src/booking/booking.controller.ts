@@ -19,6 +19,10 @@ export class BookingController {
     @Req() req: { user: { userId: string } },
     @Body() createBookingDto: CreateBookingDto,
   ) {
+    console.log('Recebi um pedido de reserva:', {
+      userId: req.user.userId,
+      data: createBookingDto,
+    });
     return this.bookingService.create(req.user.userId, createBookingDto);
   }
 }

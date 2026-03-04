@@ -87,7 +87,7 @@ async function ensureBusiness(ownerToken) {
     token: ownerToken,
     body: {
       name: 'AchAqui Test Business',
-      category: 'RESTAURANT',
+      category: 'DINING',
       description: 'Business de teste automático para fluxo cliente/dono.',
       latitude: -8.8383,
       longitude: 13.2344,
