@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — HOSPITALITY MODULE  (v2.10.1 — SF_H2 + SF_H3 COMPLETO)
+ * ACHAQUI — HOSPITALITY MODULE  (v2.10.1 — SF_H2 + SF_H3 COMPLETO)
  * ============================================================================
  * SF_H1: CalendarPicker + Room cards (vista cliente)          ✅
  * SF_H2: + Booking modal 2 passos + disponibilidade real      ✅
@@ -38,7 +38,7 @@ import {
 import {
   sanitizeInput, validateExternalUrl, Icon, COLORS,
   AppContext,
-} from '../core/AcheiAqui_Core';
+} from '../core/AchAqui_Core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES

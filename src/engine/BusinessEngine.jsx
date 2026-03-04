@@ -58,7 +58,7 @@ import {
 import {
   Icon, COLORS, formatCurrency, renderStars,
   BUSINESS_TYPE_BADGES,
-} from '../core/AcheiAqui_Core';
+} from '../core/AchAqui_Core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAPEAMENTO: businessType → módulo operacional

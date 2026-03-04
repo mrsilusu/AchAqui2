@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, UserRole } from '@prisma/client';
 import { EventsGateway } from '../events/events.gateway';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +16,53 @@ export class BookingService {
     private readonly eventsGateway: EventsGateway,
     private readonly mailService: MailService,
   ) {}
+
+  async findAllForUser(userId: string, role: UserRole) {
+    if (role === UserRole.OWNER) {
+      return this.prisma.booking.findMany({
+        where: {
+          business: {
+            ownerId: userId,
+          },
+        },
+        include: {
+          business: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+    }
+
+    return this.prisma.booking.findMany({
+      where: {
+        userId,
+      },
+      include: {
+        business: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
 
   async create(userId: string, dto: CreateBookingDto) {
     const startDate = new Date(dto.startDate);

@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
   SafeAreaView, Image, TextInput, Alert,
@@ -32,7 +32,7 @@ import {
   Icon, COLORS, OWNER_BUSINESS,
   OPERATIONAL_MODULES, NAV_BAR_STYLES,
   renderStars, getBusinessStatus, AMENITY_ICON_MAP,
-} from '../../core/AcheiAqui_Core';
+} from '../../core/AchAqui_Core';
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
@@ -212,6 +212,11 @@ export function OwnerModule({
   onSyncPromoDeals,
   onExitOwnerMode,
   onViewBusiness,
+  liveBookings = [],
+  liveNotifications = [],
+  onMarkNotificationRead = () => {},
+  onMarkAllNotificationsRead = () => {},
+  authRole = 'CLIENT',
 }) {
   // ── Owner metrics (mock — Fase 2+: GET /businesses/:id/analytics) ─────────
   const ownerMetrics = {
@@ -477,6 +482,52 @@ export function OwnerModule({
 
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
   const ownerBiz = businesses?.find(b => b.id === OWNER_BUSINESS.id) || OWNER_BUSINESS;
+
+  useEffect(() => {
+    if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
+      return;
+    }
+
+    const normalized = liveNotifications.map((notification) => ({
+      id: notification.id,
+      icon: notification.title?.toLowerCase().includes('reserva') ? '🏨' : '🔔',
+      title: notification.title || 'Notificação',
+      message: notification.message || '',
+      time:
+        notification.time ||
+        (notification.createdAt
+          ? new Date(notification.createdAt).toLocaleString('pt-PT')
+          : ''),
+      read: notification.read ?? notification.isRead ?? false,
+    }));
+
+    setOwnerNotifications(normalized);
+  }, [authRole, liveNotifications]);
+
+  useEffect(() => {
+    if (authRole !== 'OWNER' || !Array.isArray(liveBookings) || liveBookings.length === 0) {
+      return;
+    }
+
+    const mappedReservations = liveBookings.map((booking) => {
+      const startDate = booking.startDate ? new Date(booking.startDate) : null;
+
+      return {
+        id: booking.id,
+        user: booking.user?.name || 'Cliente',
+        userAvatar: '👤',
+        date: startDate ? startDate.toISOString().slice(0, 10) : '',
+        time: startDate ? startDate.toISOString().slice(11, 16) : '',
+        people: 1,
+        status: booking.status === 'CANCELLED' ? 'cancelled' : 'active',
+        phone: booking.user?.email || '',
+        notes: '',
+        createdAt: booking.createdAt || '',
+      };
+    });
+
+    setBusinessReservations(mappedReservations);
+  }, [authRole, liveBookings]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -898,7 +949,10 @@ export function OwnerModule({
                 {ownerNotifications.some(n=>!n.read) && (
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => setOwnerNotifications(p=>p.map(n=>({...n,read:true})))}
+                    onPress={() => {
+                      onMarkAllNotificationsRead();
+                      setOwnerNotifications(p=>p.map(n=>({...n,read:true})));
+                    }}
                   >
                     <Text style={{fontSize:13, fontWeight:'600', color:COLORS.red}}>Marcar todas lidas</Text>
                   </TouchableOpacity>
@@ -910,6 +964,7 @@ export function OwnerModule({
                   style={[bizS.notifCard, !notif.read && bizS.notifCardUnread]}
                   activeOpacity={0.8}
                   onPress={() => {
+                    onMarkNotificationRead(notif.id);
                     setOwnerNotifications(p=>p.map(n=>n.id===notif.id?{...n,read:true}:n))
                   }}
                 >

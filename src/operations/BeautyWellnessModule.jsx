@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — BEAUTY & WELLNESS MODULE  (v2.10.1 — SF_B1 + SF_B2 + SF_B3)
+ * ACHAQUI — BEAUTY & WELLNESS MODULE  (v2.10.1 — SF_B1 + SF_B2 + SF_B3)
  * ============================================================================
  * SF_B1: Grid de serviços + selector de profissional               ✅
  * SF_B2: Grid de slots + booking modal (disponibilidade por tempo) ✅
@@ -41,7 +41,7 @@ import {
 } from 'react-native';
 import {
   sanitizeInput, Icon, COLORS, AppContext,
-} from '../core/AcheiAqui_Core';
+} from '../core/AchAqui_Core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES DO MÓDULO

@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI MAIN  (v3.0.0 — Fase 3.5: Orquestrador Final)
+ * ACHAQUI MAIN  (v3.0.0 — Fase 3.5: Orquestrador Final)
  * ============================================================================
  * Ficheiro < 300 linhas. Responsabilidades únicas:
  *   1. AppProvider + contexto
@@ -29,7 +29,7 @@ import {
   Icon, COLORS, AppProvider,
   ALL_CATEGORIES, ALL_CAT_LABEL, ALL_CAT_ICON,
   OWNER_BUSINESS, SORT_OPTIONS, NAV_BAR_STYLES,
-} from './core/AcheiAqui_Core';
+} from './core/AchAqui_Core';
 import { BusinessDetailModal }  from './modules/Detail/BusinessDetailModal';
 import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
@@ -38,6 +38,8 @@ import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { useBusinessFilters }   from './hooks/useBusinessFilters';
 import { useMetaAnimation }     from './hooks/useMetaAnimation';
+import { useAuthSession } from './hooks/useAuthSession';
+import { useLiveSync } from './hooks/useLiveSync';
 
 import { sortS } from './styles/Main.styles';
 
@@ -162,7 +164,7 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
-export default function AcheiAquiMain() {
+export default function AchAquiMain() {
   return (
     <SafeAreaProvider>
       <AppProvider>
@@ -195,11 +197,17 @@ function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets,
 
 function AppContent() {
   const insets = useSafeAreaInsets();
+  const authSession = useAuthSession();
+  const liveSync = useLiveSync({
+    user: authSession.user,
+    accessToken: authSession.accessToken,
+  });
 
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([OWNER_BUSINESS, ...(MOCK_BUSINESSES_INITIAL || [])]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
-  const [notifications, setNotifications] = useState([{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}]);
+  const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
+  const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
@@ -246,7 +254,7 @@ function AppContent() {
   }, [meta.swipeProgress]);
 
   const requestLocationPermission = () => {
-    Alert.alert('Permitir Localização', 'AcheiAqui precisa da sua localização.', [
+    Alert.alert('Permitir Localização', 'AchAqui precisa da sua localização.', [
       { text: 'Não Permitir', onPress: () => setLocationPermission('denied')  },
       { text: 'Permitir',     onPress: () => setLocationPermission('granted') },
     ]);
@@ -261,6 +269,22 @@ function AppContent() {
     if (isBusinessMode) setActiveBusinessTab(tabId);
     else setActiveNavTab(tabId);
   }, [isBusinessMode]);
+
+  const handleToggleOwnerMode = useCallback(() => {
+    if (!authSession.isOwner) {
+      Alert.alert('Acesso restrito', 'Apenas utilizadores com perfil OWNER podem entrar no modo Dono.');
+      return;
+    }
+
+    setIsBusinessMode((current) => !current);
+  }, [authSession.isOwner]);
+
+  useEffect(() => {
+    if (!authSession.isOwner && isBusinessMode) {
+      setIsBusinessMode(false);
+      setActiveNavTab('home');
+    }
+  }, [authSession.isOwner, isBusinessMode]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -285,7 +309,7 @@ function AppContent() {
               onToggleBookmark={toggleBookmark}
               notifications={notifications}
               onOpenAppLayer={meta.openAppLayer}
-              onToggleOwnerMode={() => setIsBusinessMode(m => !m)}
+              onToggleOwnerMode={handleToggleOwnerMode}
               isBusinessMode={isBusinessMode}
               locationPermission={locationPermission}
               onRequestLocation={requestLocationPermission}
@@ -306,6 +330,11 @@ function AppContent() {
               onSyncPromoDeals={syncPromoDeals}
               onExitOwnerMode={() => { setIsBusinessMode(false); setActiveNavTab('home'); }}
               onViewBusiness={handleBusinessPress}
+              liveBookings={liveSync.bookings}
+              liveNotifications={notifications}
+              onMarkNotificationRead={liveSync.markNotificationRead}
+              onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
+              authRole={authSession.user?.role || 'CLIENT'}
             />
           )}
 
@@ -395,7 +424,7 @@ function AppContent() {
               <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
                 {notifications.map(n => (
                   <TouchableOpacity key={n.id} style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine, backgroundColor: n.read ? COLORS.white : '#FFF5F5' }}
-                    onPress={() => setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x))}>
+                    onPress={() => liveSync.markNotificationRead(n.id)}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: n.read ? 'transparent' : COLORS.red, marginTop: 6, marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.darkText }}>{n.title}</Text>

@@ -37,7 +37,7 @@
  *   insets             — SafeAreaInsets
  *
  * Estilos: importados de Main.styles.js (hS, acS, fbS, spS)
- * Constantes e helpers: importados de AcheiAqui_Core
+ * Constantes e helpers: importados de AchAqui_Core
  * ============================================================================
  */
 
@@ -56,7 +56,7 @@ import {
   TRENDING_SEARCHES, AUTOCOMPLETE_SUGGESTIONS,
   renderStars, renderHeroStars, getBusinessStatus,
   OWNER_BUSINESS,
-} from '../../core/AcheiAqui_Core';
+} from '../../core/AchAqui_Core';
 
 import { hS, acS, fbS, spS, profS, bizS } from '../../styles/Main.styles';
 
@@ -262,7 +262,7 @@ export function HomeModule({
         {/* Top row */}
         <View style={hS.headerTopRow}>
           <View style={hS.versionRow}>
-            <Text style={hS.logo}>AcheiAqui</Text>
+            <Text style={hS.logo}>AchAqui</Text>
             <Text style={hS.versionText}>  v2.11.0</Text>
           </View>
           <View style={hS.headerActions}>

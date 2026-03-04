@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — PROFESSIONAL MODULE  (v3.0.0 — Fase 3)
+ * ACHAQUI — PROFESSIONAL MODULE  (v3.0.0 — Fase 3)
  * ============================================================================
  * Funcionalidades:
  *   ✅ Marcação de consultas com especialidades e profissionais
@@ -27,7 +27,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, TextInput, Alert, Platform,
 } from 'react-native';
-import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AcheiAqui_Core';
+import { sanitizeInput, Icon, COLORS, AppContext } from '../core/AchAqui_Core';
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];

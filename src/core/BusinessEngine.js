@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * ACHEIAQUI — BUSINESS ENGINE  (v4.0.0 — Fase 4 — DeliveryExtension + CustomOrdersExtension)
+ * ACHAQUI — BUSINESS ENGINE  (v4.0.0 — Fase 4 — DeliveryExtension + CustomOrdersExtension)
  * ============================================================================
  * Fase 2: HospitalityModule e BeautyWellnessModule FUNCIONAIS (substituem placeholders)
  * Fase 3: DiningModule, HealthModule, EducationModule, ProServicesModule, EventsModule
@@ -34,7 +34,7 @@ import React, { useMemo, useCallback, useEffect, useRef, useContext } from 'reac
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform, Alert,
 } from 'react-native';
-import { AppContext, Icon, COLORS } from './AcheiAqui_Core';
+import { AppContext, Icon, COLORS } from './AchAqui_Core';
 
 // ── Fase 2: Módulos FUNCIONAIS ───────────────────────────────────────────────
 import { HospitalityModule }   from '../operations/HospitalityModule';
