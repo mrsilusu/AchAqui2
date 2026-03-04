@@ -57,6 +57,12 @@ export function useLiveSync({ user, accessToken }) {
     try {
       await Promise.all([loadBookings(), loadNotifications()]);
     } catch (syncError) {
+      console.error('[LiveSync][API_FAIL]', {
+        reason: syncError?.type || 'unknown',
+        status: syncError?.status || null,
+        url: syncError?.url || null,
+        message: syncError instanceof Error ? syncError.message : 'Falha na sincronização',
+      });
       setError(syncError instanceof Error ? syncError.message : 'Falha na sincronização');
     } finally {
       setLoading(false);

@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -31,5 +31,10 @@ export class AuthController {
   @Public()
   logout(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.authService.logout(refreshTokenDto);
+  }
+
+  @Get('me')
+  me(@Req() req: { user: { userId: string } }) {
+    return this.authService.me(req.user.userId);
   }
 }

@@ -217,13 +217,17 @@ export function OwnerModule({
   onMarkNotificationRead = () => {},
   onMarkAllNotificationsRead = () => {},
   authRole = 'CLIENT',
+  ownerMetrics: ownerMetricsProp = null,
 }) {
-  // ── Owner metrics (mock — Fase 2+: GET /businesses/:id/analytics) ─────────
-  const ownerMetrics = {
-    views: 1247, viewsChange: 12,
-    clicks: 89,  clicksChange: 8,
-    checkIns: 34, checkInsChange: -3,
-    favorites: 156, favoritesChange: 5,
+  const ownerMetrics = ownerMetricsProp || {
+    views: 0,
+    viewsChange: 0,
+    clicks: 0,
+    clicksChange: 0,
+    checkIns: 0,
+    checkInsChange: 0,
+    favorites: 0,
+    favoritesChange: 0,
   };
 
   // ── App layer (dono) — ownerReservasDining / ownerReservas / ownerStats / ownerPromos

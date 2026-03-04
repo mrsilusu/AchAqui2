@@ -16,7 +16,7 @@
  */
 
 import React, {
-  useState, useCallback, useEffect,
+  useState, useCallback, useEffect, useMemo,
 } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView,
@@ -40,10 +40,9 @@ import { useBusinessFilters }   from './hooks/useBusinessFilters';
 import { useMetaAnimation }     from './hooks/useMetaAnimation';
 import { useAuthSession } from './hooks/useAuthSession';
 import { useLiveSync } from './hooks/useLiveSync';
+import { backendApi } from './lib/backendApi';
 
 import { sortS } from './styles/Main.styles';
-
-const USER_PROFILE = { id:'user_001', name:'João Silva', email:'joao.silva@email.ao', location:'Luanda, Angola', memberSince:'Janeiro 2024', avatar:null, stats:{businessesViewed:127,reviewsWritten:23,checkIns:45,photosUploaded:156,favoritesSaved:34,achievementsUnlocked:12} };
 
 const MOCK_BUSINESSES_INITIAL = [
   {
@@ -202,6 +201,117 @@ function AppContent() {
     user: authSession.user,
     accessToken: authSession.accessToken,
   });
+  const [profileData, setProfileData] = useState(null);
+  const [ownerDashboardData, setOwnerDashboardData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfileData = async () => {
+      if (!authSession.accessToken) {
+        setProfileData(null);
+        return;
+      }
+
+      try {
+        const response = await backendApi.getMe(authSession.accessToken);
+        if (!cancelled) {
+          setProfileData(response || null);
+        }
+      } catch (error) {
+        console.error('[Profile][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar perfil.',
+        });
+
+        if (!cancelled) {
+          setProfileData(null);
+        }
+      }
+    };
+
+    loadProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession.accessToken, authSession.user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOwnerDashboard = async () => {
+      if (!authSession.accessToken || !authSession.isOwner) {
+        setOwnerDashboardData(null);
+        return;
+      }
+
+      try {
+        const response = await backendApi.getOwnerDashboard(authSession.accessToken);
+        if (!cancelled) {
+          setOwnerDashboardData(response || null);
+        }
+      } catch (error) {
+        console.error('[OwnerDashboard][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar dashboard do dono.',
+        });
+
+        if (!cancelled) {
+          setOwnerDashboardData(null);
+        }
+      }
+    };
+
+    loadOwnerDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession.accessToken, authSession.isOwner]);
+
+  const userProfile = useMemo(() => {
+    const createdAt = profileData?.createdAt
+      ? new Date(profileData.createdAt).toLocaleDateString('pt-PT', {
+          month: 'long',
+          year: 'numeric',
+        })
+      : '—';
+
+    const stats = profileData?.stats || {};
+
+    return {
+      id: profileData?.id || authSession.user?.id || 'anonymous',
+      name: profileData?.name || authSession.user?.name || 'Utilizador',
+      email: profileData?.email || authSession.user?.email || '',
+      location: 'Luanda, Angola',
+      memberSince: createdAt,
+      avatar: null,
+      stats: {
+        businessesViewed: Number(stats.bookings || 0),
+        reviewsWritten: Number(stats.notifications || 0),
+        checkIns: Number(stats.bookings || 0),
+        photosUploaded: Number(stats.businesses || 0),
+        favoritesSaved: Number(stats.notifications || 0),
+        achievementsUnlocked: Number(stats.businesses || 0),
+      },
+    };
+  }, [authSession.user?.email, authSession.user?.id, authSession.user?.name, profileData]);
+
+  const ownerMetrics = useMemo(() => ({
+    views: Number(ownerDashboardData?.totalBookings || 0),
+    viewsChange: 0,
+    clicks: Number(ownerDashboardData?.confirmedBookings || 0),
+    clicksChange: 0,
+    checkIns: Number(ownerDashboardData?.pendingBookings || 0),
+    checkInsChange: 0,
+    favorites: Number(ownerDashboardData?.totalBusinesses || 0),
+    favoritesChange: 0,
+  }), [ownerDashboardData]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([OWNER_BUSINESS, ...(MOCK_BUSINESSES_INITIAL || [])]);
@@ -299,9 +409,9 @@ function AppContent() {
               {...filters}
               activeNavTab={activeNavTab}
               onSetActiveNavTab={setActiveNavTab}
-              onSetIsBusinessMode={setIsBusinessMode}
+              onToggleOwnerMode={handleToggleOwnerMode}
               setActiveBusinessTab={setActiveBusinessTab}
-              USER_PROFILE={USER_PROFILE}
+              USER_PROFILE={userProfile}
               businesses={filters.filteredBusinesses}
               featuredBusinesses={businesses}
               onSelectBusiness={handleBusinessPress}
@@ -335,6 +445,7 @@ function AppContent() {
               onMarkNotificationRead={liveSync.markNotificationRead}
               onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
               authRole={authSession.user?.role || 'CLIENT'}
+              ownerMetrics={ownerMetrics}
             />
           )}
 
