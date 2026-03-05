@@ -517,18 +517,61 @@ export function OwnerModule({
     hours: OWNER_BUSINESS.hours||'', description: OWNER_BUSINESS.description||'', isPublic: true,
   });
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const updateOwnerBiz = useCallback((fields) => {
-    onUpdateBusiness(fields);
-    OWNER_BUSINESS.promo = fields.promo ?? OWNER_BUSINESS.promo;
-  }, [onUpdateBusiness]);
-
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
   const ownerBiz =
     businesses?.find((b) => b?.owner?.id === authUserId) ||
     businesses?.find((b) => b.id === OWNER_BUSINESS.id) ||
     OWNER_BUSINESS;
   const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
+
+  const persistBusinessDraft = useCallback(async (fields) => {
+    if (!ownerBusinessId || !accessToken || !fields || Object.keys(fields).length === 0) {
+      return;
+    }
+
+    const {
+      name,
+      description,
+      latitude,
+      longitude,
+      ...metadataPatch
+    } = fields;
+
+    const payload = {};
+    if (typeof name === 'string' && name.trim()) payload.name = name;
+    if (typeof description === 'string' && description.trim()) payload.description = description;
+    if (typeof latitude === 'number') payload.latitude = latitude;
+    if (typeof longitude === 'number') payload.longitude = longitude;
+
+    if (Object.keys(metadataPatch).length > 0) {
+      const currentMetadata =
+        ownerBiz?.metadata && typeof ownerBiz.metadata === 'object'
+          ? ownerBiz.metadata
+          : {};
+      payload.metadata = { ...currentMetadata, ...metadataPatch };
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    await backendApi.updateBusiness(ownerBusinessId, payload, accessToken);
+  }, [ownerBiz?.metadata, ownerBusinessId, accessToken]);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const updateOwnerBiz = useCallback((fields, { persist = true } = {}) => {
+    onUpdateBusiness(fields, ownerBusinessId);
+    OWNER_BUSINESS.promo = fields.promo ?? OWNER_BUSINESS.promo;
+
+    if (!persist) return;
+
+    persistBusinessDraft(fields).catch((error) => {
+      console.error('[OwnerModule][PERSIST_FAIL]', {
+        status: error?.status || null,
+        message: error?.message || 'Falha ao persistir alterações do dono.',
+      });
+    });
+  }, [onUpdateBusiness, ownerBusinessId, persistBusinessDraft]);
 
   const setBusinessOpen = useCallback(async (isOpen) => {
     if (!ownerBusinessId || !accessToken) {
@@ -545,7 +588,7 @@ export function OwnerModule({
 
     try {
       await backendApi.updateBusinessStatus(ownerBusinessId, { isOpen }, accessToken);
-      updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' });
+      updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' }, { persist: false });
     } catch (error) {
       setBusinessStatusOverride(previousStatus);
       Alert.alert(
@@ -1033,7 +1076,7 @@ export function OwnerModule({
       await backendApi.updateBusinessInfo(ownerBusinessId, payload, accessToken);
       
       // Update local state
-      updateOwnerBiz(payload);
+      updateOwnerBiz(payload, { persist: false });
       Alert.alert('Sucesso', 'Informações do negócio actualizadas.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível actualizar as informações.');

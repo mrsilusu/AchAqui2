@@ -208,6 +208,7 @@ function normalizeBusiness(rawBusiness) {
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
     roomTypes: base.roomTypes?.length ? base.roomTypes : (meta.roomTypes || []),
+    metadata: meta,
     owner: rawBusiness.owner || null,
   };
 }
@@ -396,9 +397,19 @@ function AppContent() {
   const layer   = useOperationalLayer(); // Nível 2 — módulos operacionais
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const updateOwnerBiz = useCallback((fields) => {
-    setBusinesses(prev => prev.map(b => b.id === OWNER_BUSINESS.id ? { ...b, ...fields } : b));
-  }, []);
+  const updateOwnerBiz = useCallback((fields, explicitBusinessId = null) => {
+    setBusinesses((prev) => {
+      const ownerBusinessFromSession = authSession.user?.id
+        ? prev.find((b) => b?.owner?.id === authSession.user.id)
+        : null;
+      const targetBusinessId =
+        explicitBusinessId ||
+        ownerBusinessFromSession?.id ||
+        OWNER_BUSINESS.id;
+
+      return prev.map((b) => (b.id === targetBusinessId ? { ...b, ...fields } : b));
+    });
+  }, [authSession.user?.id]);
 
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
