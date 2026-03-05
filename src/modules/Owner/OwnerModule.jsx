@@ -27,6 +27,7 @@ import {
   Dimensions, Platform, Animated, PanResponder,
   KeyboardAvoidingView, Linking,
 } from 'react-native';
+import * as Location from 'expo-location';
 
 import {
   Icon, COLORS, OWNER_BUSINESS,
@@ -39,6 +40,29 @@ import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
 
 import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
+
+// ── Constantes locais (derivadas de ALL_CATEGORIES do Core) ─────────────────
+import { ALL_CATEGORIES } from '../../core/AchAqui_Core';
+const ALL_CAT_LABEL = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.label])));
+const ALL_CAT_ICON  = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.icon])));
+const BUSINESS_TYPE_BADGES = {
+  food:          { icon: '🍴', label: 'Alimentação',    color: '#EA580C' },
+  retail:        { icon: '🛍️', label: 'Comércio',       color: '#D97706' },
+  health:        { icon: '🏥', label: 'Saúde',          color: '#10B981' },
+  beauty:        { icon: '💅', label: 'Beleza',          color: '#EC4899' },
+  professional:  { icon: '👔', label: 'Profissional',   color: '#059669' },
+  service:       { icon: '⚙️', label: 'Serviço',        color: '#3B82F6' },
+  education:     { icon: '🎓', label: 'Educação',       color: '#DC2626' },
+  freelancer:    { icon: '💼', label: 'Freelancer',     color: '#8B5CF6' },
+  accommodation: { icon: '🏨', label: 'Alojamento',     color: '#0EA5E9' },
+  entertainment: { icon: '🎭', label: 'Entretenimento', color: '#7C3AED' },
+  sports:        { icon: '⚽', label: 'Desporto',       color: '#16A34A' },
+  automotive:    { icon: '🚗', label: 'Automóvel',      color: '#6B7280' },
+  tech:          { icon: '💻', label: 'Tecnologia',     color: '#2563EB' },
+  finance:       { icon: '💰', label: 'Finanças',       color: '#B45309' },
+  logistics:     { icon: '🚚', label: 'Logística',      color: '#78716C' },
+  other:         { icon: '🏢', label: 'Outro',          color: '#6B7280' },
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -392,6 +416,9 @@ export function OwnerModule({
   const [showAmenitiesModal, setShowAmenitiesModal] = useState(false);
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showOwnerCategoryPicker, setShowOwnerCategoryPicker] = useState(false);
+  const [showOwnerSubCategoryPicker, setShowOwnerSubCategoryPicker] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [showICalModal, setShowICalModal] = useState(false);
   const [ownerDarkMode, setOwnerDarkMode] = useState(false);
   const [ownerNotifEnabled, setOwnerNotifEnabled] = useState(true);
@@ -516,6 +543,27 @@ export function OwnerModule({
       setIsUpdatingBusinessStatus(false);
     }
   }, [ownerBusinessId, accessToken, businessStatusOverride, ownerBiz.isOpen, updateOwnerBiz]);
+
+  const captarLocalizacao = useCallback(async () => {
+    setLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão negada', 'Ative a localização nas configurações do dispositivo.');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setSettingsInfo(s => ({
+        ...s,
+        latitude:  loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      }));
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível captar a localização.');
+    } finally {
+      setLocationLoading(false);
+    }
+  }, []);
 
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
@@ -1599,7 +1647,7 @@ export function OwnerModule({
                 </View>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowConfigModal(true)}>
+              <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowSettings(true)}>
                 <View style={bizS.actionIcon}>
                   <Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} />
                 </View>
@@ -4848,166 +4896,665 @@ export function OwnerModule({
         onCancel={() => setCalVisible(false)}
       />
 
-      {showConfigModal && (
+      {/* ── SETTINGS MODAL COMPLETO ─────────────────────────────────────────── */}
+      {showSettings && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>
-            <TouchableOpacity style={profS.backBtn} onPress={() => setShowConfigModal(false)}>
-              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            <TouchableOpacity style={profS.backBtn} onPress={() => {
+              if (settingsSection) setSettingsSection(null);
+              else setShowSettings(false);
+            }}>
+              <Icon name={settingsSection ? 'back' : 'x'} size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
-            <Text style={profS.headerTitle}>Configurações</Text>
-            <View style={{ width: 36 }} />
+            <Text style={profS.headerTitle}>
+              {!settingsSection && 'Configurações'}
+              {settingsSection === 'info' && 'Informações Básicas'}
+              {settingsSection === 'profile' && 'Destaques & Perfil'}
+              {settingsSection === 'hours' && 'Horário de Funcionamento'}
+              {settingsSection === 'notifs' && 'Notificações'}
+              {settingsSection === 'operations' && 'Operações'}
+              {settingsSection === 'visibility' && 'Visibilidade'}
+              {settingsSection === 'account' && 'Conta'}
+            </Text>
+            {settingsSection && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => {
+                if (settingsSection === 'info') {
+                  OWNER_BUSINESS.name = settingsInfo.name;
+                  OWNER_BUSINESS.address = settingsInfo.address;
+                  OWNER_BUSINESS.neighborhood = settingsInfo.neighborhood;
+                  OWNER_BUSINESS.phone = settingsInfo.phone;
+                  updateOwnerBiz({
+                    name: settingsInfo.name,
+                    category: settingsInfo.category,
+                    subcategory: settingsInfo.subcategory,
+                    primaryCategoryId: settingsInfo.primaryCategoryId,
+                    subCategoryIds: settingsInfo.subCategoryIds || [],
+                    address: settingsInfo.address,
+                    neighborhood: settingsInfo.neighborhood,
+                    phone: settingsInfo.phone,
+                    website: settingsInfo.website,
+                    description: settingsInfo.description,
+                    price: settingsInfo.price,
+                    businessType: settingsInfo.businessType,
+                    businessTypeCustom: settingsInfo.businessTypeCustom.trim(),
+                    latitude: settingsInfo.latitude,
+                    longitude: settingsInfo.longitude,
+                  });
+                }
+                if (settingsSection === 'profile') {
+                  const cleanHighlights = ownerHighlights.filter(h => h.replace(/"/g,'').trim());
+                  setOwnerHighlights(cleanHighlights);
+                  updateOwnerBiz({ highlights: cleanHighlights });
+                }
+                if (settingsSection === 'hours') {
+                  const days = Object.entries(settingsHours);
+                  const hoursStr = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)}: ${v.open}-${v.close}`).join(', ');
+                  const hoursList = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)} ${v.open} - ${v.close}`);
+                  OWNER_BUSINESS.hours = hoursStr;
+                  updateOwnerBiz({ hours: hoursStr, hoursList });
+                }
+                if (settingsSection === 'operations') {
+                  OWNER_BUSINESS.isOpen = settingsOperations.isOpen && !settingsOperations.temporarilyClosed;
+                  updateOwnerBiz({
+                    isOpen: settingsOperations.isOpen && !settingsOperations.temporarilyClosed,
+                    payment: settingsOperations.payment,
+                  });
+                }
+                Alert.alert('Guardado!', 'Alterações guardadas com sucesso.');
+                setSettingsSection(null);
+              }}>
+                <Text style={{fontSize:15, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+              </TouchableOpacity>
+            )}
+            {!settingsSection && <View style={{width:32}} />}
           </View>
-          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
-            <View style={{ paddingVertical: 8 }}>
 
-              {/* ── Informações Básicas ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  setActiveBusinessTab('mybusiness');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="briefcase" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Informações Básicas</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.name} · {OWNER_BUSINESS.phone}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <View style={{padding:16}}>
 
-              {/* ── Destaques & Perfil ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  Alert.alert('Destaques & Perfil', 'Gira frases de destaque, subcategorias e tipo de negócio na secção "Meu Negócio".');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF8E1' }]}>
-                  <Icon name="star" size={20} color="#F59E0B" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Destaques & Perfil</Text>
-                  <Text style={configS.rowSub}>{(OWNER_BUSINESS.highlights || []).length} destaque{(OWNER_BUSINESS.highlights || []).length !== 1 ? 's' : ''} · {OWNER_BUSINESS.subcategory || '—'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+              {/* ── MENU PRINCIPAL ── */}
+              {!settingsSection && (
+                <>
+                  {[
+                    { id:'info',       icon:'briefcase', label:'Informações Básicas',      desc:`${settingsInfo.name} · ${settingsInfo.phone}` },
+                    { id:'profile',    icon:'star',      label:'Destaques & Perfil',        desc:`${ownerHighlights.length} destaque${ownerHighlights.length!==1?'s':''} · ${settingsInfo.price||'··'}` },
+                    { id:'hours',      icon:'clock',     label:'Horário de Funcionamento',  desc:Object.values(settingsHours).filter(h=>h.active).length + ' dias ativos' },
+                    { id:'notifs',     icon:'bell',      label:'Notificações',              desc:Object.values(settingsNotifs).filter(Boolean).length + ' tipos ativos' },
+                    { id:'operations', icon:'settings',  label:'Operações',                 desc:settingsOperations.temporarilyClosed ? 'Fechado temporariamente' : 'Aberto' },
+                    { id:'visibility', icon:'globe',     label:'Visibilidade',              desc:settingsVisibility.isPublic ? 'Perfil público' : 'Perfil oculto' },
+                    { id:'account',    icon:'user',      label:'Conta',                     desc:settingsAccount.email },
+                  ].map(item => (
+                    <TouchableOpacity key={item.id} style={bizS.actionCard} activeOpacity={0.8} onPress={() => setSettingsSection(item.id)}>
+                      <View style={bizS.actionIcon}>
+                        <Icon name={item.icon} size={22} color={COLORS.red} strokeWidth={2} />
+                      </View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>{item.label}</Text>
+                        <Text style={bizS.actionDesc} numberOfLines={1}>{item.desc}</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
 
-              {/* ── Horário de Funcionamento ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  Alert.alert('Horário', 'Edite o horário de funcionamento na secção "Meu Negócio".');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F0F7FF' }]}>
-                  <Icon name="clock" size={20} color="#2196F3" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Horário de Funcionamento</Text>
-                  <Text style={configS.rowSub}>{Object.keys(OWNER_BUSINESS.schedule || {}).length || 7} dias ativos</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+              {/* ── INFORMAÇÕES BÁSICAS ── */}
+              {settingsSection === 'info' && (
+                <>
+                  {[
+                    { label:'Nome do Negócio *', key:'name', placeholder:'Ex: Pizzaria Bela Vista' },
+                    { label:'Telefone', key:'phone', placeholder:'Ex: +244 923 456 789', keyboard:'phone-pad' },
+                    { label:'Website', key:'website', placeholder:'https://', keyboard:'url' },
+                  ].map(f => (
+                    <View key={f.key} style={bizS.promoFormGroup}>
+                      <Text style={bizS.promoFormLabel}>{f.label}</Text>
+                      <TextInput
+                        style={bizS.promoFormInput}
+                        value={settingsInfo[f.key]}
+                        onChangeText={t => setSettingsInfo(s => ({...s, [f.key]: t}))}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={COLORS.grayText}
+                        keyboardType={f.keyboard || 'default'}
+                      />
+                    </View>
+                  ))}
 
-              {/* ── Notificações ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Notificações', 'Gerir tipos de alertas: reservas, mensagens, avaliações, promoções e check-ins.')}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F3F0FF' }]}>
-                  <Icon name="bell" size={20} color="#7C3AED" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Notificações</Text>
-                  <Text style={configS.rowSub}>5 tipos ativos</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Categoria Principal */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Categoria Principal *</Text>
+                    <TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerCategoryPicker(true)}
+                    >
+                      {settingsInfo.primaryCategoryId ? (() => {
+                        return <Text style={{fontSize:14, color:COLORS.darkText, fontWeight:'600'}}>{ALL_CAT_LABEL[settingsInfo.primaryCategoryId] || settingsInfo.primaryCategoryId}</Text>;
+                      })() : (
+                        <Text style={{fontSize:14, color:COLORS.grayText}}>Selecionar categoria...</Text>
+                      )}
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  </View>
 
-              {/* ── Operações ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  setShowModulesModal(true);
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F0FFF4' }]}>
-                  <Icon name="settings" size={20} color="#10B981" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Operações</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.isOpen ? 'Aberto' : 'Fechado'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Subcategorias */}
+                  <View style={bizS.promoFormGroup}>
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                      <Text style={bizS.promoFormLabel}>
+                        Subcategorias <Text style={{color:COLORS.grayText, fontWeight:'400'}}>(até 5)</Text>
+                      </Text>
+                      <Text style={{fontSize:11, color: (settingsInfo.subCategoryIds||[]).length >= 5 ? COLORS.red : COLORS.grayText, fontWeight:'600'}}>
+                        {(settingsInfo.subCategoryIds||[]).length}/5
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerSubCategoryPicker(true)}
+                    >
+                      <Text style={{fontSize:14, color: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.darkText : COLORS.grayText}}>
+                        {(settingsInfo.subCategoryIds||[]).length > 0
+                          ? `${(settingsInfo.subCategoryIds||[]).length} subcategoria${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''} seleccionada${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''}`
+                          : 'Adicionar subcategorias...'}
+                      </Text>
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                    {(settingsInfo.subCategoryIds||[]).length > 0 && (
+                      <View style={{flexDirection:'row', flexWrap:'wrap', gap:6, marginTop:10}}>
+                        {(settingsInfo.subCategoryIds||[]).map(id => {
+                          return (
+                            <View key={id} style={{flexDirection:'row', alignItems:'center', gap:4, paddingVertical:5, paddingHorizontal:10, borderRadius:20, backgroundColor:COLORS.red+'15', borderWidth:1.5, borderColor:COLORS.red+'40'}}>
+                              <Icon name={ALL_CAT_ICON[id] || 'tag'} size={11} color={COLORS.red} strokeWidth={2} />
+                              <Text style={{fontSize:12, color:COLORS.red, fontWeight:'700'}}>{ALL_CAT_LABEL[id] || id}</Text>
+                              <TouchableOpacity
+                                hitSlop={{top:6,bottom:6,left:6,right:6}}
+                                onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:(s.subCategoryIds||[]).filter(x=>x!==id)}))}>
+                                <Text style={{fontSize:15, color:COLORS.red, lineHeight:17, marginLeft:2}}>×</Text>
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                        <TouchableOpacity
+                          style={{paddingVertical:5, paddingHorizontal:10, borderRadius:20, borderWidth:1.5, borderColor:COLORS.grayLine}}
+                          onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:[]}))}>
+                          <Text style={{fontSize:11, color:COLORS.grayText}}>Limpar tudo</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
 
-              {/* ── Visibilidade ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Visibilidade', OWNER_BUSINESS.isPublic ? 'O seu negócio está visível para todos os clientes.' : 'O seu negócio está oculto.')}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="globe" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Visibilidade</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.isPublic !== false ? 'Perfil público' : 'Perfil oculto'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Nível de Preço */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Nível de Preço</Text>
+                    <View style={{flexDirection:'row', gap:10, marginTop:4}}>
+                      {[
+                        {val:'·',    label:'Económico'},
+                        {val:'··',   label:'Moderado'},
+                        {val:'···',  label:'Caro'},
+                        {val:'····', label:'Luxo'},
+                      ].map(({val:p, label:pl}) => (
+                        <TouchableOpacity
+                          key={p}
+                          style={[bizS.priceChip, settingsInfo.price === p && bizS.priceChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, price: p}))}
+                        >
+                          <Text style={[bizS.priceChipText, settingsInfo.price === p && bizS.priceChipTextActive]}>{p}</Text>
+                          <Text style={[{fontSize:10, color: settingsInfo.price === p ? COLORS.red : COLORS.grayText, marginTop:2}]}>{pl}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
-              {/* ── Conta ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Conta', `Email: dono@${OWNER_BUSINESS.name?.toLowerCase().replace(/\s/g,'')}.ao`)}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F9FAFB' }]}>
-                  <Icon name="users" size={20} color={COLORS.grayText} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Conta</Text>
-                  <Text style={configS.rowSub}>dono@{OWNER_BUSINESS.name?.toLowerCase().replace(/\s/g,'')}.ao</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Descrição */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Descrição</Text>
+                    <TextInput
+                      style={[bizS.promoFormInput, {minHeight:80}]}
+                      value={settingsInfo.description}
+                      onChangeText={t => setSettingsInfo(s => ({...s, description: t}))}
+                      placeholder="Descreva o seu negócio para os clientes"
+                      placeholderTextColor={COLORS.grayText}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
 
-              <View style={{ height: 8 }} />
+                  {/* Morada */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Morada</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsInfo.address}
+                      onChangeText={t => setSettingsInfo(s => ({...s, address: t}))}
+                      placeholder="Ex: Rua Comandante Valodia, 123, Talatona"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                    <TouchableOpacity
+                      style={bizS.settingsLocationBtn}
+                      activeOpacity={0.8}
+                      onPress={captarLocalizacao}
+                      disabled={locationLoading}
+                    >
+                      <Icon name="location" size={16} color={COLORS.white} strokeWidth={2} />
+                      <Text style={bizS.settingsLocationBtnText}>
+                        {locationLoading ? 'A captar...' : 'Usar localização atual'}
+                      </Text>
+                    </TouchableOpacity>
+                    {settingsInfo.latitude && (
+                      <Text style={{fontSize:11, color:COLORS.grayText, marginTop:4}}>
+                        📍 {settingsInfo.latitude.toFixed(5)}, {settingsInfo.longitude.toFixed(5)}
+                      </Text>
+                    )}
+                  </View>
 
-              {/* Sair */}
-              <TouchableOpacity
-                style={[configS.row, { marginTop: 8, borderTopWidth: 1, borderTopColor: COLORS.grayLine }]}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Sair', 'Sair do modo dono?', [
-                  { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Sair', style: 'destructive', onPress: () => { setShowConfigModal(false); onExitOwnerMode(); } },
-                ])}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="logOut" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={[configS.rowTitle, { color: COLORS.red }]}>Sair do Modo Dono</Text>
-                </View>
-              </TouchableOpacity>
+                  {/* Bairro */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Bairro / Cidade</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsInfo.neighborhood}
+                      onChangeText={t => setSettingsInfo(s => ({...s, neighborhood: t}))}
+                      placeholder="Ex: Talatona, Luanda"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                  </View>
 
-              <View style={{ height: 40 }} />
+                  {/* Tipo de Negócio */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Tipo de Negócio</Text>
+                    <View style={bizS.typeGrid}>
+                      {Object.entries(BUSINESS_TYPE_BADGES).map(([key, val]) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[bizS.typeChip, settingsInfo.businessType === key && bizS.typeChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, businessType: key}))}
+                        >
+                          <Text style={[bizS.typeChipLabel, settingsInfo.businessType === key && bizS.typeChipLabelActive]}>{val.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {settingsInfo.businessType === 'other' && (
+                      <TextInput
+                        style={[bizS.promoFormInput, {marginTop:8}]}
+                        value={settingsInfo.businessTypeCustom}
+                        onChangeText={t => setSettingsInfo(s => ({...s, businessTypeCustom: t}))}
+                        placeholder="Descreva o tipo de negócio"
+                        placeholderTextColor={COLORS.grayText}
+                      />
+                    )}
+                  </View>
+                </>
+              )}
+
+              {/* ── DESTAQUES & PERFIL ── */}
+              {settingsSection === 'profile' && (
+                <>
+                  <Text style={bizS.promoFormLabel}>Frases de Destaque</Text>
+                  <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:12}}>Frases curtas e impactantes que aparecem no teu perfil público (máx. 5)</Text>
+                  {ownerHighlights.map((h, i) => (
+                    <View key={i} style={bizS.highlightRow}>
+                      <TextInput
+                        style={[bizS.promoFormInput, {flex:1}]}
+                        value={h.replace(/"/g,'')}
+                        onChangeText={t => {
+                          const updated = [...ownerHighlights];
+                          updated[i] = `"${t}"`;
+                          setOwnerHighlights(updated);
+                        }}
+                        placeholder={`Destaque ${i+1} — ex: "Vista para o mar"`}
+                        placeholderTextColor={COLORS.grayText}
+                        maxLength={40}
+                      />
+                      <TouchableOpacity
+                        style={bizS.highlightRemoveBtn}
+                        onPress={() => setOwnerHighlights(ownerHighlights.filter((_,idx)=>idx!==i))}
+                      >
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {ownerHighlights.length < 5 && (
+                    <TouchableOpacity
+                      style={bizS.highlightAddBtn}
+                      onPress={() => setOwnerHighlights([...ownerHighlights, '""'])}
+                    >
+                      <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
+                      <Text style={bizS.highlightAddText}>Adicionar destaque</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {/* ── HORÁRIO ── */}
+              {settingsSection === 'hours' && (
+                <>
+                  {Object.entries(settingsHours).map(([day, val]) => (
+                    <View key={day} style={bizS.hoursRow}>
+                      <TouchableOpacity
+                        style={[bizS.hoursToggle, val.active && bizS.hoursToggleActive]}
+                        onPress={() => setSettingsHours(h => ({...h, [day]: {...h[day], active: !h[day].active}}))}
+                      >
+                        <View style={[bizS.hoursToggleKnob, val.active && bizS.hoursToggleKnobActive]} />
+                      </TouchableOpacity>
+                      <Text style={[bizS.hoursDay, !val.active && {color:COLORS.grayText}]}>
+                        {day.charAt(0).toUpperCase()+day.slice(1)}
+                      </Text>
+                      {val.active ? (
+                        <View style={bizS.hoursInputsRow}>
+                          <TextInput
+                            style={bizS.hoursInput}
+                            value={val.open}
+                            onChangeText={t => setSettingsHours(h => ({...h, [day]: {...h[day], open: t}}))}
+                            placeholder="00:00"
+                            placeholderTextColor={COLORS.grayText}
+                          />
+                          <Text style={{color:COLORS.grayText, fontSize:13}}>–</Text>
+                          <TextInput
+                            style={bizS.hoursInput}
+                            value={val.close}
+                            onChangeText={t => setSettingsHours(h => ({...h, [day]: {...h[day], close: t}}))}
+                            placeholder="00:00"
+                            placeholderTextColor={COLORS.grayText}
+                          />
+                        </View>
+                      ) : (
+                        <Text style={bizS.hoursClosed}>Fechado</Text>
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── NOTIFICAÇÕES ── */}
+              {settingsSection === 'notifs' && (
+                <>
+                  {[
+                    { key:'reservations', label:'Reservas',   desc:'Novas reservas e cancelamentos' },
+                    { key:'reviews',      label:'Avaliações', desc:'Novas avaliações de clientes' },
+                    { key:'checkins',     label:'Check-ins',  desc:'Quando clientes fazem check-in' },
+                    { key:'promotions',   label:'Promoções',  desc:'Uso de códigos e promoções' },
+                    { key:'messages',     label:'Mensagens',  desc:'Mensagens diretas de clientes' },
+                    { key:'milestones',   label:'Conquistas', desc:'Metas e marcos do negócio' },
+                  ].map(n => (
+                    <View key={n.key} style={bizS.settingsToggleRow}>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.settingsToggleLabel}>{n.label}</Text>
+                        <Text style={bizS.settingsToggleDesc}>{n.desc}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[bizS.promoToggle, settingsNotifs[n.key] && bizS.promoToggleActive]}
+                        onPress={() => setSettingsNotifs(s => ({...s, [n.key]: !s[n.key]}))}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsNotifs[n.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── OPERAÇÕES ── */}
+              {settingsSection === 'operations' && (
+                <>
+                  <View style={bizS.settingsToggleRow}>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.settingsToggleLabel}>Negócio Aberto</Text>
+                      <Text style={bizS.settingsToggleDesc}>Visível como aberto para clientes</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.isOpen && bizS.promoToggleActive]}
+                      onPress={() => setBusinessOpen(!settingsOperations.isOpen)}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.isOpen && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={bizS.settingsToggleRow}>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.settingsToggleLabel}>Fechado Temporariamente</Text>
+                      <Text style={bizS.settingsToggleDesc}>Suspende temporariamente o perfil</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.temporarilyClosed && bizS.promoToggleActive]}
+                      onPress={() => {
+                        const newVal = !settingsOperations.temporarilyClosed;
+                        setSettingsOperations(s => ({...s, temporarilyClosed: newVal}));
+                        setBusinessOpen(!newVal);
+                      }}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.temporarilyClosed && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {settingsOperations.temporarilyClosed && (
+                    <View style={bizS.promoFormGroup}>
+                      <Text style={bizS.promoFormLabel}>Mensagem aos Clientes</Text>
+                      <TextInput
+                        style={[bizS.promoFormInput, {minHeight:60}]}
+                        value={settingsOperations.closedMessage}
+                        onChangeText={t => setSettingsOperations(s => ({...s, closedMessage: t}))}
+                        multiline
+                        textAlignVertical="top"
+                        placeholderTextColor={COLORS.grayText}
+                      />
+                    </View>
+                  )}
+
+                  <Text style={[bizS.sectionTitle, {marginTop:20, marginBottom:12}]}>Métodos de Pagamento</Text>
+                  {['Multicaixa Express','TPA','Dinheiro','Cartão de Crédito','Transferência Bancária'].map(method => {
+                    const active = settingsOperations.payment.includes(method);
+                    return (
+                      <TouchableOpacity
+                        key={method}
+                        style={[bizS.settingsToggleRow, {paddingVertical:10}]}
+                        onPress={() => setSettingsOperations(s => ({
+                          ...s,
+                          payment: active
+                            ? s.payment.filter(p => p !== method)
+                            : [...s.payment, method]
+                        }))}
+                      >
+                        <Text style={bizS.settingsToggleLabel}>{method}</Text>
+                        <View style={[bizS.settingsCheckbox, active && bizS.settingsCheckboxActive]}>
+                          {active && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* ── VISIBILIDADE ── */}
+              {settingsSection === 'visibility' && (
+                <>
+                  {[
+                    { key:'isPublic',    label:'Perfil Público',   desc:'O seu negócio aparece nas pesquisas' },
+                    { key:'showAddress', label:'Mostrar Morada',   desc:'Morada visível no perfil público' },
+                    { key:'showPhone',   label:'Mostrar Telefone', desc:'Telefone visível no perfil público' },
+                  ].map(v => (
+                    <View key={v.key} style={bizS.settingsToggleRow}>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.settingsToggleLabel}>{v.label}</Text>
+                        <Text style={bizS.settingsToggleDesc}>{v.desc}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[bizS.promoToggle, settingsVisibility[v.key] && bizS.promoToggleActive]}
+                        onPress={() => {
+                          const newVal = !settingsVisibility[v.key];
+                          setSettingsVisibility(s => ({...s, [v.key]: newVal}));
+                          updateOwnerBiz({[v.key]: newVal});
+                        }}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsVisibility[v.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── CONTA ── */}
+              {settingsSection === 'account' && (
+                <>
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Email</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsAccount.email}
+                      onChangeText={t => setSettingsAccount(s => ({...s, email: t}))}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                  </View>
+
+                  <Text style={[bizS.sectionTitle, {marginTop:20, marginBottom:12}]}>Idioma</Text>
+                  {[{id:'pt',label:'Português'},{id:'en',label:'English'}].map(lang => (
+                    <TouchableOpacity
+                      key={lang.id}
+                      style={[bizS.settingsToggleRow, {paddingVertical:12}]}
+                      onPress={() => setSettingsAccount(s => ({...s, language: lang.id}))}
+                    >
+                      <Text style={bizS.settingsToggleLabel}>{lang.label}</Text>
+                      <View style={[bizS.settingsCheckbox, settingsAccount.language === lang.id && bizS.settingsCheckboxActive]}>
+                        {settingsAccount.language === lang.id && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+
+                  <TouchableOpacity
+                    style={[bizS.promoActionBtnGhost, {marginTop:32, alignSelf:'stretch'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Alterar Password', 'Um email de redefinição será enviado para ' + settingsAccount.email, [{text:'Cancelar',style:'cancel'},{text:'Enviar',style:'default'}])}
+                  >
+                    <Text style={bizS.promoActionBtnGhostText}>Alterar Password</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[bizS.promoActionBtnPrimary, {marginTop:12, alignSelf:'stretch', backgroundColor:'#E53935'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Sair do Modo Dono', 'Tem a certeza?', [{text:'Cancelar',style:'cancel'},{text:'Sair',style:'destructive', onPress:()=>{ setShowSettings(false); onExitOwnerMode(); }}])}
+                  >
+                    <Text style={bizS.promoActionBtnPrimaryText}>Sair da Conta</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <View style={{height:40}} />
             </View>
           </ScrollView>
         </View>
       )}
+
+      {/* ── CATEGORY PICKER MODAL ───────────────────────────────────────────── */}
+      <Modal visible={showOwnerCategoryPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowOwnerCategoryPicker(false)}>
+        <SafeAreaView style={{flex:1, backgroundColor:COLORS.white}}>
+          <View style={[profS.overlayHeader, {paddingTop: Platform.OS === 'android' ? insets.top + 12 : 16}]}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowOwnerCategoryPicker(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.overlayTitle}>Categoria Principal</Text>
+            <View style={{width:32}} />
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {ALL_CATEGORIES.map((section, si) => (
+              <View key={si} style={{marginBottom:8}}>
+                <Text style={{fontSize:11, fontWeight:'700', color:COLORS.grayText, letterSpacing:0.8, paddingHorizontal:16, paddingVertical:8, backgroundColor:COLORS.grayBg}}>
+                  {section.section.toUpperCase()}
+                </Text>
+                {section.items.map(item => {
+                  const isSelected = settingsInfo.primaryCategoryId === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={{flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingVertical:13, borderBottomWidth:1, borderBottomColor:COLORS.grayLine, backgroundColor: isSelected ? COLORS.red+'08' : COLORS.white}}
+                      onPress={() => {
+                        setSettingsInfo(s => ({...s, primaryCategoryId: item.id}));
+                        setShowOwnerCategoryPicker(false);
+                      }}
+                    >
+                      <View style={{width:36, height:36, borderRadius:10, backgroundColor: isSelected ? COLORS.red+'20' : COLORS.grayBg, alignItems:'center', justifyContent:'center', marginRight:12}}>
+                        <Icon name={item.icon} size={18} color={isSelected ? COLORS.red : COLORS.darkText} strokeWidth={1.5} />
+                      </View>
+                      <Text style={{flex:1, fontSize:14, color: isSelected ? COLORS.red : COLORS.darkText, fontWeight: isSelected ? '700' : '400'}}>{item.label}</Text>
+                      {isSelected && <Icon name="check" size={18} color={COLORS.red} strokeWidth={2.5} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{height:30}} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── SUBCATEGORY PICKER MODAL (multi-select até 5) ───────────────────── */}
+      <Modal visible={showOwnerSubCategoryPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowOwnerSubCategoryPicker(false)}>
+        <SafeAreaView style={{flex:1, backgroundColor:COLORS.white}}>
+          <View style={[profS.overlayHeader, {paddingTop: Platform.OS === 'android' ? insets.top + 12 : 16}]}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowOwnerSubCategoryPicker(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.overlayTitle}>Subcategorias</Text>
+            <TouchableOpacity onPress={() => setShowOwnerSubCategoryPicker(false)} style={{paddingHorizontal:4}}>
+              <View style={{backgroundColor: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.red : COLORS.grayBg, borderRadius:16, paddingHorizontal:12, paddingVertical:5}}>
+                <Text style={{fontSize:12, fontWeight:'700', color: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.white : COLORS.grayText}}>
+                  {(settingsInfo.subCategoryIds||[]).length}/5 OK
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          {(settingsInfo.subCategoryIds||[]).length >= 5 && (
+            <View style={{marginHorizontal:16, marginBottom:4, padding:10, backgroundColor:'#FEF9C3', borderRadius:10, flexDirection:'row', alignItems:'center', gap:8}}>
+              <Text style={{fontSize:13}}>⚠️</Text>
+              <Text style={{fontSize:12, color:'#92400E', fontWeight:'600'}}>Máximo atingido. Remove uma para adicionar outra.</Text>
+            </View>
+          )}
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {ALL_CATEGORIES.map((section, si) => (
+              <View key={si} style={{marginBottom:4}}>
+                <Text style={{fontSize:11, fontWeight:'700', color:COLORS.grayText, letterSpacing:0.8, paddingHorizontal:16, paddingVertical:8, backgroundColor:COLORS.grayBg}}>
+                  {section.section.toUpperCase()}
+                </Text>
+                {section.items.map(item => {
+                  const isSelected = (settingsInfo.subCategoryIds||[]).includes(item.id);
+                  const isPrimary  = settingsInfo.primaryCategoryId === item.id;
+                  const isDisabled = !isSelected && (settingsInfo.subCategoryIds||[]).length >= 5;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      disabled={isDisabled}
+                      style={{flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingVertical:13, borderBottomWidth:1, borderBottomColor:COLORS.grayLine,
+                        backgroundColor: isSelected ? COLORS.red+'08' : COLORS.white,
+                        opacity: isDisabled ? 0.4 : 1}}
+                      onPress={() => {
+                        const cur = settingsInfo.subCategoryIds || [];
+                        if (isSelected) {
+                          setSettingsInfo(s => ({...s, subCategoryIds: cur.filter(x => x !== item.id)}));
+                        } else {
+                          setSettingsInfo(s => ({...s, subCategoryIds: [...cur, item.id]}));
+                        }
+                      }}
+                    >
+                      <View style={{width:36, height:36, borderRadius:10, backgroundColor: isSelected ? COLORS.red+'20' : COLORS.grayBg, alignItems:'center', justifyContent:'center', marginRight:12}}>
+                        <Icon name={item.icon} size={18} color={isSelected ? COLORS.red : COLORS.darkText} strokeWidth={1.5} />
+                      </View>
+                      <View style={{flex:1}}>
+                        <Text style={{fontSize:14, color: isSelected ? COLORS.red : COLORS.darkText, fontWeight: isSelected ? '700' : '400'}}>{item.label}</Text>
+                        {isPrimary && (
+                          <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:1}}>Categoria principal</Text>
+                        )}
+                      </View>
+                      <View style={{width:22, height:22, borderRadius:6, borderWidth:2,
+                        borderColor: isSelected ? COLORS.red : COLORS.grayLine,
+                        backgroundColor: isSelected ? COLORS.red : 'transparent',
+                        alignItems:'center', justifyContent:'center'}}>
+                        {isSelected && <Text style={{color:COLORS.white, fontSize:13, lineHeight:15, fontWeight:'800'}}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{height:30}} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
 
     </View>
