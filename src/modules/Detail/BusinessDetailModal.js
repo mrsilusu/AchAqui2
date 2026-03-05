@@ -54,9 +54,10 @@ const BUSINESS_TYPE_BADGES = {
 const OPERATIONAL_MODULES = [
   { id: 'gastronomy',    layer: 'dining',       label: 'Menu & Reservar Mesa',        emoji: '🍽️', color: '#EA580C', bgColor: '#FFF7ED' },
   { id: 'accommodation', layer: 'hospitality',  label: 'Disponibilidade & Reservas',  emoji: '🛏️', color: '#0EA5E9', bgColor: '#F0F9FF' },
+  { id: 'beauty',        layer: 'beauty',       label: 'Marcações & Serviços',        emoji: '✂️', color: '#EC4899', bgColor: '#FDF2F8' },
   { id: 'professional',  layer: 'professional', label: 'Consultar & Agendar',         emoji: '📅', color: '#7C3AED', bgColor: '#F5F3FF' },
   { id: 'health',        layer: 'professional', label: 'Marcar Consulta',             emoji: '🏥', color: '#059669', bgColor: '#F0FDF4' },
-  { id: 'education',     layer: 'professional', label: 'Agendar Aula',               emoji: '📚', color: '#0284C7', bgColor: '#F0F9FF' },
+  { id: 'education',     layer: 'professional', label: 'Agendar Aula',                emoji: '📚', color: '#0284C7', bgColor: '#F0F9FF' },
 ];
 
 const REVIEW_SORT_OPTIONS = [

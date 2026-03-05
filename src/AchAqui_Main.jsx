@@ -166,8 +166,10 @@ const MOCK_BUSINESSES_INITIAL = [
 function normalizeBusiness(rawBusiness) {
   if (!rawBusiness?.id) return null;
 
+  // Procura o negócio nos mocks locais pelo id (inclui OWNER_BUSINESS e todos os outros)
   const isOwnerBusiness = rawBusiness.id === OWNER_BUSINESS.id;
-  const base = isOwnerBusiness ? OWNER_BUSINESS : {};
+  const localMock = MOCK_BUSINESSES_INITIAL.find(b => b.id === rawBusiness.id);
+  const base = isOwnerBusiness ? OWNER_BUSINESS : (localMock || {});
 
   // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
   const meta = rawBusiness.metadata || {};
