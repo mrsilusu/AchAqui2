@@ -46,7 +46,7 @@ import { sortS } from './styles/Main.styles';
 
 const MOCK_BUSINESSES_INITIAL = [
   {
-    id:'1', name:'Pizzaria Bela Vista', category:'Restaurante Italiano', subcategory:'Pizza, Massa, Italiana',
+    id:'c74f2850-0dcd-4f2c-a61a-aa9fd2c7459e', name:'Pizzaria Bela Vista', category:'Restaurante Italiano', subcategory:'Pizza, Massa, Italiana',
     businessType:'food', primaryCategoryId:'restaurants', subCategoryIds:['food','nightlife','hotelsTravel'],
     icon:'🍕', rating:4.8, reviews:120, priceLevel:2, isPremium:true, verifiedBadge:true, isVerified:true,
     modules:{gastronomy:true,accommodation:true,retail:true,customorder:true,delivery:true},
@@ -169,40 +169,43 @@ function normalizeBusiness(rawBusiness) {
   const isOwnerBusiness = rawBusiness.id === OWNER_BUSINESS.id;
   const base = isOwnerBusiness ? OWNER_BUSINESS : {};
 
+  // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
+  const meta = rawBusiness.metadata || {};
+
   return {
     ...base,
     id: rawBusiness.id,
     name: rawBusiness.name || base.name || 'Negócio',
-    category: rawBusiness.category || base.category || 'Serviços',
-    subcategory: rawBusiness.category || base.subcategory || 'Serviços',
-    businessType: base.businessType || 'professional',
-    primaryCategoryId: base.primaryCategoryId || 'professional',
-    subCategoryIds: base.subCategoryIds || ['professional'],
-    icon: base.icon || '🏢',
-    rating: base.rating || 4.8,
-    reviews: base.reviews || 0,
-    priceLevel: base.priceLevel || 2,
-    isPremium: base.isPremium || false,
+    category: rawBusiness.category || base.category || meta.category || 'Serviços',
+    subcategory: base.subcategory || meta.subcategory || rawBusiness.category || 'Serviços',
+    businessType: base.businessType || meta.businessType || 'professional',
+    primaryCategoryId: base.primaryCategoryId || meta.primaryCategoryId || 'professional',
+    subCategoryIds: base.subCategoryIds || meta.subCategoryIds || ['professional'],
+    icon: base.icon || meta.icon || '🏢',
+    rating: base.rating || meta.rating || 4.8,
+    reviews: base.reviews || meta.reviews || 0,
+    priceLevel: base.priceLevel || meta.priceLevel || 2,
+    isPremium: base.isPremium || meta.isPremium || false,
     verifiedBadge: true,
     isVerified: true,
-    modules: base.modules || { professional: true },
-    address: base.address || rawBusiness.description || 'Endereço não informado',
-    neighborhood: base.neighborhood || '',
-    phone: base.phone || '',
-    website: base.website || '',
-    promo: base.promo || null,
-    distance: base.distance || 0,
-    distanceText: base.distanceText || '—',
-    isOpen: base.isOpen ?? true,
-    statusText: base.statusText || 'Aberto',
+    modules: base.modules || meta.modules || { professional: true },
+    address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
+    neighborhood: base.neighborhood || meta.neighborhood || '',
+    phone: base.phone || meta.phone || '',
+    website: base.website || meta.website || '',
+    promo: base.promo || meta.promo || null,
+    distance: base.distance || meta.distance || 0,
+    distanceText: base.distanceText || meta.distanceText || '—',
+    isOpen: base.isOpen ?? meta.isOpen ?? true,
+    statusText: base.statusText || meta.statusText || 'Aberto',
     isPublic: true,
     latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
     longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
-    photos: base.photos || [],
-    amenities: base.amenities || [],
-    deals: base.deals || [],
-    popularDishes: base.popularDishes || [],
-    roomTypes: base.roomTypes || [],
+    photos: base.photos?.length ? base.photos : (meta.photos || []),
+    amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
+    deals: base.deals?.length ? base.deals : (meta.deals || []),
+    popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
+    roomTypes: base.roomTypes?.length ? base.roomTypes : (meta.roomTypes || []),
     owner: rawBusiness.owner || null,
   };
 }
@@ -424,12 +427,17 @@ function AppContent() {
     const loadBusinesses = async () => {
       try {
         const response = await backendApi.getBusinesses();
-        const normalized = (Array.isArray(response) ? response : [])
+        const fromApi = (Array.isArray(response) ? response : [])
           .map(normalizeBusiness)
           .filter(Boolean);
 
+        // Negócios da API têm prioridade; mocks preenchem os que não existem na API
+        const apiIds = new Set(fromApi.map(b => b.id));
+        const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
+        const merged = [...fromApi, ...mocksNotInApi];
+
         if (!cancelled) {
-          setBusinesses(normalized);
+          setBusinesses(merged);
         }
       } catch (error) {
         console.error('[Businesses][API_FAIL]', {
@@ -439,8 +447,9 @@ function AppContent() {
           message: error?.message || 'Falha ao carregar negócios da API.',
         });
 
+        // Em caso de falha total, mostrar os mocks completos
         if (!cancelled) {
-          setBusinesses([OWNER_BUSINESS]);
+          setBusinesses(MOCK_BUSINESSES_INITIAL);
         }
       }
     };
