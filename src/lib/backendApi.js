@@ -119,6 +119,7 @@ export async function apiRequest(path, { method = 'GET', body, accessToken } = {
 }
 
 export const backendApi = {
+  getBusinesses: () => apiRequest('/businesses'),
   signIn: (payload) => apiRequest('/auth/signin', { method: 'POST', body: payload }),
   signUp: (payload) => apiRequest('/auth/signup', { method: 'POST', body: payload }),
   refresh: (payload) => apiRequest('/auth/refresh', { method: 'POST', body: payload }),

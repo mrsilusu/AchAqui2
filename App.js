@@ -27,6 +27,10 @@ function AuthGate() {
 	const [forcedOnce, setForcedOnce] = useState(false);
 
 	useEffect(() => {
+		console.log('[API][BOOT_URL]', BACKEND_URL);
+	}, []);
+
+	useEffect(() => {
 		if (!FORCE_LOGOUT_ON_START || forcedOnce || authSession.loading) return;
 
 		authSession

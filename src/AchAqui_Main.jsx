@@ -163,6 +163,50 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
+function normalizeBusiness(rawBusiness) {
+  if (!rawBusiness?.id) return null;
+
+  const isOwnerBusiness = rawBusiness.id === OWNER_BUSINESS.id;
+  const base = isOwnerBusiness ? OWNER_BUSINESS : {};
+
+  return {
+    ...base,
+    id: rawBusiness.id,
+    name: rawBusiness.name || base.name || 'Negócio',
+    category: rawBusiness.category || base.category || 'Serviços',
+    subcategory: rawBusiness.category || base.subcategory || 'Serviços',
+    businessType: base.businessType || 'professional',
+    primaryCategoryId: base.primaryCategoryId || 'professional',
+    subCategoryIds: base.subCategoryIds || ['professional'],
+    icon: base.icon || '🏢',
+    rating: base.rating || 4.8,
+    reviews: base.reviews || 0,
+    priceLevel: base.priceLevel || 2,
+    isPremium: base.isPremium || false,
+    verifiedBadge: true,
+    isVerified: true,
+    modules: base.modules || { professional: true },
+    address: base.address || rawBusiness.description || 'Endereço não informado',
+    neighborhood: base.neighborhood || '',
+    phone: base.phone || '',
+    website: base.website || '',
+    promo: base.promo || null,
+    distance: base.distance || 0,
+    distanceText: base.distanceText || '—',
+    isOpen: base.isOpen ?? true,
+    statusText: base.statusText || 'Aberto',
+    isPublic: true,
+    latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
+    longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
+    photos: base.photos || [],
+    amenities: base.amenities || [],
+    deals: base.deals || [],
+    popularDishes: base.popularDishes || [],
+    roomTypes: base.roomTypes || [],
+    owner: rawBusiness.owner || null,
+  };
+}
+
 export default function AchAquiMain() {
   return (
     <SafeAreaProvider>
@@ -314,10 +358,7 @@ function AppContent() {
   }), [ownerDashboardData]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
-  const [businesses, setBusinesses] = useState([
-    OWNER_BUSINESS,
-    ...((MOCK_BUSINESSES_INITIAL || []).filter((business) => business.name !== OWNER_BUSINESS.name)),
-  ]);
+  const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
@@ -375,6 +416,40 @@ function AppContent() {
 
   useEffect(() => {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBusinesses = async () => {
+      try {
+        const response = await backendApi.getBusinesses();
+        const normalized = (Array.isArray(response) ? response : [])
+          .map(normalizeBusiness)
+          .filter(Boolean);
+
+        if (!cancelled) {
+          setBusinesses(normalized);
+        }
+      } catch (error) {
+        console.error('[Businesses][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar negócios da API.',
+        });
+
+        if (!cancelled) {
+          setBusinesses([OWNER_BUSINESS]);
+        }
+      }
+    };
+
+    loadBusinesses();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleTabPress = useCallback((tabId) => {

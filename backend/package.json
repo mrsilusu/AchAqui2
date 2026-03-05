@@ -10,6 +10,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
+    "bootstrap:real-business": "node scripts/bootstrap-real-business.mjs",
     "test:bootstrap-flow": "node scripts/bootstrap-test-users-and-flow.mjs",
     "start": "nest start",
     "start:dev": "nest start --watch",
