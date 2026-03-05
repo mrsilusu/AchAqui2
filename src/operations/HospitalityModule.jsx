@@ -766,7 +766,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -791,7 +791,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingsManager, setShowBookingsManager] = useState(false);
 
   // Reservas activas (SF_H2: mock; SF_H3: virá do estado global)
-  const [roomBookings, setRoomBookings] = useState([
+  // Em ownerMode com liveBookings do backend → usa dados reais
+  // Em clientMode ou sem liveBookings → usa mocks para demonstração
+  const MOCK_BOOKINGS = [
     { id: 'rb_1', businessId: business?.id, roomTypeId: '1',
       guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
       checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
@@ -800,7 +802,41 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
       checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
       adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
-  ]);
+  ];
+
+  const [localBookings, setLocalBookings] = useState(MOCK_BOOKINGS);
+
+  // Converte liveBookings (formato API) para o formato interno do HospitalityModule
+  const apiBookings = useMemo(() => {
+    if (!Array.isArray(liveBookings) || liveBookings.length === 0) return null;
+    return liveBookings
+      .filter(b => b.businessId === business?.id || !b.businessId)
+      .map(b => {
+        const start = b.startDate ? new Date(b.startDate) : null;
+        const end   = b.endDate   ? new Date(b.endDate)   : null;
+        const nights = (start && end) ? Math.round((end - start) / 86400000) : 1;
+        const toFmt  = (d) => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` : '';
+        return {
+          id:          b.id,
+          businessId:  b.businessId || business?.id,
+          roomTypeId:  b.roomTypeId || '1',
+          guestName:   b.user?.name  || b.guestName  || 'Cliente',
+          guestPhone:  b.user?.email || b.guestPhone || '',
+          checkIn:     toFmt(start),
+          checkOut:    toFmt(end),
+          nights,
+          adults:      b.adults   || 1,
+          children:    b.children || 0,
+          rooms:       b.rooms    || 1,
+          totalPrice:  b.totalPrice || 0,
+          status:      (b.status || 'PENDING').toLowerCase(),
+        };
+      });
+  }, [liveBookings, business?.id]);
+
+  // roomBookings: em ownerMode usa API se disponível, senão mocks; em clientMode usa local
+  const roomBookings = (ownerMode && apiBookings) ? apiBookings : localBookings;
+  const setRoomBookings = ownerMode ? () => {} : setLocalBookings;
 
   // iCal state — dados privados do dono
   const [icalLink, setIcalLink]   = useState(ownerBusinessPrivate?.icalLink || '');

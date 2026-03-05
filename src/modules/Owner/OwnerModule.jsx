@@ -716,27 +716,38 @@ export function OwnerModule({
                 </TouchableOpacity>
               )}
 
-              {OWNER_BUSINESS.modules?.accommodation && (
+              {(ownerBiz.modules?.accommodation) && (
                 <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomsEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
+                    <Text style={bizS.actionDesc}>{(ownerBiz.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
                   </View>
                   <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </TouchableOpacity>
               )}
 
-              {OWNER_BUSINESS.modules?.accommodation && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
-                  <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
-                    <Text style={bizS.actionDesc}>{0} pendente{0!==1?'s':''} · {0} confirmada{0!==1?'s':''}</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
+              {(ownerBiz.modules?.accommodation) && (() => {
+                const pending   = liveBookings.filter(b => b.status === 'PENDING').length;
+                const confirmed = liveBookings.filter(b => b.status === 'CONFIRMED').length;
+                return (
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
+                    <View style={bizS.actionIcon}>
+                      <Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} />
+                      {pending > 0 && (
+                        <View style={{position:'absolute',top:-4,right:-4,minWidth:16,height:16,borderRadius:8,backgroundColor:COLORS.red,alignItems:'center',justifyContent:'center',paddingHorizontal:3,borderWidth:1.5,borderColor:COLORS.white}}>
+                          <Text style={{color:COLORS.white,fontSize:9,fontWeight:'800'}}>{pending > 9 ? '9+' : pending}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
+                      <Text style={bizS.actionDesc}>{pending} pendente{pending!==1?'s':''} · {confirmed} confirmada{confirmed!==1?'s':''}</Text>
+                    </View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                );
+              })()}
 
               {/* iCal Sync card — v2.9.21 fix: acessível directamente no dashboard */}
               {(OWNER_BUSINESS.modules?.accommodation || OWNER_BUSINESS.modules?.tourism) && (
@@ -1149,6 +1160,7 @@ export function OwnerModule({
               business={ownerBiz}
               ownerMode={true}
               tenantId={ownerBiz.id}
+              liveBookings={liveBookings}
               onBookingDone={()=>closeAppLayer()}
             />
           </ScrollView>
@@ -3795,6 +3807,20 @@ export function OwnerModule({
             >
               <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
                 <Icon name={tab.icon} size={20} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
+                {tab.id === 'notifications' && ownerNotifications.filter(n => !n.read).length > 0 && (
+                  <View style={{
+                    position:'absolute', top:-2, right:-2,
+                    minWidth:16, height:16, borderRadius:8,
+                    backgroundColor: COLORS.red,
+                    alignItems:'center', justifyContent:'center',
+                    paddingHorizontal:3,
+                    borderWidth:1.5, borderColor:COLORS.white,
+                  }}>
+                    <Text style={{color:COLORS.white, fontSize:9, fontWeight:'800'}}>
+                      {ownerNotifications.filter(n => !n.read).length > 9 ? '9+' : ownerNotifications.filter(n => !n.read).length}
+                    </Text>
+                  </View>
+                )}
               </View>
               <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
             </TouchableOpacity>
