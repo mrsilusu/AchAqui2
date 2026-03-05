@@ -8,6 +8,7 @@ import { EventsGateway } from '../events/events.gateway';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { RejectBookingDto } from './dto/reject-booking.dto';
 
 @Injectable()
 export class BookingService {
@@ -173,5 +174,140 @@ export class BookingService {
     });
 
     return booking;
+  }
+
+  async confirmByOwner(bookingId: string, ownerId: string, businessId?: string) {
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        business: {
+          ownerId,
+        },
+      },
+      include: {
+        business: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Reserva não encontrada para este proprietário.');
+    }
+
+    if (businessId && booking.business.id !== businessId) {
+      throw new BadRequestException('Reserva não pertence ao businessId informado.');
+    }
+
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Não é possível confirmar uma reserva cancelada.');
+    }
+
+    const updatedBooking =
+      booking.status === BookingStatus.CONFIRMED
+        ? booking
+        : await this.prisma.booking.update({
+            where: { id: booking.id },
+            data: { status: BookingStatus.CONFIRMED },
+          });
+
+    const clientNotification = await this.prisma.notification.create({
+      data: {
+        userId: booking.user.id,
+        title: 'Reserva Confirmada',
+        message: `A tua reserva em ${booking.business.name} foi confirmada.`,
+        data: {
+          bookingId: booking.id,
+          businessId: booking.business.id,
+          status: BookingStatus.CONFIRMED,
+        },
+      },
+    });
+
+    this.eventsGateway.emitToUser(booking.user.id, 'booking.confirmed', {
+      notificationId: clientNotification.id,
+      bookingId: booking.id,
+      businessId: booking.business.id,
+      status: BookingStatus.CONFIRMED,
+    });
+
+    return updatedBooking;
+  }
+
+  async rejectByOwner(bookingId: string, ownerId: string, dto: RejectBookingDto) {
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        business: {
+          ownerId,
+        },
+      },
+      include: {
+        business: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Reserva não encontrada para este proprietário.');
+    }
+
+    if (dto.businessId && booking.business.id !== dto.businessId) {
+      throw new BadRequestException('Reserva não pertence ao businessId informado.');
+    }
+
+    const reason = dto.reason?.trim();
+    const updatedBooking =
+      booking.status === BookingStatus.CANCELLED
+        ? booking
+        : await this.prisma.booking.update({
+            where: { id: booking.id },
+            data: { status: BookingStatus.CANCELLED },
+          });
+
+    const clientNotification = await this.prisma.notification.create({
+      data: {
+        userId: booking.user.id,
+        title: 'Reserva Recusada',
+        message: reason
+          ? `A tua reserva em ${booking.business.name} foi recusada. Motivo: ${reason}`
+          : `A tua reserva em ${booking.business.name} foi recusada.`,
+        data: {
+          bookingId: booking.id,
+          businessId: booking.business.id,
+          status: BookingStatus.CANCELLED,
+          reason: reason || null,
+        },
+      },
+    });
+
+    this.eventsGateway.emitToUser(booking.user.id, 'booking.rejected', {
+      notificationId: clientNotification.id,
+      bookingId: booking.id,
+      businessId: booking.business.id,
+      status: BookingStatus.CANCELLED,
+      reason: reason || null,
+    });
+
+    return updatedBooking;
   }
 }

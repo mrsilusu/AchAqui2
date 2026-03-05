@@ -362,6 +362,18 @@ function AppContent() {
     favoritesChange: 0,
   }), [ownerDashboardData]);
 
+  const refreshOwnerData = useCallback(async () => {
+    if (!authSession.accessToken || !authSession.isOwner) return;
+
+    await liveSync.reloadAll();
+    try {
+      const response = await backendApi.getOwnerDashboard(authSession.accessToken);
+      setOwnerDashboardData(response || null);
+    } catch {
+      // Keep current dashboard snapshot if owner metrics refresh fails.
+    }
+  }, [authSession.accessToken, authSession.isOwner, liveSync]);
+
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
@@ -533,6 +545,9 @@ function AppContent() {
               onMarkNotificationRead={liveSync.markNotificationRead}
               onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
               authRole={authSession.user?.role || 'CLIENT'}
+              authUserId={authSession.user?.id || null}
+              accessToken={authSession.accessToken}
+              onRefreshOwnerData={refreshOwnerData}
               ownerMetrics={ownerMetrics}
             />
           )}

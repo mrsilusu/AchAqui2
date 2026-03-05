@@ -124,10 +124,71 @@ export const backendApi = {
   signUp: (payload) => apiRequest('/auth/signup', { method: 'POST', body: payload }),
   refresh: (payload) => apiRequest('/auth/refresh', { method: 'POST', body: payload }),
   getMe: (accessToken) => apiRequest('/auth/me', { accessToken }),
+  updateOwnerSettings: (payload, accessToken) =>
+    apiRequest('/auth/settings', { method: 'PATCH', body: payload, accessToken }),
   getOwnerDashboard: (accessToken) => apiRequest('/analytics/owner/dashboard', { accessToken }),
   getBookings: (accessToken) => apiRequest('/bookings', { accessToken }),
   createBooking: (payload, accessToken) =>
     apiRequest('/bookings', { method: 'POST', body: payload, accessToken }),
+  confirmBooking: (bookingId, payload, accessToken) =>
+    apiRequest(`/bookings/${bookingId}/confirm`, { method: 'PATCH', body: payload, accessToken }),
+  rejectBooking: (bookingId, payload, accessToken) =>
+    apiRequest(`/bookings/${bookingId}/reject`, { method: 'PATCH', body: payload, accessToken }),
+  updateBusinessStatus: (businessId, payload, accessToken) =>
+    apiRequest(`/businesses/${businessId}/status`, { method: 'PATCH', body: payload, accessToken }),
+  updateBusinessInfo: (businessId, payload, accessToken) =>
+    apiRequest(`/businesses/${businessId}/info`, { method: 'PATCH', body: payload, accessToken }),
+  
+  // ─── MENU ITEMS (Secção 2 — Menu Editor)
+  getMenuItemsByBusiness: (businessId, accessToken) =>
+    apiRequest(`/items/menu/by-business?businessId=${businessId}`, { accessToken }),
+  createMenuItem: (payload, accessToken) =>
+    apiRequest('/items/menu', { method: 'POST', body: payload, accessToken }),
+  updateMenuItem: (itemId, payload, accessToken) =>
+    apiRequest(`/items/menu/${itemId}`, { method: 'PATCH', body: payload, accessToken }),
+  deleteMenuItem: (itemId, accessToken) =>
+    apiRequest(`/items/menu/${itemId}`, { method: 'DELETE', accessToken }),
+
+  // ─── INVENTORY ITEMS (Secção 5 — Inventory Editor)
+  getInventoryItemsByBusiness: (businessId, accessToken) =>
+    apiRequest(`/items/inventory/by-business?businessId=${businessId}`, { accessToken }),
+  createInventoryItem: (payload, accessToken) =>
+    apiRequest('/items/inventory', { method: 'POST', body: payload, accessToken }),
+  updateInventoryItem: (itemId, payload, accessToken) =>
+    apiRequest(`/items/inventory/${itemId}`, { method: 'PATCH', body: payload, accessToken }),
+  deleteInventoryItem: (itemId, accessToken) =>
+    apiRequest(`/items/inventory/${itemId}`, { method: 'DELETE', accessToken }),
+
+  // ─── SERVICES (Secção 6 — Services Editor)
+  getServicesByBusiness: (businessId, accessToken) =>
+    apiRequest(`/items/services/by-business?businessId=${businessId}`, { accessToken }),
+  createService: (payload, accessToken) =>
+    apiRequest('/items/services', { method: 'POST', body: payload, accessToken }),
+  updateService: (serviceId, payload, accessToken) =>
+    apiRequest(`/items/services/${serviceId}`, { method: 'PATCH', body: payload, accessToken }),
+  deleteService: (serviceId, accessToken) =>
+    apiRequest(`/items/services/${serviceId}`, { method: 'DELETE', accessToken }),
+
+  // ─── ROOMS (Secção 7 — Rooms Editor)
+  getRoomsByBusiness: (businessId, accessToken) =>
+    apiRequest(`/items/rooms/by-business?businessId=${businessId}`, { accessToken }),
+  createRoom: (payload, accessToken) =>
+    apiRequest('/items/rooms', { method: 'POST', body: payload, accessToken }),
+  updateRoom: (roomId, payload, accessToken) =>
+    apiRequest(`/items/rooms/${roomId}`, { method: 'PATCH', body: payload, accessToken }),
+  deleteRoom: (roomId, accessToken) =>
+    apiRequest(`/items/rooms/${roomId}`, { method: 'DELETE', accessToken }),
+  
+  // ─── PROMOTIONS (Secção 11 — Promo Manager)
+  getPromosByBusiness: (businessId, accessToken) =>
+    apiRequest(`/businesses/${businessId}/promos`, { accessToken }),
+  createPromo: (businessId, payload, accessToken) =>
+    apiRequest(`/businesses/${businessId}/promos`, { method: 'POST', body: payload, accessToken }),
+  updatePromo: (promoId, payload, accessToken) =>
+    apiRequest(`/businesses/promos/${promoId}`, { method: 'PATCH', body: payload, accessToken }),
+  deletePromo: (promoId, accessToken) =>
+    apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
+  
   getNotifications: (accessToken) => apiRequest('/notifications', { accessToken }),
   markNotificationRead: (id, accessToken) =>
     apiRequest(`/notifications/${id}/read`, { method: 'PATCH', accessToken }),

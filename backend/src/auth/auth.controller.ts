@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
 import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { UpdateOwnerSettingsDto } from './dto/update-owner-settings.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -36,5 +37,13 @@ export class AuthController {
   @Get('me')
   me(@Req() req: { user: { userId: string } }) {
     return this.authService.me(req.user.userId);
+  }
+
+  @Patch('settings')
+  updateSettings(
+    @Req() req: { user: { userId: string } },
+    @Body() body: UpdateOwnerSettingsDto,
+  ) {
+    return this.authService.updateSettings(req.user.userId, body);
   }
 }

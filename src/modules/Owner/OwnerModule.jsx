@@ -36,6 +36,7 @@ import {
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
+import { backendApi } from '../../lib/backendApi';
 
 import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
 
@@ -204,20 +205,23 @@ const calS = StyleSheet.create({
 // OwnerModule — componente principal
 // ─────────────────────────────────────────────────────────────────────────────
 export function OwnerModule({
-  businesses,
+  businesses = [],
   activeBusinessTab,
   setActiveBusinessTab,
   insets,
-  onUpdateBusiness,
-  onSyncPromoDeals,
-  onExitOwnerMode,
-  onViewBusiness,
+  onUpdateBusiness = () => {},
+  onSyncPromoDeals = () => {},
+  onExitOwnerMode = () => {},
+  onViewBusiness = () => {},
   liveBookings = [],
   liveNotifications = [],
   onMarkNotificationRead = () => {},
   onMarkAllNotificationsRead = () => {},
   authRole = 'CLIENT',
   ownerMetrics: ownerMetricsProp = null,
+  accessToken = null,
+  authUserId = null,
+  onRefreshOwnerData = () => {},
 }) {
   const ownerMetrics = ownerMetricsProp || {
     views: 0,
@@ -320,19 +324,23 @@ export function OwnerModule({
   const [showMenuItemForm, setShowMenuItemForm] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState(null);
   const [menuItemForm, setMenuItemForm] = useState({ name: '', description: '', price: '', category: '', available: true });
+  const [isMenuItemLoading, setIsMenuItemLoading] = useState(false);
   const [inventoryItems, setInventoryItems] = useState(OWNER_BUSINESS.inventoryItems || []);
   const [showInventoryEditor, setShowInventoryEditor] = useState(false);
   const [showInventoryForm, setShowInventoryForm] = useState(false);
   const [editingInventoryItem, setEditingInventoryItem] = useState(null);
   const [inventoryForm, setInventoryForm] = useState({ name: '', price: '', stock: '', category: '', available: true });
+  const [isInventoryItemLoading, setIsInventoryItemLoading] = useState(false);
   const [servicesList, setServicesList] = useState(OWNER_BUSINESS.servicesList || []);
   const [showServicesEditor, setShowServicesEditor] = useState(false);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [editingService, setEditingService] = useState(null);
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', basePrice: '', duration: '', available: true });
+  const [isServiceLoading, setIsServiceLoading] = useState(false);
   const [roomTypes, setRoomTypes] = useState(OWNER_BUSINESS.roomTypes || []);
   const [showRoomsEditor, setShowRoomsEditor] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
+  const [isRoomLoading, setIsRoomLoading] = useState(false);
   const [checkInTime, setCheckInTime] = useState(OWNER_BUSINESS.checkInTime || '14:00');
   const [checkOutTime, setCheckOutTime] = useState(OWNER_BUSINESS.checkOutTime || '12:00');
   const [minNights, setMinNights] = useState(OWNER_BUSINESS.minNights || '1');
@@ -370,6 +378,10 @@ export function OwnerModule({
   const [showReservationsModal, setShowReservationsModal] = useState(false);
   const [reservationFilter, setReservationFilter] = useState('active');
   const [businessReservations, setBusinessReservations] = useState(INITIAL_RESERVATIONS);
+  const [isUpdatingBusinessStatus, setIsUpdatingBusinessStatus] = useState(false);
+  const [bookingActionLoadingById, setBookingActionLoadingById] = useState({});
+  const [recentBookingActionById, setRecentBookingActionById] = useState({});
+  const [isUpdatingBusinessInfo, setIsUpdatingBusinessInfo] = useState(false);
   const [reservationToCancel, setReservationToCancel] = useState(null);
   const [showResCancelModal, setShowResCancelModal] = useState(false);
   const [resCancelReason, setResCancelReason] = useState('');
@@ -384,6 +396,9 @@ export function OwnerModule({
   const [ownerDarkMode, setOwnerDarkMode] = useState(false);
   const [ownerNotifEnabled, setOwnerNotifEnabled] = useState(true);
   const [ownerAutoReply, setOwnerAutoReply] = useState(false);
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
+  const [isPromoLoading, setIsPromoLoading] = useState(false);
+  const [promosList, setPromosList] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState(null);
   const [settingsInfo, setSettingsInfo] = useState({
@@ -434,29 +449,11 @@ export function OwnerModule({
     minNights: 1, checkInTime: '14:00', checkOutTime: '12:00',
     cancelPolicy: 'flexible', breakfastIncluded: false, petsAllowed: false, instantConfirm: false,
   });
-
-  // ── Estados dos modais em falta (migrados do monolito) ─────────────────────
-  const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
-  const [selectedRoomBooking, setSelectedRoomBooking]         = useState(null);
-  const [roomBookingsFilter, setRoomBookingsFilter]           = useState('all');
-  const [roomBlocks, setRoomBlocks] = useState(() => {
-    const initial = {};
-    (ownerBiz?.roomTypes || []).forEach(r => {
-      initial[r.id] = (r.bookedRanges || []).map((b, i) => ({
-        id: 'block_' + r.id + '_' + i,
-        start: b.start, end: b.end, count: b.count || 1,
-        note: b.note || '', source: b.source || 'manual',
-      }));
-    });
-    return initial;
-  });
-  const [blockDraft, setBlockDraft] = useState({ roomId: null, start: '', end: '', count: 1, note: '' });
   const [showOccupancyEditor, setShowOccupancyEditor] = useState(false);
   const [showFeaturedModal, setShowFeaturedModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showPromoManager, setShowPromoManager] = useState(false);
   const [promotions, setPromotions] = useState(INITIAL_PROMOTIONS);
-
   const [showPromoForm, setShowPromoForm] = useState(false);
   const [promoCalTarget, setPromoCalTarget] = useState(null);
   const [editingPromo, setEditingPromo] = useState(null);
@@ -486,10 +483,39 @@ export function OwnerModule({
     OWNER_BUSINESS.promo = fields.promo ?? OWNER_BUSINESS.promo;
   }, [onUpdateBusiness]);
 
-  const setBusinessOpen = useCallback((isOpen) => {
-    setBusinessStatusOverride(isOpen ? 'open' : 'closed');
-    updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' });
-  }, [updateOwnerBiz]);
+  // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
+  const ownerBiz =
+    businesses?.find((b) => b?.owner?.id === authUserId) ||
+    businesses?.find((b) => b.id === OWNER_BUSINESS.id) ||
+    OWNER_BUSINESS;
+  const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
+
+  const setBusinessOpen = useCallback(async (isOpen) => {
+    if (!ownerBusinessId || !accessToken) {
+      Alert.alert('Sessão inválida', 'Não foi possível validar a sessão do dono.');
+      return;
+    }
+
+    const previousStatus =
+      businessStatusOverride ||
+      (ownerBiz.isOpen ? 'open' : 'closed');
+    const nextStatus = isOpen ? 'open' : 'closed';
+    setIsUpdatingBusinessStatus(true);
+    setBusinessStatusOverride(nextStatus);
+
+    try {
+      await backendApi.updateBusinessStatus(ownerBusinessId, { isOpen }, accessToken);
+      updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' });
+    } catch (error) {
+      setBusinessStatusOverride(previousStatus);
+      Alert.alert(
+        'Falha ao atualizar',
+        error?.message || 'Não foi possível atualizar o estado do negócio.',
+      );
+    } finally {
+      setIsUpdatingBusinessStatus(false);
+    }
+  }, [ownerBusinessId, accessToken, businessStatusOverride, ownerBiz.isOpen, updateOwnerBiz]);
 
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
@@ -502,14 +528,12 @@ export function OwnerModule({
     onSyncPromoDeals?.(updatedPromotions);
   }, [updateOwnerBiz, onSyncPromoDeals]);
 
-  // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
-  const ownerBiz = businesses?.find(b => b.id === OWNER_BUSINESS.id) || OWNER_BUSINESS;
-
   useEffect(() => {
-    if (authRole !== 'OWNER') return;
+    if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
+      return;
+    }
 
-    // Sincroniza sempre — inclui quando a lista fica vazia (limpeza)
-    const normalized = (Array.isArray(liveNotifications) ? liveNotifications : []).map((notification) => ({
+    const normalized = liveNotifications.map((notification) => ({
       id: notification.id,
       icon: notification.title?.toLowerCase().includes('reserva') ? '🏨' : '🔔',
       title: notification.title || 'Notificação',
@@ -526,19 +550,25 @@ export function OwnerModule({
   }, [authRole, liveNotifications]);
 
   useEffect(() => {
-    if (authRole !== 'OWNER') return;
+    if (authRole !== 'OWNER' || !Array.isArray(liveBookings) || liveBookings.length === 0) {
+      return;
+    }
 
-    const mappedReservations = (Array.isArray(liveBookings) ? liveBookings : []).map((booking) => {
+    const mappedReservations = liveBookings.map((booking) => {
       const startDate = booking.startDate ? new Date(booking.startDate) : null;
+      let normalizedStatus = 'pending';
+      if (booking.status === 'CONFIRMED') normalizedStatus = 'active';
+      if (booking.status === 'CANCELLED') normalizedStatus = 'cancelled';
 
       return {
         id: booking.id,
+        businessId: booking.businessId || booking.business?.id || null,
         user: booking.user?.name || 'Cliente',
         userAvatar: '👤',
         date: startDate ? startDate.toISOString().slice(0, 10) : '',
         time: startDate ? startDate.toISOString().slice(11, 16) : '',
         people: 1,
-        status: booking.status === 'CANCELLED' ? 'cancelled' : 'active',
+        status: normalizedStatus,
         phone: booking.user?.email || '',
         notes: '',
         createdAt: booking.createdAt || '',
@@ -547,6 +577,462 @@ export function OwnerModule({
 
     setBusinessReservations(mappedReservations);
   }, [authRole, liveBookings]);
+
+  const setBookingActionLoading = useCallback((bookingId, isLoading) => {
+    setBookingActionLoadingById((prev) => ({ ...prev, [bookingId]: isLoading }));
+  }, []);
+
+  const markBookingActionSuccess = useCallback((bookingId, actionType) => {
+    setRecentBookingActionById((prev) => ({ ...prev, [bookingId]: actionType }));
+    setTimeout(() => {
+      setRecentBookingActionById((prev) => {
+        const next = { ...prev };
+        delete next[bookingId];
+        return next;
+      });
+    }, 1800);
+  }, []);
+
+  const handleConfirmReservation = useCallback(async (reservation) => {
+    if (!accessToken || !ownerBusinessId || !reservation?.id) {
+      Alert.alert('Sessão inválida', 'Não foi possível confirmar a reserva.');
+      return;
+    }
+
+    setBookingActionLoading(reservation.id, true);
+    try {
+      await backendApi.confirmBooking(
+        reservation.id,
+        { businessId: reservation.businessId || ownerBusinessId },
+        accessToken,
+      );
+
+      setBusinessReservations((prev) =>
+        prev.map((item) => (item.id === reservation.id ? { ...item, status: 'active' } : item)),
+      );
+      markBookingActionSuccess(reservation.id, 'confirmed');
+      onRefreshOwnerData?.();
+    } catch (error) {
+      Alert.alert('Falha', error?.message || 'Não foi possível confirmar a reserva.');
+    } finally {
+      setBookingActionLoading(reservation.id, false);
+    }
+  }, [accessToken, markBookingActionSuccess, onRefreshOwnerData, ownerBusinessId, setBookingActionLoading]);
+
+  const handleRejectReservation = useCallback(async (reservation, reason) => {
+    if (!accessToken || !ownerBusinessId || !reservation?.id) {
+      Alert.alert('Sessão inválida', 'Não foi possível recusar a reserva.');
+      return;
+    }
+
+    setBookingActionLoading(reservation.id, true);
+    try {
+      await backendApi.rejectBooking(
+        reservation.id,
+        {
+          businessId: reservation.businessId || ownerBusinessId,
+          reason: reason || undefined,
+        },
+        accessToken,
+      );
+
+      setBusinessReservations((prev) =>
+        prev.map((item) =>
+          item.id === reservation.id
+            ? { ...item, status: 'cancelled', cancelReason: reason || item.cancelReason }
+            : item,
+        ),
+      );
+      markBookingActionSuccess(reservation.id, 'rejected');
+      onRefreshOwnerData?.();
+    } catch (error) {
+      Alert.alert('Falha', error?.message || 'Não foi possível recusar a reserva.');
+    } finally {
+      setBookingActionLoading(reservation.id, false);
+    }
+  }, [accessToken, markBookingActionSuccess, onRefreshOwnerData, ownerBusinessId, setBookingActionLoading]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MENU ITEMS HANDLERS (Secção 2 — Menu Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveMenuItem = useCallback(async () => {
+    if (!menuItemForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do prato é obrigatório.');
+      return;
+    }
+
+    if (!menuItemForm.price) {
+      Alert.alert('Erro', 'Preço é obrigatório.');
+      return;
+    }
+
+    setIsMenuItemLoading(true);
+
+    try {
+      const payload = {
+        name: menuItemForm.name,
+        description: menuItemForm.description || '',
+        price: parseFloat(menuItemForm.price),
+        category: menuItemForm.category || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingMenuItem) {
+        // Update existing menu item
+        await backendApi.updateMenuItem(editingMenuItem.id, payload, accessToken);
+        
+        setMenuItems((prev) =>
+          prev.map((item) =>
+            item.id === editingMenuItem.id
+              ? { ...item, ...payload }
+              : item,
+          ),
+        );
+      } else {
+        // Create new menu item
+        const response = await backendApi.createMenuItem(payload, accessToken);
+        setMenuItems((prev) => [...prev, response]);
+      }
+
+      setShowMenuItemForm(false);
+      setEditingMenuItem(null);
+      setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+      Alert.alert('Sucesso', editingMenuItem ? 'Item atualizado.' : 'Item criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o item.');
+    } finally {
+      setIsMenuItemLoading(false);
+    }
+  }, [menuItemForm, editingMenuItem, ownerBusinessId, accessToken]);
+
+  const handleDeleteMenuItem = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Item',
+      'Tem certeza que deseja remover este item do menu?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsMenuItemLoading(true);
+            try {
+              await backendApi.deleteMenuItem(itemId, accessToken);
+              setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Item removido do menu.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o item.');
+            } finally {
+              setIsMenuItemLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // INVENTORY ITEMS HANDLERS (Secção 5 — Inventory Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveInventoryItem = useCallback(async () => {
+    if (!inventoryForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do produto é obrigatório.');
+      return;
+    }
+
+    setIsInventoryItemLoading(true);
+
+    try {
+      const payload = {
+        name: inventoryForm.name,
+        price: parseFloat(inventoryForm.price) || 0,
+        stock: parseInt(inventoryForm.stock) || 0,
+        category: inventoryForm.category || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingInventoryItem) {
+        await backendApi.updateInventoryItem(editingInventoryItem.id, payload, accessToken);
+        setInventoryItems((prev) =>
+          prev.map((item) =>
+            item.id === editingInventoryItem.id
+              ? { ...item, ...payload }
+              : item,
+          ),
+        );
+      } else {
+        const response = await backendApi.createInventoryItem(payload, accessToken);
+        setInventoryItems((prev) => [...prev, response]);
+      }
+
+      setShowInventoryForm(false);
+      setEditingInventoryItem(null);
+      setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+      Alert.alert('Sucesso', editingInventoryItem ? 'Produto atualizado.' : 'Produto criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o produto.');
+    } finally {
+      setIsInventoryItemLoading(false);
+    }
+  }, [inventoryForm, editingInventoryItem, ownerBusinessId, accessToken]);
+
+  const handleDeleteInventoryItem = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Produto',
+      'Tem certeza que deseja remover este produto do inventário?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsInventoryItemLoading(true);
+            try {
+              await backendApi.deleteInventoryItem(itemId, accessToken);
+              setInventoryItems((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Produto removido do inventário.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o produto.');
+            } finally {
+              setIsInventoryItemLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SERVICES HANDLERS (Secção 6 — Services Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveService = useCallback(async () => {
+    if (!serviceForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do serviço é obrigatório.');
+      return;
+    }
+
+    setIsServiceLoading(true);
+
+    try {
+      const payload = {
+        name: serviceForm.name,
+        description: serviceForm.description || '',
+        basePrice: parseFloat(serviceForm.basePrice) || 0,
+        duration: serviceForm.duration || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingService) {
+        await backendApi.updateService(editingService.id, payload, accessToken);
+        setServicesList((prev) =>
+          prev.map((item) =>
+            item.id === editingService.id ? { ...item, ...payload } : item,
+          ),
+        );
+      } else {
+        const response = await backendApi.createService(payload, accessToken);
+        setServicesList((prev) => [...prev, response]);
+      }
+
+      setShowServiceForm(false);
+      setEditingService(null);
+      setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
+      Alert.alert('Sucesso', editingService ? 'Serviço atualizado.' : 'Serviço criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o serviço.');
+    } finally {
+      setIsServiceLoading(false);
+    }
+  }, [serviceForm, editingService, ownerBusinessId, accessToken]);
+
+  const handleDeleteService = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Serviço',
+      'Tem certeza que deseja remover este serviço?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsServiceLoading(true);
+            try {
+              await backendApi.deleteService(itemId, accessToken);
+              setServicesList((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Serviço removido.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o serviço.');
+            } finally {
+              setIsServiceLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ROOMS HANDLERS (Secção 7 — Rooms Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveRoom = useCallback(async () => {
+    if (!roomForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do quarto é obrigatório.');
+      return;
+    }
+
+    if (!roomForm.pricePerNight) {
+      Alert.alert('Erro', 'Preço por noite é obrigatório.');
+      return;
+    }
+
+    setIsRoomLoading(true);
+
+    try {
+      const payload = {
+        name: roomForm.name,
+        description: roomForm.description || '',
+        pricePerNight: parseFloat(roomForm.pricePerNight),
+        maxGuests: parseInt(roomForm.maxGuests) || 1,
+        amenities: typeof roomForm.amenities === 'string' ? roomForm.amenities : JSON.stringify(roomForm.amenities || []),
+        businessId: ownerBusinessId,
+      };
+
+      if (editingRoom) {
+        await backendApi.updateRoom(editingRoom.id, payload, accessToken);
+        setRoomTypes((prev) =>
+          prev.map((item) =>
+            item.id === editingRoom.id ? { ...item, ...payload } : item,
+          ),
+        );
+      } else {
+        const response = await backendApi.createRoom(payload, accessToken);
+        setRoomTypes((prev) => [...prev, response]);
+      }
+
+      setShowRoomForm(false);
+      setEditingRoom(null);
+      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+      Alert.alert('Sucesso', editingRoom ? 'Quarto atualizado.' : 'Quarto criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o quarto.');
+    } finally {
+      setIsRoomLoading(false);
+    }
+  }, [roomForm, editingRoom, ownerBusinessId, accessToken]);
+
+  const handleDeleteRoom = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Quarto',
+      'Tem certeza que deseja remover este quarto?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsRoomLoading(true);
+            try {
+              await backendApi.deleteRoom(itemId, accessToken);
+              setRoomTypes((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Quarto removido.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o quarto.');
+            } finally {
+              setIsRoomLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUSINESS INFO HANDLER (Secção 3 — MyBusiness)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleUpdateBusinessInfo = useCallback(async (updatedFields) => {
+    if (!updatedFields || Object.keys(updatedFields).length === 0) return;
+
+    setIsUpdatingBusinessInfo(true);
+
+    try {
+      const payload = {
+        name: updatedFields.name || ownerBiz?.name,
+        description: updatedFields.description || ownerBiz?.description,
+        phone: updatedFields.phone || (ownerBiz?.metadata?.phone),
+        email: updatedFields.email || (ownerBiz?.metadata?.email),
+        website: updatedFields.website || (ownerBiz?.metadata?.website),
+        address: updatedFields.address || (ownerBiz?.metadata?.address),
+      };
+
+      await backendApi.updateBusinessInfo(ownerBusinessId, payload, accessToken);
+      
+      // Update local state
+      updateOwnerBiz(payload);
+      Alert.alert('Sucesso', 'Informações do negócio actualizadas.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível actualizar as informações.');
+    } finally {
+      setIsUpdatingBusinessInfo(false);
+    }
+  }, [ownerBusinessId, accessToken, ownerBiz, updateOwnerBiz]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // OWNER SETTINGS HANDLER (Secção 9 — Settings)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveOwnerSettings = useCallback(async () => {
+    setIsUpdatingSettings(true);
+
+    try {
+      const payload = {
+        darkMode: ownerDarkMode,
+        notificationsEnabled: ownerNotifEnabled,
+        autoReplyEnabled: ownerAutoReply,
+      };
+
+      await backendApi.updateOwnerSettings(payload, accessToken);
+      Alert.alert('Sucesso', 'Configurações guardadas.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar as configurações.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  }, [ownerDarkMode, ownerNotifEnabled, ownerAutoReply, accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROMOTIONS HANDLER (Secção 11 — Promo Manager)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleDeletePromo = useCallback(async (promoId) => {
+    Alert.alert(
+      'Remover Promoção',
+      'Tem certeza que deseja remover esta promoção?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsPromoLoading(true);
+            try {
+              await backendApi.deletePromo(promoId, accessToken);
+              setPromosList((prev) => prev.filter((item) => item.id !== promoId));
+              Alert.alert('Sucesso', 'Promoção removida.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover a promoção.');
+            } finally {
+              setIsPromoLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -577,11 +1063,11 @@ export function OwnerModule({
           <View style={bizS.businessHeader}>
             <View style={bizS.businessHeaderTop}>
               <View style={{flex:1}}>
-                <Text style={bizS.businessName}>{OWNER_BUSINESS.name}</Text>
+                <Text style={bizS.businessName}>{ownerBiz.name || OWNER_BUSINESS.name}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', gap:6, marginTop:4}}>
                   <Icon name="mapPin" size={12} color={COLORS.grayText} strokeWidth={2} />
-                  <Text style={bizS.businessAddress}>{OWNER_BUSINESS.category}</Text>
-                  {OWNER_BUSINESS.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
+                  <Text style={bizS.businessAddress}>{ownerBiz.category || OWNER_BUSINESS.category}</Text>
+                  {ownerBiz.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
                 </View>
               </View>
             </View>
@@ -590,18 +1076,23 @@ export function OwnerModule({
               <View style={{flex:1}}>
                 <Text style={bizS.statusLabel}>Status do Negócio</Text>
                 <Text style={bizS.statusValue}>
-                  {businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen) ? 'Aberto' : 'Fechado'}
+                  {isUpdatingBusinessStatus
+                    ? 'A atualizar...'
+                    : businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)
+                      ? 'Aberto'
+                      : 'Fechado'}
                 </Text>
               </View>
               <TouchableOpacity
-                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchActive]}
+                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchActive]}
                 onPress={() => {
-                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen);
+                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen);
                   setBusinessOpen(!currentlyOpen);
                 }}
                 activeOpacity={0.7}
+                disabled={isUpdatingBusinessStatus}
               >
-                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchKnobActive]} />
+                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchKnobActive]} />
               </TouchableOpacity>
             </View>
           </View>
@@ -702,29 +1193,29 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesOfferedEditor(true)}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Serviços Oferecidos','Disponível no módulo.')}>
                   <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Serviços Oferecidos</Text>
-                    <Text style={bizS.actionDesc}>{ownerServicesOffered.length} serviços no perfil</Text>
+                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços no perfil</Text>
                   </View>
                   <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </TouchableOpacity>
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPortfolioEditor(true)}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Portfólio','Disponível no módulo.')}>
                   <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Portfólio</Text>
-                    <Text style={bizS.actionDesc}>{ownerPortfolio.length} imagem{ownerPortfolio.length!==1?'ns':''}</Text>
+                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.portfolio||[]).length} imagem{(OWNER_BUSINESS.portfolio||[]).length!==1?'ns':''}</Text>
                   </View>
                   <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </TouchableOpacity>
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Disponibilidade','Abra o módulo de Beleza & Bem-estar para gerir a sua disponibilidade.')}>
                   <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Disponibilidade</Text>
@@ -734,38 +1225,27 @@ export function OwnerModule({
                 </TouchableOpacity>
               )}
 
-              {(ownerBiz.modules?.accommodation) && (
+              {OWNER_BUSINESS.modules?.accommodation && (
                 <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomsEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
-                    <Text style={bizS.actionDesc}>{(ownerBiz.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
+                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
                   </View>
                   <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </TouchableOpacity>
               )}
 
-              {(ownerBiz.modules?.accommodation) && (() => {
-                const pending   = liveBookings.filter(b => b.status === 'PENDING').length;
-                const confirmed = liveBookings.filter(b => b.status === 'CONFIRMED').length;
-                return (
-                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomBookingsManager(true)}>
-                    <View style={bizS.actionIcon}>
-                      <Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} />
-                      {pending > 0 && (
-                        <View style={{position:'absolute',top:-4,right:-4,minWidth:16,height:16,borderRadius:8,backgroundColor:COLORS.red,alignItems:'center',justifyContent:'center',paddingHorizontal:3,borderWidth:1.5,borderColor:COLORS.white}}>
-                          <Text style={{color:COLORS.white,fontSize:9,fontWeight:'800'}}>{pending > 9 ? '9+' : pending}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={{flex:1}}>
-                      <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
-                      <Text style={bizS.actionDesc}>{pending} pendente{pending!==1?'s':''} · {confirmed} confirmada{confirmed!==1?'s':''}</Text>
-                    </View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                  </TouchableOpacity>
-                );
-              })()}
+              {OWNER_BUSINESS.modules?.accommodation && (
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
+                  <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
+                    <Text style={bizS.actionDesc}>{0} pendente{0!==1?'s':''} · {0} confirmada{0!==1?'s':''}</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+              )}
 
               {/* iCal Sync card — v2.9.21 fix: acessível directamente no dashboard */}
               {(OWNER_BUSINESS.modules?.accommodation || OWNER_BUSINESS.modules?.tourism) && (
@@ -788,11 +1268,11 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.gastronomy && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPopularDishesEditor(true)}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Pratos em Destaque','Disponível no módulo.')}>
                   <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Pratos em Destaque</Text>
-                    <Text style={bizS.actionDesc}>{ownerPopularDishes.length} prato{ownerPopularDishes.length!==1?'s':''} destacado{ownerPopularDishes.length!==1?'s':''}</Text>
+                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.popularDishes||[]).length} prato{(OWNER_BUSINESS.popularDishes||[]).length!==1?'s':''} destacado{(OWNER_BUSINESS.popularDishes||[]).length!==1?'s':''}</Text>
                   </View>
                   <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </TouchableOpacity>
@@ -885,14 +1365,16 @@ export function OwnerModule({
               <TouchableOpacity 
                 style={bizS.actionCard} 
                 activeOpacity={0.8}
-                onPress={() => openAppLayer('ownerReservasDining')}
+                onPress={() => setShowReservationsModal(true)}
               >
                 <View style={bizS.actionIcon}>
                   <Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} />
                 </View>
                 <View style={{flex:1}}>
                   <Text style={bizS.actionTitle}>Reservas de Mesas</Text>
-                  <Text style={bizS.actionDesc}>Gerir reservas do restaurante</Text>
+                  <Text style={bizS.actionDesc}>
+                    {businessReservations.filter((r) => r.status === 'pending').length} pendentes · {businessReservations.filter((r) => r.status === 'active').length} ativas
+                  </Text>
                 </View>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
@@ -1152,7 +1634,7 @@ export function OwnerModule({
           <DiningModule
             business={ownerBiz}
             ownerMode={true}
-            tenantId={ownerBiz.id}
+            tenantId={ownerBusinessId}
           />
         </SafeAreaView>
           </Animated.View>
@@ -1177,8 +1659,7 @@ export function OwnerModule({
             <HospitalityModule
               business={ownerBiz}
               ownerMode={true}
-              tenantId={ownerBiz.id}
-              liveBookings={liveBookings}
+              tenantId={ownerBusinessId}
               onBookingDone={()=>closeAppLayer()}
             />
           </ScrollView>
@@ -1276,14 +1757,14 @@ export function OwnerModule({
           </View>
           <ScrollView contentContainerStyle={{padding:16,gap:12}}>
             {/* Create promo button */}
-            <TouchableOpacity style={{backgroundColor:COLORS.red,borderRadius:14,paddingVertical:14,alignItems:'center',flexDirection:'row',justifyContent:'center',gap:8}} onPress={()=>{ setEditingPromo(null); setPromoForm({title:'',type:'percent',discount:'',description:'',startDate:'',endDate:'',active:true}); setShowPromoForm(true); }}>
+            <TouchableOpacity style={{backgroundColor:COLORS.red,borderRadius:14,paddingVertical:14,alignItems:'center',flexDirection:'row',justifyContent:'center',gap:8}} onPress={()=>Alert.alert('Nova Promoção','Criador de promoções disponível em breve.')}>
               <Icon name="tag" size={18} color={COLORS.white} strokeWidth={2}/>
               <Text style={{fontSize:15,fontWeight:'800',color:COLORS.white}}>Criar Nova Promoção</Text>
             </TouchableOpacity>
             {/* Active promos */}
             <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText,marginTop:4}}>Promoções Activas</Text>
-            {(businesses.find(b=>b.id===OWNER_BUSINESS.id)?.deals||[]).length>0 ? (
-              (businesses.find(b=>b.id===OWNER_BUSINESS.id)?.deals||[]).map(deal=>(
+            {(ownerBiz?.deals||[]).length>0 ? (
+              (ownerBiz?.deals||[]).map(deal=>(
                 <View key={deal.id} style={{backgroundColor:'#FFFBF0',borderRadius:14,padding:16,borderWidth:1.5,borderColor:'#FFE082'}}>
                   <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                     <Text style={{fontSize:15,fontWeight:'700',color:COLORS.darkText,flex:1,marginRight:8}}>{deal.title}</Text>
@@ -1353,12 +1834,8 @@ export function OwnerModule({
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={editorS.itemActionBtn}
-                        onPress={() => {
-                          const updated = menuItems.filter(i => i.id !== item.id);
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        }}
+                        onPress={() => handleDeleteMenuItem(item.id)}
+                        disabled={isMenuItemLoading}
                       >
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
@@ -1458,36 +1935,11 @@ export function OwnerModule({
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
-                      style={[editorS.formBtnSave, (!menuItemForm.name || !menuItemForm.price) && {opacity:0.5}]}
-                      disabled={!menuItemForm.name || !menuItemForm.price}
-                      onPress={() => {
-                        if (!menuItemForm.name || !menuItemForm.price) return;
-                        
-                        if (editingMenuItem) {
-                          const updated = menuItems.map(i => 
-                            i.id === editingMenuItem.id ? {...menuItemForm, id: editingMenuItem.id, price: parseFloat(menuItemForm.price)} : i
-                          );
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        } else {
-                          const newItem = {
-                            ...menuItemForm,
-                            id: Date.now().toString(),
-                            price: parseFloat(menuItemForm.price)
-                          };
-                          const updated = [...menuItems, newItem];
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        }
-                        
-                        setShowMenuItemForm(false);
-                        setEditingMenuItem(null);
-                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
-                      }}
+                      style={[editorS.formBtnSave, ((!menuItemForm.name || !menuItemForm.price) || isMenuItemLoading) && {opacity:0.5}]}
+                      disabled={(!menuItemForm.name || !menuItemForm.price) || isMenuItemLoading}
+                      onPress={handleSaveMenuItem}
                     >
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                      <Text style={editorS.formBtnSaveText}>{isMenuItemLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1546,12 +1998,8 @@ export function OwnerModule({
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={editorS.itemActionBtn}
-                        onPress={() => {
-                          const updated = inventoryItems.filter(i => i.id !== item.id);
-                          setInventoryItems(updated);
-                          OWNER_BUSINESS.inventoryItems = updated;
-                          updateOwnerBiz({ inventoryItems: updated });
-                        }}
+                        onPress={() => handleDeleteInventoryItem(item.id)}
+                        disabled={isInventoryItemLoading}
                       >
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
@@ -1593,21 +2041,12 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true }); }}>
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!inventoryForm.name) && {opacity:0.5}]} disabled={!inventoryForm.name} onPress={() => {
-                      if (!inventoryForm.name) return;
-                      if (editingInventoryItem) {
-                        const updated = inventoryItems.map(i => i.id === editingInventoryItem.id ? {...inventoryForm, id: editingInventoryItem.id, price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0} : i);
-                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
-                        updateOwnerBiz({ inventoryItems: updated });
-                      } else {
-                        const newItem = { ...inventoryForm, id: Date.now().toString(), price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0 };
-                        const updated = [...inventoryItems, newItem];
-                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
-                        updateOwnerBiz({ inventoryItems: updated });
-                      }
-                      setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
-                    }}>
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!inventoryForm.name) || isInventoryItemLoading) && {opacity:0.5}]} 
+                      disabled={!inventoryForm.name || isInventoryItemLoading} 
+                      onPress={handleSaveInventoryItem}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isInventoryItemLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1653,11 +2092,7 @@ export function OwnerModule({
                         <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} />
                         <Text style={editorS.itemActionText}>Editar</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={editorS.itemActionBtn} onPress={() => {
-                        const updated = servicesList.filter(s => s.id !== service.id);
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      }}>
+                      <TouchableOpacity style={editorS.itemActionBtn} onPress={() => handleDeleteService(service.id)} disabled={isServiceLoading}>
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
                       </TouchableOpacity>
@@ -1698,21 +2133,12 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true }); }}>
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!serviceForm.name) && {opacity:0.5}]} disabled={!serviceForm.name} onPress={() => {
-                      if (!serviceForm.name) return;
-                      if (editingService) {
-                        const updated = servicesList.map(s => s.id === editingService.id ? {...serviceForm, id: editingService.id, basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0} : s);
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      } else {
-                        const newService = { ...serviceForm, id: Date.now().toString(), basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0 };
-                        const updated = [...servicesList, newService];
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      }
-                      setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
-                    }}>
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!serviceForm.name) || isServiceLoading) && {opacity:0.5}]} 
+                      disabled={!serviceForm.name || isServiceLoading} 
+                      onPress={handleSaveService}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isServiceLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1973,17 +2399,13 @@ export function OwnerModule({
                   <TextInput style={editorS.formInput} value={roomForm.maxGuests} onChangeText={(text) => setRoomForm({...roomForm, maxGuests: text})} placeholder="Ex: 4 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
                   <View style={editorS.formActions}>
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!roomForm.name) && {opacity:0.5}]} disabled={!roomForm.name} onPress={() => {
-                      if (!roomForm.name) return;
-                      if (editingRoom) {
-                        const updated = roomTypes.map(r => r.id === editingRoom.id ? {...roomForm, id: editingRoom.id, pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0} : r);
-                        setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
-                      } else {
-                        const newRoom = { ...roomForm, id: Date.now().toString(), pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0 };
-                        const updated = [...roomTypes, newRoom]; setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
-                      }
-                      setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
-                    }}><Text style={editorS.formBtnSaveText}>Guardar</Text></TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!roomForm.name) || isRoomLoading) && {opacity:0.5}]} 
+                      disabled={!roomForm.name || isRoomLoading} 
+                      onPress={handleSaveRoom}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isRoomLoading ? 'A guardar...' : 'Guardar'}</Text>
+                    </TouchableOpacity>
                   </View>
                   </ScrollView>
                 </View>
@@ -2554,7 +2976,7 @@ export function OwnerModule({
               activeOpacity={0.7}
             >
               <Text style={[bizS.reservationFilterText, reservationFilter === 'active' && bizS.reservationFilterTextActive]}>
-                Ativas ({businessReservations.filter(r => r.status === 'active').length})
+                Ativas ({businessReservations.filter(r => r.status === 'active' || r.status === 'pending').length})
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
@@ -2571,7 +2993,12 @@ export function OwnerModule({
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
             <View style={{padding:16}}>
               {businessReservations
-                .filter(res => res.status === reservationFilter)
+                .filter((res) => {
+                  if (reservationFilter === 'active') {
+                    return res.status === 'active' || res.status === 'pending';
+                  }
+                  return res.status === 'cancelled';
+                })
                 .map(reservation => (
                   <View key={reservation.id} style={bizS.reservationCard}>
                     {/* Header com usuário */}
@@ -2585,7 +3012,7 @@ export function OwnerModule({
                       </View>
                       <View style={[bizS.reservationStatusBadge, reservation.status === 'cancelled' && bizS.reservationStatusBadgeCancelled]}>
                         <Text style={[bizS.reservationStatusText, reservation.status === 'cancelled' && bizS.reservationStatusTextCancelled]}>
-                          {reservation.status === 'active' ? 'Ativa' : 'Cancelada'}
+                          {reservation.status === 'pending' ? 'Pendente' : reservation.status === 'active' ? 'Ativa' : 'Cancelada'}
                         </Text>
                       </View>
                     </View>
@@ -2629,36 +3056,93 @@ export function OwnerModule({
                       <Text style={bizS.reservationCreatedAt}>
                         Criada em {new Date(reservation.createdAt).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' })} às {new Date(reservation.createdAt).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}
                       </Text>
-                      {reservation.status === 'active' && (
+                      {(reservation.status === 'active' || reservation.status === 'pending') && (
                         <View style={{flexDirection:'row', gap:8}}>
-                          {/* Ligar */}
-                          <TouchableOpacity 
-                            style={[bizS.reservationActionBtn, {backgroundColor:'#2E7D32'}]}
-                            activeOpacity={0.7}
-                            onPress={() => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})}
-                          >
-                            <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
-                          </TouchableOpacity>
-                          {/* Cancelar */}
-                          <TouchableOpacity 
-                            style={[bizS.reservationActionBtn, {backgroundColor:'#E53935'}]}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              setReservationToCancel(reservation);
-                              setResCancelReason('');
-                              setResCancelReasonOther('');
-                              setShowResCancelModal(true);
-                            }}
-                          >
-                            <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
-                          </TouchableOpacity>
+                          {reservation.status === 'pending' && (
+                            <>
+                              <TouchableOpacity
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  { backgroundColor: '#2E7D32', minWidth: 86, alignItems: 'center', justifyContent: 'center' },
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => handleConfirmReservation(reservation)}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.white }}>
+                                  {bookingActionLoadingById[reservation.id]
+                                    ? 'A confirmar...'
+                                    : recentBookingActionById[reservation.id] === 'confirmed'
+                                      ? 'Confirmada'
+                                      : 'Aceitar'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  { backgroundColor: '#E53935', minWidth: 86, alignItems: 'center', justifyContent: 'center' },
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => {
+                                  setReservationToCancel(reservation);
+                                  setResCancelReason('');
+                                  setResCancelReasonOther('');
+                                  setShowResCancelModal(true);
+                                }}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.white }}>
+                                  {bookingActionLoadingById[reservation.id]
+                                    ? 'A recusar...'
+                                    : recentBookingActionById[reservation.id] === 'rejected'
+                                      ? 'Recusada'
+                                      : 'Recusar'}
+                                </Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                          {reservation.status === 'active' && (
+                            <>
+                              <TouchableOpacity 
+                                style={[bizS.reservationActionBtn, {backgroundColor:'#2E7D32'}]}
+                                activeOpacity={0.7}
+                                onPress={() => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})}
+                              >
+                                <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  {backgroundColor:'#E53935'},
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => {
+                                  setReservationToCancel(reservation);
+                                  setResCancelReason('');
+                                  setResCancelReasonOther('');
+                                  setShowResCancelModal(true);
+                                }}
+                              >
+                                <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
+                              </TouchableOpacity>
+                            </>
+                          )}
                         </View>
                       )}
                     </View>
                   </View>
                 ))}
 
-              {businessReservations.filter(r => r.status === reservationFilter).length === 0 && (
+              {businessReservations.filter((r) => {
+                if (reservationFilter === 'active') {
+                  return r.status === 'active' || r.status === 'pending';
+                }
+                return r.status === 'cancelled';
+              }).length === 0 && (
                 <View style={{alignItems:'center', paddingVertical:60}}>
                   <Text style={{fontSize:48, marginBottom:16}}>📅</Text>
                   <Text style={{fontSize:18, fontWeight:'700', color:COLORS.darkText, marginBottom:8}}>
@@ -3145,18 +3629,14 @@ export function OwnerModule({
               <TouchableOpacity
                 style={[bizS.cancelSheetBtnPrimary, !resCancelReason && {opacity:0.4}]}
                 activeOpacity={0.85}
-                disabled={!resCancelReason}
-                onPress={() => {
+                disabled={!resCancelReason || !reservationToCancel || Boolean(bookingActionLoadingById[reservationToCancel?.id])}
+                onPress={async () => {
+                  if (!reservationToCancel) return;
                   const finalReason = resCancelReason === 'Outro motivo' && resCancelReasonOther.trim()
                     ? resCancelReasonOther.trim()
                     : resCancelReason;
-                  setBusinessReservations(prev =>
-                    prev.map(r =>
-                      r.id === reservationToCancel.id
-                        ? { ...r, status: 'cancelled', cancelReason: finalReason }
-                        : r
-                    )
-                  );
+
+                  await handleRejectReservation(reservationToCancel, finalReason);
                   setShowResCancelModal(false);
                   setReservationToCancel(null);
                   setResCancelReason('');
@@ -3164,7 +3644,11 @@ export function OwnerModule({
                   setReservationFilter('cancelled');
                 }}
               >
-                <Text style={bizS.cancelSheetBtnPrimaryText}>Confirmar Cancelamento</Text>
+                <Text style={bizS.cancelSheetBtnPrimaryText}>
+                  {reservationToCancel && bookingActionLoadingById[reservationToCancel.id]
+                    ? 'A recusar...'
+                    : 'Confirmar Cancelamento'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3825,20 +4309,6 @@ export function OwnerModule({
             >
               <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
                 <Icon name={tab.icon} size={20} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
-                {tab.id === 'notifications' && ownerNotifications.filter(n => !n.read).length > 0 && (
-                  <View style={{
-                    position:'absolute', top:-2, right:-2,
-                    minWidth:16, height:16, borderRadius:8,
-                    backgroundColor: COLORS.red,
-                    alignItems:'center', justifyContent:'center',
-                    paddingHorizontal:3,
-                    borderWidth:1.5, borderColor:COLORS.white,
-                  }}>
-                    <Text style={{color:COLORS.white, fontSize:9, fontWeight:'800'}}>
-                      {ownerNotifications.filter(n => !n.read).length > 9 ? '9+' : ownerNotifications.filter(n => !n.read).length}
-                    </Text>
-                  </View>
-                )}
               </View>
               <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
             </TouchableOpacity>
@@ -3847,15 +4317,6 @@ export function OwnerModule({
       </View>
 
 
-
-      {/* ── PORTFOLIO EDITOR MODAL ─────────────────────────────────── */}
-      
-      {/* ── SERVIÇOS OFERECIDOS EDITOR MODAL ────────────────────────── */}
-      
-      {/* ── DISPONIBILIDADE EDITOR MODAL ─────────────────────────────── */}
-      
-      {/* ── PRATOS EM DESTAQUE EDITOR MODAL ─────────────────────────── */}
-      
       {/* BRUTAL CANCEL MODAL - INSERTED CORRECTLY */}
       {showCancelReason && (
         <View style={{position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.9)', justifyContent:'center', alignItems:'center', zIndex:99999999}}>
@@ -4342,595 +4803,6 @@ export function OwnerModule({
           </ScrollView>
         </View>
       )}
-
-
-      {/* ── MODAIS MIGRADOS DO MONOLITO ─────────────────────────────────── */}
-
-      {/* showPortfolioEditor */}
-      <Modal visible={showPortfolioEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPortfolioEditor(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowPortfolioEditor(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Portfólio</Text>
-                  <TouchableOpacity
-                    onPress={async () => {
-                      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                      if (status !== 'granted') {
-                        Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para adicionar fotos.');
-                        return;
-                      }
-                      const result = await ImagePicker.launchImageLibraryAsync({
-                        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                        allowsMultipleSelection: true,
-                        quality: 0.85,
-                      });
-                      if (!result.canceled && result.assets?.length > 0) {
-                        const newUris = result.assets.map(a => a.uri);
-                        const updated = [...ownerPortfolio, ...newUris].slice(0, 20);
-                        setOwnerPortfolio(updated);
-                        updateOwnerBiz({ portfolio: updated });
-                      }
-                    }}
-                  >
-                    <Text style={{fontSize:14, fontWeight:'700', color:COLORS.red}}>+ Adicionar</Text>
-                  </TouchableOpacity>
-                </View>
-                <ScrollView style={{flex:1}} contentContainerStyle={{padding:16}}>
-                  {ownerPortfolio.length === 0 ? (
-                    <View style={{alignItems:'center', paddingVertical:48}}>
-                      <Icon name="camera" size={40} color={COLORS.grayText} strokeWidth={1} />
-                      <Text style={{fontSize:14, color:COLORS.grayText, marginTop:12}}>Sem imagens no portfólio</Text>
-                      <Text style={{fontSize:12, color:COLORS.grayText, marginTop:4}}>Toca em "+ Adicionar" para carregar fotos do teu trabalho</Text>
-                    </View>
-                  ) : (
-                    <View style={{flexDirection:'row', flexWrap:'wrap', gap:8}}>
-                      {ownerPortfolio.map((uri, i) => (
-                        <View key={i} style={{width:'31%', aspectRatio:1, borderRadius:10, overflow:'hidden', position:'relative'}}>
-                          <Image source={{uri}} style={{width:'100%', height:'100%'}} resizeMode="cover" />
-                          <TouchableOpacity
-                            style={{position:'absolute', top:4, right:4, width:22, height:22, borderRadius:11, backgroundColor:'rgba(0,0,0,0.55)', alignItems:'center', justifyContent:'center'}}
-                            onPress={() => {
-                              const updated = ownerPortfolio.filter((_,idx) => idx !== i);
-                              setOwnerPortfolio(updated);
-                              updateOwnerBiz({ portfolio: updated });
-                            }}
-                          >
-                            <Icon name="x" size={12} color={COLORS.white} strokeWidth={2.5} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </ScrollView>
-                <View style={{padding:16, borderTopWidth:1, borderTopColor:COLORS.grayLine}}>
-                  <Text style={{fontSize:12, color:COLORS.grayText, textAlign:'center'}}>
-                    {ownerPortfolio.length}/20 imagens · Toca no ✕ para remover
-                  </Text>
-                </View>
-              </View>
-            </Modal>
-
-      {/* showServicesOfferedEditor */}
-      <Modal visible={showServicesOfferedEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowServicesOfferedEditor(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowServicesOfferedEditor(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Serviços Oferecidos</Text>
-                  <View style={{width:32}} />
-                </View>
-                <ScrollView style={{flex:1, padding:16}}>
-                  <Text style={{fontSize:13, color:COLORS.grayText, marginBottom:16}}>Serviços visíveis no perfil público com preço e descrição</Text>
-                  {ownerServicesOffered.map((s, i) => (
-                    <View key={i} style={[bizS.couponCard, {marginBottom:12}]}>
-                      <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-                        <Text style={{fontWeight:'700', color:COLORS.darkText, fontSize:13}}>Serviço {i+1}</Text>
-                        <TouchableOpacity onPress={() => setOwnerServicesOffered(ownerServicesOffered.filter((_,idx)=>idx!==i))}>
-                          <Icon name="x" size={16} color={COLORS.red} strokeWidth={2.5} />
-                        </TouchableOpacity>
-                      </View>
-                      <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={s.name||''} onChangeText={t => { const u=[...ownerServicesOffered]; u[i]={...u[i],name:t}; setOwnerServicesOffered(u); }} placeholder="Nome do serviço" placeholderTextColor={COLORS.grayText} />
-                      <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={s.price||''} onChangeText={t => { const u=[...ownerServicesOffered]; u[i]={...u[i],price:t}; setOwnerServicesOffered(u); }} placeholder="Preço (ex: 5.000 Kz)" placeholderTextColor={COLORS.grayText} />
-                      <TextInput style={[bizS.promoFormInput, {minHeight:60}]} value={s.description||''} onChangeText={t => { const u=[...ownerServicesOffered]; u[i]={...u[i],description:t}; setOwnerServicesOffered(u); }} placeholder="Descrição breve" placeholderTextColor={COLORS.grayText} multiline textAlignVertical="top" />
-                    </View>
-                  ))}
-                  <TouchableOpacity
-                    style={[bizS.highlightAddBtn, {marginTop:4}]}
-                    onPress={() => setOwnerServicesOffered([...ownerServicesOffered, {name:'',price:'',description:''}])}
-                  >
-                    <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
-                    <Text style={bizS.highlightAddText}>Adicionar serviço</Text>
-                  </TouchableOpacity>
-                </ScrollView>
-                <View style={{padding:16}}>
-                  <TouchableOpacity
-                    style={{backgroundColor:COLORS.red, borderRadius:12, paddingVertical:14, alignItems:'center'}}
-                    onPress={() => {
-                      const clean = ownerServicesOffered.filter(s => s.name?.trim());
-                      setOwnerServicesOffered(clean);
-                      updateOwnerBiz({ servicesOffered: clean });
-                      setShowServicesOfferedEditor(false);
-                      Alert.alert('Guardado!', 'Serviços actualizados.');
-                    }}
-                  >
-                    <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar Serviços</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-
-      {/* showAvailabilityEditor */}
-      <Modal visible={showAvailabilityEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAvailabilityEditor(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowAvailabilityEditor(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Disponibilidade</Text>
-                  <View style={{width:32}} />
-                </View>
-                <ScrollView style={{flex:1, padding:16}}>
-                  <Text style={{fontSize:13, color:COLORS.grayText, marginBottom:16}}>Define os horários disponíveis para marcações</Text>
-                  {[['mon','Segunda'],['tue','Terça'],['wed','Quarta'],['thu','Quinta'],['fri','Sexta'],['sat','Sábado'],['sun','Domingo']].map(([key,label]) => {
-                    const slots = ownerAvailability[key] || [];
-                    return (
-                      <View key={key} style={{marginBottom:16}}>
-                        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-                          <Text style={{fontWeight:'700', color:COLORS.darkText, fontSize:14}}>{label}</Text>
-                          <TouchableOpacity onPress={() => { const u={...ownerAvailability}; u[key]=[...(u[key]||[]),{start:'09:00',end:'18:00'}]; setOwnerAvailability(u); }}>
-                            <Text style={{color:COLORS.red, fontWeight:'600', fontSize:12}}>+ Slot</Text>
-                          </TouchableOpacity>
-                        </View>
-                        {slots.length === 0 && <Text style={{fontSize:12, color:COLORS.grayText, fontStyle:'italic'}}>Indisponível</Text>}
-                        {slots.map((slot, si) => (
-                          <View key={si} style={{flexDirection:'row', alignItems:'center', gap:8, marginBottom:6}}>
-                            <TextInput style={[bizS.promoFormInput, {flex:1, textAlign:'center'}]} value={slot.start} onChangeText={t => { const u={...ownerAvailability}; const s=[...u[key]]; s[si]={...s[si],start:t}; u[key]=s; setOwnerAvailability(u); }} placeholder="09:00" placeholderTextColor={COLORS.grayText} />
-                            <Text style={{color:COLORS.grayText, fontWeight:'600'}}>→</Text>
-                            <TextInput style={[bizS.promoFormInput, {flex:1, textAlign:'center'}]} value={slot.end} onChangeText={t => { const u={...ownerAvailability}; const s=[...u[key]]; s[si]={...s[si],end:t}; u[key]=s; setOwnerAvailability(u); }} placeholder="18:00" placeholderTextColor={COLORS.grayText} />
-                            <TouchableOpacity onPress={() => { const u={...ownerAvailability}; u[key]=u[key].filter((_,idx)=>idx!==si); setOwnerAvailability(u); }}>
-                              <Icon name="x" size={16} color={COLORS.red} strokeWidth={2.5} />
-                            </TouchableOpacity>
-                          </View>
-                        ))}
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-                <View style={{padding:16}}>
-                  <TouchableOpacity
-                    style={{backgroundColor:COLORS.red, borderRadius:12, paddingVertical:14, alignItems:'center'}}
-                    onPress={() => {
-                      updateOwnerBiz({ availability: ownerAvailability });
-                      setShowAvailabilityEditor(false);
-                      Alert.alert('Guardado!', 'Disponibilidade actualizada.');
-                    }}
-                  >
-                    <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar Disponibilidade</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-
-      {/* showRoomBookingsManager */}
-      <Modal visible={showRoomBookingsManager} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoomBookingsManager(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowRoomBookingsManager(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Reservas de Quartos</Text>
-                  <View style={{width:32}} />
-                </View>
-      
-                {/* filter tabs */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{maxHeight:44, paddingHorizontal:16}}>
-                  {[['all','Todas'],['pending','Pendentes'],['confirmed','Confirmadas'],['cancelled','Canceladas']].map(([k,l]) => (
-                    <TouchableOpacity key={k} style={[bizS.reservationFilterBtn, roomBookingsFilter===k && bizS.reservationFilterBtnActive, {marginRight:8}]} onPress={() => setRoomBookingsFilter(k)}>
-                      <Text style={[bizS.reservationFilterText, roomBookingsFilter===k && bizS.reservationFilterTextActive]}>{l}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-      
-                <ScrollView style={{flex:1}} contentContainerStyle={{padding:16}}>
-                  {(() => {
-                    // 'cancelled' tab shows both cancelled AND rejected
-                    const filtered = roomBookings.filter(rb =>
-                      roomBookingsFilter === 'all' ? true :
-                      roomBookingsFilter === 'cancelled' ? (rb.status === 'cancelled' || rb.status === 'rejected') :
-                      rb.status === roomBookingsFilter
-                    );
-                    if (filtered.length === 0) return (
-                      <View style={{alignItems:'center', paddingVertical:48}}>
-                        <Text style={{fontSize:32, marginBottom:12}}>📅</Text>
-                        <Text style={{fontSize:15, fontWeight:'700', color:COLORS.darkText}}>Sem reservas</Text>
-                        <Text style={{fontSize:13, color:COLORS.grayText, marginTop:4}}>As reservas dos clientes aparecem aqui</Text>
-                      </View>
-                    );
-                    return filtered.map(rb => {
-                      const room = roomTypes.find(r => r.id === rb.roomTypeId);
-                      const statusConfig = {
-                        pending:   { label:'Pendente',   color:'#D97706', bg:'#FFFBEB' },
-                        confirmed: { label:'Confirmada', color:COLORS.green, bg:'#F0FDF4' },
-                        cancelled: { label:'Cancelada',  color:'#DC2626', bg:'#FEF2F2' },
-                        rejected:  { label:'Rejeitado',  color:'#7C3AED', bg:'#F5F3FF' },
-                      }[rb.status] || { label:rb.status, color:COLORS.grayText, bg:COLORS.grayBg };
-                      return (
-                        <View key={rb.id} style={[dS.roomCard, {backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30', marginBottom:12}]}>
-                          <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8}}>
-                            <View style={{flex:1}}>
-                              <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{rb.guestName}</Text>
-                              <Text style={{fontSize:12, color:COLORS.grayText, marginTop:1}}>{rb.guestPhone}</Text>
-                            </View>
-                            <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
-                              <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
-                            </View>
-                          </View>
-                          <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText, marginBottom:4}}>{room?.name || 'Quarto'}</Text>
-                          <View style={{flexDirection:'row', gap:16, marginBottom:4}}>
-                            <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
-                            <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
-                          </View>
-                          {/* v2.9.27: badge de quantidade de quartos */}
-                          {(rb.rooms && rb.rooms > 1) && (
-                            <View style={{flexDirection:'row', alignItems:'center', gap:4, marginBottom:4}}>
-                              <View style={{backgroundColor:COLORS.blue+'18', paddingHorizontal:8, paddingVertical:3, borderRadius:6, flexDirection:'row', alignItems:'center', gap:4}}>
-                                <Icon name="home" size={11} color={COLORS.blue} strokeWidth={2.5}/>
-                                <Text style={{fontSize:11, fontWeight:'700', color:COLORS.blue}}>Reserva de {rb.rooms} quartos</Text>
-                              </View>
-                            </View>
-                          )}
-                          {/* Motivo de cancelamento / rejeição */}
-                          {rb.cancelReason && (
-                            <View style={{marginTop:6, marginBottom:4, paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
-                              <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
-                                {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
-                              </Text>
-                              <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
-                            </View>
-                          )}
-                          <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
-                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
-                            {rb.status === 'pending' && (
-                              <View style={{flexDirection:'row', gap:8}}>
-                                <TouchableOpacity
-                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
-                                  onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b,status:'confirmed'} : b)); Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`); }}
-                                >
-                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
-                                  onPress={() => {
-                                    setSelectedRoomBooking(rb);
-                                    setCancelTarget('roomBooking');
-                                    setActionType('reject');
-                                    setCancelReason('');
-                                    setShowRoomBookingsManager(false);
-                                    setTimeout(() => setShowCancelReason(true), 50);
-                                  }}
-                                >
-                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
-                                </TouchableOpacity>
-                              </View>
-                            )}
-                            {rb.status === 'confirmed' && (
-                              <TouchableOpacity
-                                style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
-                                onPress={() => {
-                                  setSelectedRoomBooking(rb);
-                                  setCancelTarget('roomBooking');
-                                  setActionType('cancel');
-                                  setCancelReason('');
-                                  setShowRoomBookingsManager(false);
-                                  setTimeout(() => setShowCancelReason(true), 50);
-                                }}
-                              >
-                                <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    });
-                  })()}
-                </ScrollView>
-              </View>
-            </Modal>
-
-      {/* showOccupancyEditor */}
-      <Modal visible={showOccupancyEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowOccupancyEditor(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowOccupancyEditor(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Gestão de Ocupação</Text>
-                  <View style={{width:32}} />
-                </View>
-                <ScrollView style={{flex:1}} contentContainerStyle={{padding:16}} keyboardShouldPersistTaps="handled">
-      
-                  {/* Políticas do alojamento */}
-                  <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText, marginBottom:12}}>Políticas do Alojamento</Text>
-                  <View style={[bizS.couponCard, {marginBottom:20}]}>
-                    <View style={{flexDirection:'row', gap:12, marginBottom:12}}>
-                      <View style={{flex:1}}>
-                        <Text style={bizS.promoFormLabel}>Check-in</Text>
-                        <TextInput style={bizS.promoFormInput} value={accommodationPolicy.checkInTime} onChangeText={t => setAccommodationPolicy(p=>({...p, checkInTime:t}))} placeholder="14:00" placeholderTextColor={COLORS.grayText} />
-                      </View>
-                      <View style={{flex:1}}>
-                        <Text style={bizS.promoFormLabel}>Check-out</Text>
-                        <TextInput style={bizS.promoFormInput} value={accommodationPolicy.checkOutTime} onChangeText={t => setAccommodationPolicy(p=>({...p, checkOutTime:t}))} placeholder="12:00" placeholderTextColor={COLORS.grayText} />
-                      </View>
-                      <View style={{flex:1}}>
-                        <Text style={bizS.promoFormLabel}>Mín. noites</Text>
-                        <TextInput style={bizS.promoFormInput} value={String(accommodationPolicy.minNights)} onChangeText={t => setAccommodationPolicy(p=>({...p, minNights:parseInt(t)||1}))} keyboardType="numeric" placeholderTextColor={COLORS.grayText} />
-                      </View>
-                    </View>
-                    <Text style={[bizS.promoFormLabel, {marginBottom:6}]}>Cancelamento</Text>
-                    <View style={{flexDirection:'row', gap:8, marginBottom:12}}>
-                      {[['flexible','Flexível'],['moderate','Moderada'],['strict','Rígida']].map(([k,l]) => (
-                        <TouchableOpacity key={k} style={[bizS.typeChip, accommodationPolicy.cancelPolicy===k && bizS.typeChipActive]} onPress={() => setAccommodationPolicy(p=>({...p, cancelPolicy:k}))}>
-                          <Text style={[bizS.typeChipLabel, accommodationPolicy.cancelPolicy===k && bizS.typeChipLabelActive]}>{l}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    {[['breakfastIncluded','Pequeno-almoço incluído'],['petsAllowed','Animais de estimação permitidos']].map(([k,l]) => (
-                      <TouchableOpacity key={k} style={[bizS.settingsToggleRow, {borderBottomWidth:0, paddingVertical:8}]} onPress={() => setAccommodationPolicy(p=>({...p, [k]:!p[k]}))}>
-                        <Text style={{flex:1, fontSize:13, color:COLORS.darkText}}>{l}</Text>
-                        <View style={[bizS.statusSwitch, accommodationPolicy[k] && bizS.statusSwitchActive]}>
-                          <View style={[bizS.statusSwitchKnob, accommodationPolicy[k] && bizS.statusSwitchKnobActive]} />
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-      
-                  {/* v2.9.25: Bloqueios de quartos por tipo */}
-                  <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText, marginBottom:4}}>Bloqueios de Disponibilidade</Text>
-                  <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:14, lineHeight:17}}>
-                    Adiciona períodos em que parte (ou todos) os quartos estão ocupados. O sistema soma todos os bloqueios para calcular a disponibilidade real.
-                  </Text>
-      
-                  {roomTypes.length === 0 ? (
-                    <Text style={{fontSize:13, color:COLORS.grayText, textAlign:'center', paddingVertical:24}}>Sem quartos criados. Adiciona quartos em "Editar Tipos de Quarto".</Text>
-                  ) : roomTypes.map(room => {
-                    const blocks = roomBlocks[room.id] || [];
-                    const isExpanded = blockDraft.roomId === room.id;
-                    return (
-                      <View key={room.id} style={[bizS.couponCard, {marginBottom:16}]}>
-                        {/* Header do tipo de quarto */}
-                        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
-                          <View>
-                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{room.name}</Text>
-                            <Text style={{fontSize:12, color:COLORS.grayText, marginTop:1}}>{room.totalRooms || 1} unidade{(room.totalRooms||1)!==1?'s':''} no total</Text>
-                          </View>
-                          <View style={{alignItems:'flex-end'}}>
-                            <Text style={{fontSize:12, fontWeight:'700', color: blocks.length > 0 ? '#D97706' : COLORS.green}}>
-                              {blocks.length > 0 ? `${blocks.length} bloqueio${blocks.length!==1?'s':''}` : 'Sem bloqueios'}
-                            </Text>
-                          </View>
-                        </View>
-      
-                        {/* Lista de bloqueios existentes */}
-                        {blocks.length > 0 && (
-                          <View style={{gap:8, marginBottom:12}}>
-                            {blocks.map(block => {
-                              const pct = Math.round((block.count / (room.totalRooms || 1)) * 100);
-                              const isFull = block.count >= (room.totalRooms || 1);
-                              return (
-                                <View key={block.id} style={{flexDirection:'row', alignItems:'center', gap:10, padding:10, backgroundColor: isFull ? '#FEF2F2' : '#FFFBEB', borderRadius:10, borderWidth:1, borderColor: isFull ? '#DC262630' : '#D9770630'}}>
-                                  <View style={{flex:1}}>
-                                    <Text style={{fontSize:12, fontWeight:'700', color:COLORS.darkText}}>
-                                      {block.start} → {block.end}
-                                    </Text>
-                                    <View style={{flexDirection:'row', alignItems:'center', gap:6, marginTop:3}}>
-                                      <View style={{height:4, width:60, backgroundColor:COLORS.grayLine, borderRadius:2}}>
-                                        <View style={{height:4, width: Math.min(pct, 100) * 0.6, backgroundColor: isFull ? '#DC2626' : '#D97706', borderRadius:2}} />
-                                      </View>
-                                      <Text style={{fontSize:11, color: isFull ? '#DC2626' : '#D97706', fontWeight:'700'}}>
-                                        {block.count}/{room.totalRooms||1} {isFull ? '· Esgotado' : '· Parcial'}
-                                      </Text>
-                                    </View>
-                                    {block.note ? <Text style={{fontSize:11, color:COLORS.grayText, marginTop:2}}>{block.note}</Text> : null}
-                                  </View>
-                                  <TouchableOpacity
-                                    style={{padding:6, backgroundColor:COLORS.grayBg, borderRadius:8}}
-                                    onPress={() => setRoomBlocks(prev => ({
-                                      ...prev,
-                                      [room.id]: prev[room.id].filter(b => b.id !== block.id)
-                                    }))}
-                                  >
-                                    <Icon name="x" size={14} color="#DC2626" strokeWidth={2.5} />
-                                  </TouchableOpacity>
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-      
-                        {/* Formulário de novo bloqueio */}
-                        {isExpanded ? (
-                          <View style={{backgroundColor:COLORS.grayBg, borderRadius:12, padding:12, gap:10}}>
-                            <Text style={{fontSize:13, fontWeight:'700', color:COLORS.darkText, marginBottom:2}}>Novo bloqueio</Text>
-                            <View style={{flexDirection:'row', gap:8}}>
-                              <View style={{flex:1}}>
-                                <TextInput
-                                  style={[bizS.promoFormInput, {textAlign:'center'}]}
-                                  value={blockDraft.start}
-                                  onChangeText={val => setBlockDraft(d => ({...d, start: val, end: d.end && val > d.end ? '' : d.end}))}
-                                  placeholder="DD/MM/AAAA"
-                                  placeholderTextColor={COLORS.grayText}
-                                />
-                              </View>
-                              <View style={{flex:1}}>
-                                <TextInput
-                                  style={[bizS.promoFormInput, {textAlign:'center'}]}
-                                  value={blockDraft.end}
-                                  onChangeText={val => setBlockDraft(d => ({...d, end: val}))}
-                                  placeholder="DD/MM/AAAA"
-                                  placeholderTextColor={COLORS.grayText}
-                                />
-                              </View>
-                            </View>
-      
-                            {/* Seletor de quantidade */}
-                            <View>
-                              <Text style={[bizS.promoFormLabel, {marginBottom:6}]}>
-                                Quantos quartos ocupar? (máx. {room.totalRooms||1})
-                              </Text>
-                              <View style={{flexDirection:'row', gap:8, flexWrap:'wrap'}}>
-                                {Array.from({length: room.totalRooms || 1}, (_,i) => i+1).map(n => (
-                                  <TouchableOpacity
-                                    key={n}
-                                    style={{
-                                      width: 44, height: 44, borderRadius: 10,
-                                      borderWidth: 1.5,
-                                      borderColor: blockDraft.count === n ? (n === (room.totalRooms||1) ? '#DC2626' : COLORS.red) : COLORS.grayLine,
-                                      backgroundColor: blockDraft.count === n ? (n === (room.totalRooms||1) ? '#FEF2F2' : COLORS.redLight) : COLORS.white,
-                                      alignItems:'center', justifyContent:'center',
-                                    }}
-                                    onPress={() => setBlockDraft(d => ({...d, count: n}))}
-                                  >
-                                    <Text style={{fontSize:14, fontWeight:'700', color: blockDraft.count === n ? (n === (room.totalRooms||1) ? '#DC2626' : COLORS.red) : COLORS.grayText}}>{n}</Text>
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                              {blockDraft.count >= (room.totalRooms||1) && (
-                                <Text style={{fontSize:11, color:'#DC2626', marginTop:4, fontWeight:'600'}}>⚠ Todos os quartos esgotados neste período</Text>
-                              )}
-                            </View>
-      
-                            <View>
-                              <Text style={bizS.promoFormLabel}>Nota (opcional)</Text>
-                              <TextInput
-                                style={bizS.promoFormInput}
-                                value={blockDraft.note}
-                                onChangeText={t => setBlockDraft(d => ({...d, note: t}))}
-                                placeholder="Ex: Evento privado, manutenção..."
-                                placeholderTextColor={COLORS.grayText}
-                              />
-                            </View>
-      
-                            <View style={{flexDirection:'row', gap:8}}>
-                              <TouchableOpacity
-                                style={{flex:1, paddingVertical:10, borderRadius:10, borderWidth:1.5, borderColor:COLORS.grayLine, alignItems:'center'}}
-                                onPress={() => setBlockDraft({ roomId: null, start: '', end: '', count: 1, note: '' })}
-                              >
-                                <Text style={{fontSize:13, fontWeight:'700', color:COLORS.grayText}}>Cancelar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={{flex:2, paddingVertical:10, borderRadius:10, backgroundColor: (blockDraft.start && blockDraft.end) ? COLORS.red : COLORS.grayLine, alignItems:'center'}}
-                                disabled={!blockDraft.start || !blockDraft.end}
-                                onPress={() => {
-                                  const newBlock = {
-                                    id: 'block_' + room.id + '_' + Date.now(),
-                                    start: blockDraft.start,
-                                    end: blockDraft.end,
-                                    count: blockDraft.count || 1,
-                                    note: blockDraft.note,
-                                    source: 'manual',
-                                  };
-                                  setRoomBlocks(prev => ({
-                                    ...prev,
-                                    [room.id]: [...(prev[room.id]||[]), newBlock],
-                                  }));
-                                  setBlockDraft({ roomId: null, start: '', end: '', count: 1, note: '' });
-                                }}
-                              >
-                                <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>Adicionar bloqueio</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={{flexDirection:'row', alignItems:'center', gap:8, paddingVertical:10, paddingHorizontal:14, borderRadius:10, borderWidth:1.5, borderColor:COLORS.red+'60', borderStyle:'dashed'}}
-                            onPress={() => setBlockDraft({ roomId: room.id, start: '', end: '', count: 1, note: '' })}
-                          >
-                            <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
-                            <Text style={{fontSize:13, fontWeight:'700', color:COLORS.red}}>Adicionar período de bloqueio</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })}
-                  <View style={{height:20}} />
-                </ScrollView>
-                <View style={{padding:16, borderTopWidth:1, borderTopColor:COLORS.grayLine}}>
-                  <TouchableOpacity
-                    style={{backgroundColor:COLORS.red, borderRadius:12, paddingVertical:14, alignItems:'center'}}
-                    onPress={() => {
-                      // Sincroniza roomBlocks → roomTypes[].bookedRanges
-                      setRoomTypes(prev => prev.map(r => ({
-                        ...r,
-                        bookedRanges: (roomBlocks[r.id] || []).map(b => ({
-                          start: b.start, end: b.end,
-                          count: Number(b.count) || 1,
-                        })),
-                      })));
-                      updateOwnerBiz({ accommodationPolicy });
-                      setShowOccupancyEditor(false);
-                      Alert.alert('Guardado!', 'Bloqueios e políticas actualizados.');
-                    }}
-                  >
-                    <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar Bloqueios</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-
-      {/* showPopularDishesEditor */}
-      <Modal visible={showPopularDishesEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPopularDishesEditor(false)}>
-              <View style={{flex:1, backgroundColor:COLORS.white}}>
-                <View style={[profS.overlayHeader, {paddingTop:16}]}>
-                  <TouchableOpacity style={profS.backBtn} onPress={() => setShowPopularDishesEditor(false)}>
-                    <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                  <Text style={profS.overlayTitle}>Pratos em Destaque</Text>
-                  <View style={{width:32}} />
-                </View>
-                <ScrollView style={{flex:1, padding:16}}>
-                  <Text style={{fontSize:13, color:COLORS.grayText, marginBottom:16}}>Escolhe até 5 pratos para destacar no perfil público</Text>
-                  {ownerPopularDishes.map((d, i) => (
-                    <View key={i} style={[bizS.couponCard, {marginBottom:10}]}>
-                      <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-                        <Text style={{fontWeight:'700', color:COLORS.darkText, fontSize:13}}>#{i+1}</Text>
-                        <TouchableOpacity onPress={() => setOwnerPopularDishes(ownerPopularDishes.filter((_,idx)=>idx!==i))}>
-                          <Icon name="x" size={16} color={COLORS.red} strokeWidth={2.5} />
-                        </TouchableOpacity>
-                      </View>
-                      <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={d.name||''} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],name:t}; setOwnerPopularDishes(u); }} placeholder="Nome do prato" placeholderTextColor={COLORS.grayText} />
-                      <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={d.price||''} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],price:t}; setOwnerPopularDishes(u); }} placeholder="Preço (ex: 3.500 Kz)" placeholderTextColor={COLORS.grayText} />
-                      <TextInput style={[bizS.promoFormInput, {minHeight:0}]} value={String(d.orders||'')} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],orders:parseInt(t)||0}; setOwnerPopularDishes(u); }} placeholder="Nº de pedidos" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
-                    </View>
-                  ))}
-                  {ownerPopularDishes.length < 5 && (
-                    <TouchableOpacity
-                      style={[bizS.highlightAddBtn, {marginTop:4}]}
-                      onPress={() => setOwnerPopularDishes([...ownerPopularDishes, {name:'',price:'',orders:0}])}
-                    >
-                      <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
-                      <Text style={bizS.highlightAddText}>Adicionar prato</Text>
-                    </TouchableOpacity>
-                  )}
-                </ScrollView>
-                <View style={{padding:16}}>
-                  <TouchableOpacity
-                    style={{backgroundColor:COLORS.red, borderRadius:12, paddingVertical:14, alignItems:'center'}}
-                    onPress={() => {
-                      const clean = ownerPopularDishes.filter(d => d.name?.trim());
-                      setOwnerPopularDishes(clean);
-                      updateOwnerBiz({ popularDishes: clean });
-                      setShowPopularDishesEditor(false);
-                      Alert.alert('Guardado!', 'Pratos em destaque actualizados.');
-                    }}
-                  >
-                    <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar Destaques</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
 
 
     </View>
