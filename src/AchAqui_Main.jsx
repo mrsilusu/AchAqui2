@@ -378,6 +378,21 @@ function AppContent() {
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
+
+  // ── Reservas de quartos partilhadas (dono ↔ cliente) ──────────────────────
+  // Estado elevado para Main para que OwnerModule e HospitalityModule (via
+  // OperationalLayerRenderer) partilhem exactamente os mesmos dados.
+  // Quando o backend estiver ligado, substituir por liveSync.bookings.
+  const [ownerRoomBookings, setOwnerRoomBookings] = useState([
+    { id: 'rb_1', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
+      guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
+      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
+      adults: 2, children: 0, rooms: 1, totalPrice: 60000, status: 'confirmed' },
+    { id: 'rb_2', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
+      guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
+      checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
+      adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
+  ]);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
@@ -560,6 +575,8 @@ function AppContent() {
               accessToken={authSession.accessToken}
               onRefreshOwnerData={refreshOwnerData}
               ownerMetrics={ownerMetrics}
+              ownerRoomBookings={ownerRoomBookings}
+              onOwnerRoomBookingsChange={setOwnerRoomBookings}
             />
           )}
 
@@ -696,6 +713,10 @@ function AppContent() {
             tenantId={selectedBusiness?.id}
             accessToken={authSession.accessToken}
             createBooking={liveSync.createBooking}
+            liveBookings={liveSync.bookings}
+            updateOwnerBiz={updateOwnerBiz}
+            ownerRoomBookings={ownerRoomBookings}
+            onOwnerRoomBookingsChange={setOwnerRoomBookings}
           />
         </View>
       )}

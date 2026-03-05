@@ -766,7 +766,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -790,10 +790,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
 
-  // Reservas activas (SF_H2: mock; SF_H3: virá do estado global)
-  // Em ownerMode com liveBookings do backend → usa dados reais
-  // Em clientMode ou sem liveBookings → usa mocks para demonstração
-  const MOCK_BOOKINGS = [
+  // ── Reservas — fonte única de verdade ─────────────────────────────────────
+  // Prioridade (maior → menor):
+  //   1. Supabase Realtime (liveBookings do backend) — produção
+  //   2. ownerRoomBookingsProp (estado elevado no Main) — desenvolvimento local
+  //   3. localBookings (fallback isolado, sem Main)
+  const LOCAL_MOCK_BOOKINGS = [
     { id: 'rb_1', businessId: business?.id, roomTypeId: '1',
       guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
       checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
@@ -804,7 +806,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
   ];
 
-  const [localBookings, setLocalBookings] = useState(MOCK_BOOKINGS);
+  const [localBookings, setLocalBookings] = useState(LOCAL_MOCK_BOOKINGS);
 
   // Converte liveBookings (formato API) para o formato interno do HospitalityModule
   const apiBookings = useMemo(() => {
@@ -834,9 +836,31 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       });
   }, [liveBookings, business?.id]);
 
-  // roomBookings: em ownerMode usa API se disponível, senão mocks; em clientMode usa local
-  const roomBookings = (ownerMode && apiBookings) ? apiBookings : localBookings;
-  const setRoomBookings = ownerMode ? () => {} : setLocalBookings;
+  // roomBookings: fonte única de verdade com fallback em cascata
+  // apiBookings > ownerRoomBookingsProp (filtrado por negócio) > localBookings
+  const sharedBookings = useMemo(() => {
+    if (!ownerRoomBookingsProp) return null;
+    return ownerRoomBookingsProp.filter(b => !b.businessId || b.businessId === business?.id);
+  }, [ownerRoomBookingsProp, business?.id]);
+
+  const roomBookings = apiBookings ?? sharedBookings ?? localBookings;
+
+  const setRoomBookings = useCallback((updater) => {
+    // Se temos estado partilhado, propagar para o Main (e portanto para o OwnerModule)
+    if (onOwnerRoomBookingsChange) {
+      onOwnerRoomBookingsChange(prev => {
+        const currentAll = prev ?? [];
+        const updated = typeof updater === 'function'
+          ? updater(currentAll.filter(b => !b.businessId || b.businessId === business?.id))
+          : updater;
+        // Substituir as reservas deste negócio e manter as dos outros
+        const others = currentAll.filter(b => b.businessId && b.businessId !== business?.id);
+        return [...others, ...updated];
+      });
+    } else {
+      setLocalBookings(updater);
+    }
+  }, [onOwnerRoomBookingsChange, business?.id]);
 
   // iCal state — dados privados do dono
   const [icalLink, setIcalLink]   = useState(ownerBusinessPrivate?.icalLink || '');
@@ -904,6 +928,19 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           endDate: toISO(booking.checkOut),
         });
 
+        // Optimistic update: adicionar ao estado partilhado imediatamente
+        // O Supabase Realtime irá confirmar/substituir quando chegar
+        const newBooking = {
+          ...booking,
+          id: booking.id || `rb_${Date.now()}`,
+          businessId: business.id,
+          status: 'pending',
+        };
+        setRoomBookings(prev => {
+          const exists = prev.some(b => b.id === newBooking.id);
+          return exists ? prev : [...prev, newBooking];
+        });
+
         const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
         Alert.alert(
           'Reserva Enviada! 🎉',
@@ -927,7 +964,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         [{ text: 'OK' }],
       );
     }
-  }, [business.id, onCreateBooking]);
+  }, [business.id, onCreateBooking, setRoomBookings]);
 
   // ── Mudar status de reserva (modo dono) ──────────────────────────────────
   const handleStatusChange = useCallback((bookingId, newStatus) => {

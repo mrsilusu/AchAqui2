@@ -69,7 +69,7 @@ const LAYER_MAP = {
 // ─────────────────────────────────────────────────────────────────────────────
 // OPERATIONAL LAYER RENDERER
 // ─────────────────────────────────────────────────────────────────────────────
-export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken, createBooking }) {
+export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken, createBooking, liveBookings, updateOwnerBiz, ownerRoomBookings, onOwnerRoomBookingsChange }) {
   const insets = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -166,6 +166,10 @@ export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken
           tenantId={tenantId}
           accessToken={accessToken}
           onCreateBooking={createBooking}
+          liveBookings={liveBookings}
+          updateOwnerBiz={updateOwnerBiz}
+          ownerRoomBookings={ownerRoomBookings}
+          onOwnerRoomBookingsChange={onOwnerRoomBookingsChange}
           onUnsavedChange={() => {}}
         />
       </View>

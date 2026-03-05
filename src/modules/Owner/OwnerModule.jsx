@@ -246,6 +246,8 @@ export function OwnerModule({
   accessToken = null,
   authUserId = null,
   onRefreshOwnerData = () => {},
+  ownerRoomBookings: ownerRoomBookingsProp = null,
+  onOwnerRoomBookingsChange = null,
 }) {
   const ownerMetrics = ownerMetricsProp || {
     views: 0,
@@ -379,15 +381,20 @@ export function OwnerModule({
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
   const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
-  // Reservas de Quartos
-  const [roomBookings, setRoomBookings] = useState([
-    { id: 'rb_1', businessId: '1', roomTypeId: '1', guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
+  // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
+  // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
+  const LOCAL_ROOM_BOOKINGS_FALLBACK = [
+    { id: 'rb_1', businessId: OWNER_BUSINESS.id, roomTypeId: '1', guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
       checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4, totalPrice: 60000, status: 'confirmed', createdAt: '2026-02-20' },
-    { id: 'rb_2', businessId: '1', roomTypeId: '1', guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
+    { id: 'rb_2', businessId: OWNER_BUSINESS.id, roomTypeId: '1', guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
       checkIn: '03/03/2026', checkOut: '06/03/2026', nights: 3, totalPrice: 45000, status: 'pending', createdAt: '2026-02-21' },
-    { id: 'rb_3', businessId: '1', roomTypeId: '2', guestName: 'Margarida Sousa', guestPhone: '+244 934 555 666',
+    { id: 'rb_3', businessId: OWNER_BUSINESS.id, roomTypeId: '2', guestName: 'Margarida Sousa', guestPhone: '+244 934 555 666',
       checkIn: '28/02/2026', checkOut: '02/03/2026', nights: 2, totalPrice: 70000, status: 'confirmed', createdAt: '2026-02-19' },
-  ]);
+  ];
+  const [localRoomBookings, setLocalRoomBookings] = useState(LOCAL_ROOM_BOOKINGS_FALLBACK);
+  // roomBookings: se Main forneceu estado partilhado usa-o; senão usa local (testes isolados)
+  const roomBookings = ownerRoomBookingsProp ?? localRoomBookings;
+  const setRoomBookings = onOwnerRoomBookingsChange ?? setLocalRoomBookings;
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
@@ -786,17 +793,25 @@ export function OwnerModule({
         // Update existing menu item
         await backendApi.updateMenuItem(editingMenuItem.id, payload, accessToken);
         
-        setMenuItems((prev) =>
-          prev.map((item) =>
+        setMenuItems((prev) => {
+          const updated = prev.map((item) =>
             item.id === editingMenuItem.id
               ? { ...item, ...payload }
               : item,
-          ),
-        );
+          );
+          OWNER_BUSINESS.menuItems = updated;
+          updateOwnerBiz({ menuItems: updated });
+          return updated;
+        });
       } else {
         // Create new menu item
         const response = await backendApi.createMenuItem(payload, accessToken);
-        setMenuItems((prev) => [...prev, response]);
+        setMenuItems((prev) => {
+          const updated = [...prev, response];
+          OWNER_BUSINESS.menuItems = updated;
+          updateOwnerBiz({ menuItems: updated });
+          return updated;
+        });
       }
 
       setShowMenuItemForm(false);
@@ -822,7 +837,12 @@ export function OwnerModule({
             setIsMenuItemLoading(true);
             try {
               await backendApi.deleteMenuItem(itemId, accessToken);
-              setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
+              setMenuItems((prev) => {
+                const updated = prev.filter((item) => item.id !== itemId);
+                OWNER_BUSINESS.menuItems = updated;
+                updateOwnerBiz({ menuItems: updated });
+                return updated;
+              });
               Alert.alert('Sucesso', 'Item removido do menu.');
             } catch (error) {
               Alert.alert('Erro', error?.message || 'Não foi possível remover o item.');
@@ -1007,14 +1027,22 @@ export function OwnerModule({
 
       if (editingRoom) {
         await backendApi.updateRoom(editingRoom.id, payload, accessToken);
-        setRoomTypes((prev) =>
-          prev.map((item) =>
+        setRoomTypes((prev) => {
+          const updated = prev.map((item) =>
             item.id === editingRoom.id ? { ...item, ...payload } : item,
-          ),
-        );
+          );
+          OWNER_BUSINESS.roomTypes = updated;
+          updateOwnerBiz({ roomTypes: updated });
+          return updated;
+        });
       } else {
         const response = await backendApi.createRoom(payload, accessToken);
-        setRoomTypes((prev) => [...prev, response]);
+        setRoomTypes((prev) => {
+          const updated = [...prev, response];
+          OWNER_BUSINESS.roomTypes = updated;
+          updateOwnerBiz({ roomTypes: updated });
+          return updated;
+        });
       }
 
       setShowRoomForm(false);
@@ -1040,7 +1068,12 @@ export function OwnerModule({
             setIsRoomLoading(true);
             try {
               await backendApi.deleteRoom(itemId, accessToken);
-              setRoomTypes((prev) => prev.filter((item) => item.id !== itemId));
+              setRoomTypes((prev) => {
+                const updated = prev.filter((item) => item.id !== itemId);
+                OWNER_BUSINESS.roomTypes = updated;
+                updateOwnerBiz({ roomTypes: updated });
+                return updated;
+              });
               Alert.alert('Sucesso', 'Quarto removido.');
             } catch (error) {
               Alert.alert('Erro', error?.message || 'Não foi possível remover o quarto.');
