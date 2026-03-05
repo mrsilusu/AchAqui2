@@ -497,7 +497,6 @@ function AppContent() {
               onToggleBookmark={toggleBookmark}
               notifications={notifications}
               onOpenAppLayer={meta.openAppLayer}
-              onToggleOwnerMode={handleToggleOwnerMode}
               isBusinessMode={isBusinessMode}
               locationPermission={locationPermission}
               onRequestLocation={requestLocationPermission}
