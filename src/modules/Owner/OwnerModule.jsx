@@ -488,11 +488,10 @@ export function OwnerModule({
   const ownerBiz = businesses?.find(b => b.id === OWNER_BUSINESS.id) || OWNER_BUSINESS;
 
   useEffect(() => {
-    if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
-      return;
-    }
+    if (authRole !== 'OWNER') return;
 
-    const normalized = liveNotifications.map((notification) => ({
+    // Sincroniza sempre — inclui quando a lista fica vazia (limpeza)
+    const normalized = (Array.isArray(liveNotifications) ? liveNotifications : []).map((notification) => ({
       id: notification.id,
       icon: notification.title?.toLowerCase().includes('reserva') ? '🏨' : '🔔',
       title: notification.title || 'Notificação',
@@ -509,11 +508,9 @@ export function OwnerModule({
   }, [authRole, liveNotifications]);
 
   useEffect(() => {
-    if (authRole !== 'OWNER' || !Array.isArray(liveBookings) || liveBookings.length === 0) {
-      return;
-    }
+    if (authRole !== 'OWNER') return;
 
-    const mappedReservations = liveBookings.map((booking) => {
+    const mappedReservations = (Array.isArray(liveBookings) ? liveBookings : []).map((booking) => {
       const startDate = booking.startDate ? new Date(booking.startDate) : null;
 
       return {
@@ -1124,9 +1121,9 @@ export function OwnerModule({
             </TouchableOpacity>
           </View>
           <DiningModule
-            business={businesses.find(b=>b.id===OWNER_BUSINESS.id)||OWNER_BUSINESS}
+            business={ownerBiz}
             ownerMode={true}
-            tenantId={OWNER_BUSINESS.id}
+            tenantId={ownerBiz.id}
           />
         </SafeAreaView>
           </Animated.View>
@@ -1149,9 +1146,9 @@ export function OwnerModule({
           </View>
           <ScrollView contentContainerStyle={{paddingBottom:40}}>
             <HospitalityModule
-              business={businesses.find(b=>b.id===OWNER_BUSINESS.id)||OWNER_BUSINESS}
+              business={ownerBiz}
               ownerMode={true}
-              tenantId={OWNER_BUSINESS.id}
+              tenantId={ownerBiz.id}
               onBookingDone={()=>closeAppLayer()}
             />
           </ScrollView>
