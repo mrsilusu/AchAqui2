@@ -766,7 +766,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -843,14 +843,55 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, []);
 
   // ── Confirmar reserva ────────────────────────────────────────────────────
-  const handleConfirmBooking = useCallback((booking) => {
-    setRoomBookings(prev => [...prev, booking]);
+  // Se onCreateBooking está disponível (cliente autenticado via backendApi),
+  // a reserva é persistida no Supabase/Postgres.
+  // O Supabase Realtime notifica o dono automaticamente via useLiveSync.
+  // Se não estiver disponível (modo dono ou sem rede), fica em estado local.
+  const handleConfirmBooking = useCallback(async (booking) => {
     setShowBookingModal(false);
-    const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
-    Alert.alert('Reserva Confirmada! 🎉',
-      `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
-      [{ text: 'OK' }]);
-  }, []);
+
+    if (typeof onCreateBooking === 'function') {
+      try {
+        // Converter datas DD/MM/YYYY → ISO para a API
+        const toISO = (str) => {
+          if (!str) return null;
+          if (str.includes('/')) {
+            const [d, m, y] = str.split('/').map(Number);
+            return new Date(y, m - 1, d).toISOString();
+          }
+          return new Date(str).toISOString();
+        };
+
+        await onCreateBooking({
+          businessId: business.id,
+          startDate: toISO(booking.checkIn),
+          endDate: toISO(booking.checkOut),
+        });
+
+        const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
+        Alert.alert(
+          'Reserva Enviada! 🎉',
+          `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz\n\n📩 O dono será notificado em tempo real.`,
+          [{ text: 'OK' }],
+        );
+      } catch (err) {
+        Alert.alert(
+          'Erro ao Reservar',
+          err?.message || 'Não foi possível criar a reserva. Verifica a tua ligação.',
+          [{ text: 'OK' }],
+        );
+      }
+    } else {
+      // Fallback local (modo dono a testar, ou sem sessão)
+      setRoomBookings(prev => [...prev, booking]);
+      const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
+      Alert.alert(
+        'Reserva Confirmada! 🎉',
+        `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
+        [{ text: 'OK' }],
+      );
+    }
+  }, [business.id, onCreateBooking]);
 
   // ── Mudar status de reserva (modo dono) ──────────────────────────────────
   const handleStatusChange = useCallback((bookingId, newStatus) => {

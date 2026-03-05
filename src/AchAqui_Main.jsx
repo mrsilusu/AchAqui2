@@ -658,6 +658,8 @@ function AppContent() {
             layer={layer}
             isOwner={isBusinessMode}
             tenantId={selectedBusiness?.id}
+            accessToken={authSession.accessToken}
+            createBooking={liveSync.createBooking}
           />
         </View>
       )}

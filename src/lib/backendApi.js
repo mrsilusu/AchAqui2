@@ -126,6 +126,8 @@ export const backendApi = {
   getMe: (accessToken) => apiRequest('/auth/me', { accessToken }),
   getOwnerDashboard: (accessToken) => apiRequest('/analytics/owner/dashboard', { accessToken }),
   getBookings: (accessToken) => apiRequest('/bookings', { accessToken }),
+  createBooking: (payload, accessToken) =>
+    apiRequest('/bookings', { method: 'POST', body: payload, accessToken }),
   getNotifications: (accessToken) => apiRequest('/notifications', { accessToken }),
   markNotificationRead: (id, accessToken) =>
     apiRequest(`/notifications/${id}/read`, { method: 'PATCH', accessToken }),

@@ -69,7 +69,7 @@ const LAYER_MAP = {
 // ─────────────────────────────────────────────────────────────────────────────
 // OPERATIONAL LAYER RENDERER
 // ─────────────────────────────────────────────────────────────────────────────
-export function OperationalLayerRenderer({ layer, isOwner, tenantId }) {
+export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken, createBooking }) {
   const insets = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -164,7 +164,8 @@ export function OperationalLayerRenderer({ layer, isOwner, tenantId }) {
           business={business}
           ownerMode={isOwner}
           tenantId={tenantId}
-          // Props específicos por módulo que aceitam callbacks opcionais:
+          accessToken={accessToken}
+          onCreateBooking={createBooking}
           onUnsavedChange={() => {}}
         />
       </View>
