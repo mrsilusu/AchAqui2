@@ -1193,7 +1193,7 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Serviços Oferecidos','Disponível no módulo.')}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesOfferedEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Serviços Oferecidos</Text>
@@ -1204,7 +1204,7 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Portfólio','Disponível no módulo.')}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPortfolioEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Portfólio</Text>
@@ -1215,7 +1215,7 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Disponibilidade','Abra o módulo de Beleza & Bem-estar para gerir a sua disponibilidade.')}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Disponibilidade</Text>
@@ -1268,7 +1268,7 @@ export function OwnerModule({
               )}
 
               {OWNER_BUSINESS.modules?.gastronomy && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Pratos em Destaque','Disponível no módulo.')}>
+                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPopularDishesEditor(true)}>
                   <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Pratos em Destaque</Text>
@@ -4632,6 +4632,211 @@ export function OwnerModule({
 
       {/* ── CONFIGURAÇÕES DO NEGÓCIO MODAL ────────────────────────────── */}
 {/* ── CONFIGURAÇÕES MODAL — Image 1 design ─────────────────────── */}
+
+      {/* ── SERVIÇOS OFERECIDOS EDITOR ────────────────────────────────────── */}
+      {showServicesOfferedEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowServicesOfferedEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Serviços Oferecidos</Text>
+            <TouchableOpacity onPress={() => {
+              updateOwnerBiz({ servicesOffered: ownerServicesOffered });
+              setShowServicesOfferedEditor(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Selecione os serviços que o seu negócio oferece. Eles aparecerão no seu perfil público.
+              </Text>
+              
+              {['Corte de Cabelo', 'Manicure', 'Pedicure', 'Massagem', 'Depilação', 'Maquilhagem', 'Tratamento Facial', 'Coloração'].map(service => (
+                <TouchableOpacity
+                  key={service}
+                  style={[bizS.amenityRow, ownerServicesOffered.includes(service) && bizS.amenityRowActive]}
+                  onPress={() => {
+                    setOwnerServicesOffered(prev => 
+                      prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[bizS.amenityLabel, ownerServicesOffered.includes(service) && bizS.amenityLabelActive]}>
+                    {service}
+                  </Text>
+                  {ownerServicesOffered.includes(service) && (
+                    <Icon name="checkCircle" size={20} color={COLORS.red} strokeWidth={2} fill={COLORS.red} />
+                  )}
+                </TouchableOpacity>
+              ))}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── PORTFÓLIO EDITOR ────────────────────────────────────────────── */}
+      {showPortfolioEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowPortfolioEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Portfólio</Text>
+            <TouchableOpacity onPress={() => Alert.alert('Upload', 'Funcionalidade de upload disponível em breve.')}>
+              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Adicione fotos dos seus trabalhos para mostrar aos clientes.
+              </Text>
+              {ownerPortfolio.length === 0 ? (
+                <View style={{alignItems:'center', paddingVertical:60}}>
+                  <Icon name="camera" size={48} color={COLORS.grayText} strokeWidth={1.5} />
+                  <Text style={{fontSize:15, color:COLORS.grayText, marginTop:16}}>Nenhuma foto no portfólio</Text>
+                  <TouchableOpacity
+                    style={{marginTop:20, paddingHorizontal:24, paddingVertical:12, backgroundColor:COLORS.red, borderRadius:10}}
+                    onPress={() => Alert.alert('Upload', 'Funcionalidade disponível em breve.')}
+                  >
+                    <Text style={{color:COLORS.white, fontWeight:'700'}}>+ Adicionar Foto</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{flexDirection:'row', flexWrap:'wrap', gap:8}}>
+                  {ownerPortfolio.map((img, idx) => (
+                    <View key={idx} style={{width:'31%', aspectRatio:1, borderRadius:8, backgroundColor:COLORS.grayBg}}>
+                      <Image source={{uri:img}} style={{width:'100%', height:'100%', borderRadius:8}} />
+                    </View>
+                  ))}
+                </View>
+              )}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── DISPONIBILIDADE EDITOR ─────────────────────────────────────── */}
+      {showAvailabilityEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowAvailabilityEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Disponibilidade</Text>
+            <TouchableOpacity onPress={() => {
+              updateOwnerBiz({ availability: ownerAvailability });
+              setShowAvailabilityEditor(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Defina os horários em que aceita marcações. Os clientes só poderão agendar dentro destes períodos.
+              </Text>
+              
+              {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => {
+                const dayNames = {mon:'Segunda', tue:'Terça', wed:'Quarta', thu:'Quinta', fri:'Sexta', sat:'Sábado', sun:'Domingo'};
+                const slots = ownerAvailability[day] || [];
+                return (
+                  <View key={day} style={{backgroundColor:COLORS.white, borderRadius:12, padding:16, marginBottom:12, borderWidth:1, borderColor:COLORS.grayLine}}>
+                    <Text style={{fontSize:15, fontWeight:'700', color:COLORS.darkText, marginBottom:8}}>{dayNames[day]}</Text>
+                    {slots.length === 0 ? (
+                      <Text style={{fontSize:13, color:COLORS.grayText}}>Fechado</Text>
+                    ) : (
+                      slots.map((slot, idx) => (
+                        <Text key={idx} style={{fontSize:14, color:COLORS.darkText}}>{slot.start} - {slot.end}</Text>
+                      ))
+                    )}
+                    <TouchableOpacity
+                      style={{marginTop:8, paddingVertical:6, borderRadius:8, backgroundColor:COLORS.redLight, alignItems:'center'}}
+                      onPress={() => Alert.alert('Editar Horário', 'Funcionalidade disponível em breve.')}
+                    >
+                      <Text style={{fontSize:12, fontWeight:'700', color:COLORS.red}}>
+                        {slots.length === 0 ? 'Adicionar Horário' : 'Editar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── PRATOS EM DESTAQUE EDITOR ─────────────────────────────────── */}
+      {showPopularDishesEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowPopularDishesEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Pratos em Destaque</Text>
+            <TouchableOpacity onPress={() => {
+              updateOwnerBiz({ popularDishes: ownerPopularDishes });
+              setShowPopularDishesEditor(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Selecione até 5 pratos do seu menu para destacar. Eles aparecerão em destaque no seu perfil.
+              </Text>
+              {menuItems.length === 0 ? (
+                <View style={{alignItems:'center', paddingVertical:40}}>
+                  <Icon name="web" size={48} color={COLORS.grayText} strokeWidth={1.5} />
+                  <Text style={{fontSize:15, color:COLORS.grayText, marginTop:16}}>Nenhum item no menu</Text>
+                  <Text style={{fontSize:13, color:COLORS.grayText, marginTop:8}}>Adicione itens ao menu primeiro</Text>
+                </View>
+              ) : (
+                menuItems.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[bizS.amenityRow, ownerPopularDishes.some(d => d.id === item.id) && bizS.amenityRowActive]}
+                    onPress={() => {
+                      setOwnerPopularDishes(prev => {
+                        const exists = prev.some(d => d.id === item.id);
+                        if (exists) {
+                          return prev.filter(d => d.id !== item.id);
+                        } else if (prev.length < 5) {
+                          return [...prev, item];
+                        } else {
+                          Alert.alert('Limite atingido', 'Pode destacar no máximo 5 pratos.');
+                          return prev;
+                        }
+                      });
+                    }}
+                    activeOpacity={0.7}
+                    disabled={!ownerPopularDishes.some(d => d.id === item.id) && ownerPopularDishes.length >= 5}
+                  >
+                    <View style={{flex:1}}>
+                      <Text style={[bizS.amenityLabel, ownerPopularDishes.some(d => d.id === item.id) && bizS.amenityLabelActive]}>
+                        {item.name}
+                      </Text>
+                      <Text style={{fontSize:12, color:COLORS.grayText}}>{item.price}€</Text>
+                    </View>
+                    {ownerPopularDishes.some(d => d.id === item.id) && (
+                      <Icon name="checkCircle" size={20} color={COLORS.red} strokeWidth={2} fill={COLORS.red} />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
 
       {/* ── CALENDAR PICKER GLOBAL ────────────────────────────────────────── */}
       <CalendarPicker
