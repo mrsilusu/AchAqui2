@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { backendApi } from '../lib/backendApi';
 import { getSupabaseClient } from '../lib/supabaseClient';
 
-const BOOKING_TABLES = ['Booking', 'bookings'];
+const BOOKING_TABLES = ['Booking', 'bookings', 'table_bookings', 'room_bookings'];
 const NOTIFICATION_TABLES = ['Notification', 'notifications'];
 
 export function useLiveSync({ user, accessToken }) {
@@ -57,6 +57,12 @@ export function useLiveSync({ user, accessToken }) {
     try {
       await Promise.all([loadBookings(), loadNotifications()]);
     } catch (syncError) {
+      console.error('[LiveSync][API_FAIL]', {
+        reason: syncError?.type || 'unknown',
+        status: syncError?.status || null,
+        url: syncError?.url || null,
+        message: syncError instanceof Error ? syncError.message : 'Falha na sincronização',
+      });
       setError(syncError instanceof Error ? syncError.message : 'Falha na sincronização');
     } finally {
       setLoading(false);
@@ -78,10 +84,41 @@ export function useLiveSync({ user, accessToken }) {
     await loadNotifications();
   }, [accessToken, loadNotifications]);
 
+  /**
+   * createBooking — cliente cria reserva via API (POST /bookings).
+   *
+   * Fluxo completo com Supabase Realtime:
+   *   1. Frontend chama createBooking({ businessId, startDate, endDate })
+   *   2. NestJS persiste Booking + 2 Notifications no Supabase/Postgres
+   *   3. Supabase Realtime deteta os INSERTs e emite eventos nos canais
+   *      subscritos por useLiveSync tanto do cliente como do dono
+   *   4. loadBookings() e loadNotifications() são chamados automaticamente
+   *      nos dois lados — sem polling, em tempo real
+   *
+   * @param {{ businessId: string, startDate: string, endDate: string }} payload
+   * @returns {Promise<object>} booking criado
+   */
+  const createBooking = useCallback(
+    async (payload) => {
+      if (!accessToken) throw new Error('Sem sessão activa. Faz login para reservar.');
+      const booking = await backendApi.createBooking(payload, accessToken);
+      // Reload imediato no cliente (o Realtime actualizará o dono)
+      await loadBookings();
+      return booking;
+    },
+    [accessToken, loadBookings],
+  );
+
+  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     reloadAll();
   }, [reloadAll]);
 
+  // ── Supabase Realtime — subscrição por utilizador ─────────────────────────
+  // Quando o backend insere uma Booking ou Notification no Supabase/Postgres,
+  // este canal deteta o evento e recarrega os dados automaticamente.
+  // Funciona para AMBOS os roles: o cliente vê a sua reserva confirmada,
+  // o dono vê a nova reserva e a notificação — tudo sem polling.
   useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase || !isAuthenticated) return;
@@ -122,6 +159,7 @@ export function useLiveSync({ user, accessToken }) {
       loading,
       error,
       reloadAll,
+      createBooking,
       markNotificationRead,
       markAllNotificationsRead,
     }),
@@ -131,6 +169,7 @@ export function useLiveSync({ user, accessToken }) {
       loading,
       error,
       reloadAll,
+      createBooking,
       markNotificationRead,
       markAllNotificationsRead,
     ],

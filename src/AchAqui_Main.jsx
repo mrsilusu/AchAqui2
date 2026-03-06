@@ -16,7 +16,7 @@
  */
 
 import React, {
-  useState, useCallback, useEffect,
+  useState, useCallback, useEffect, useMemo,
 } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView,
@@ -40,14 +40,13 @@ import { useBusinessFilters }   from './hooks/useBusinessFilters';
 import { useMetaAnimation }     from './hooks/useMetaAnimation';
 import { useAuthSession } from './hooks/useAuthSession';
 import { useLiveSync } from './hooks/useLiveSync';
+import { backendApi } from './lib/backendApi';
 
 import { sortS } from './styles/Main.styles';
 
-const USER_PROFILE = { id:'user_001', name:'João Silva', email:'joao.silva@email.ao', location:'Luanda, Angola', memberSince:'Janeiro 2024', avatar:null, stats:{businessesViewed:127,reviewsWritten:23,checkIns:45,photosUploaded:156,favoritesSaved:34,achievementsUnlocked:12} };
-
 const MOCK_BUSINESSES_INITIAL = [
   {
-    id:'1', name:'Pizzaria Bela Vista', category:'Restaurante Italiano', subcategory:'Pizza, Massa, Italiana',
+    id:'c74f2850-0dcd-4f2c-a61a-aa9fd2c7459e', name:'Pizzaria Bela Vista', category:'Restaurante Italiano', subcategory:'Pizza, Massa, Italiana',
     businessType:'food', primaryCategoryId:'restaurants', subCategoryIds:['food','nightlife','hotelsTravel'],
     icon:'🍕', rating:4.8, reviews:120, priceLevel:2, isPremium:true, verifiedBadge:true, isVerified:true,
     modules:{gastronomy:true,accommodation:true,retail:true,customorder:true,delivery:true},
@@ -164,6 +163,56 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
+function normalizeBusiness(rawBusiness) {
+  if (!rawBusiness?.id) return null;
+
+  // Procura o negócio nos mocks locais pelo id (inclui OWNER_BUSINESS e todos os outros)
+  const isOwnerBusiness = rawBusiness.id === OWNER_BUSINESS.id;
+  const localMock = MOCK_BUSINESSES_INITIAL.find(b => b.id === rawBusiness.id);
+  const base = isOwnerBusiness ? OWNER_BUSINESS : (localMock || {});
+
+  // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
+  const meta = rawBusiness.metadata || {};
+
+  return {
+    ...base,
+    id: rawBusiness.id,
+    name: rawBusiness.name || base.name || 'Negócio',
+    category: rawBusiness.category || base.category || meta.category || 'Serviços',
+    subcategory: base.subcategory || meta.subcategory || rawBusiness.category || 'Serviços',
+    businessType: base.businessType || meta.businessType || 'professional',
+    primaryCategoryId: base.primaryCategoryId || meta.primaryCategoryId || 'professional',
+    subCategoryIds: base.subCategoryIds || meta.subCategoryIds || ['professional'],
+    icon: base.icon || meta.icon || '🏢',
+    rating: base.rating || meta.rating || 4.8,
+    reviews: base.reviews || meta.reviews || 0,
+    priceLevel: base.priceLevel || meta.priceLevel || 2,
+    isPremium: base.isPremium || meta.isPremium || false,
+    verifiedBadge: true,
+    isVerified: true,
+    modules: base.modules || meta.modules || { professional: true },
+    address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
+    neighborhood: base.neighborhood || meta.neighborhood || '',
+    phone: base.phone || meta.phone || '',
+    website: base.website || meta.website || '',
+    promo: base.promo || meta.promo || null,
+    distance: base.distance || meta.distance || 0,
+    distanceText: base.distanceText || meta.distanceText || '—',
+    isOpen: base.isOpen ?? meta.isOpen ?? true,
+    statusText: base.statusText || meta.statusText || 'Aberto',
+    isPublic: true,
+    latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
+    longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
+    photos: base.photos?.length ? base.photos : (meta.photos || []),
+    amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
+    deals: base.deals?.length ? base.deals : (meta.deals || []),
+    popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
+    roomTypes: base.roomTypes?.length ? base.roomTypes : (meta.roomTypes || []),
+    metadata: meta,
+    owner: rawBusiness.owner || null,
+  };
+}
+
 export default function AchAquiMain() {
   return (
     <SafeAreaProvider>
@@ -202,10 +251,148 @@ function AppContent() {
     user: authSession.user,
     accessToken: authSession.accessToken,
   });
+  const [profileData, setProfileData] = useState(null);
+  const [ownerDashboardData, setOwnerDashboardData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfileData = async () => {
+      if (!authSession.accessToken) {
+        setProfileData(null);
+        return;
+      }
+
+      try {
+        const response = await backendApi.getMe(authSession.accessToken);
+        if (!cancelled) {
+          setProfileData(response || null);
+        }
+      } catch (error) {
+        console.error('[Profile][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar perfil.',
+        });
+
+        if (!cancelled) {
+          setProfileData(null);
+        }
+      }
+    };
+
+    loadProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession.accessToken, authSession.user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOwnerDashboard = async () => {
+      if (!authSession.accessToken || !authSession.isOwner) {
+        setOwnerDashboardData(null);
+        return;
+      }
+
+      try {
+        const response = await backendApi.getOwnerDashboard(authSession.accessToken);
+        if (!cancelled) {
+          setOwnerDashboardData(response || null);
+        }
+      } catch (error) {
+        console.error('[OwnerDashboard][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar dashboard do dono.',
+        });
+
+        if (!cancelled) {
+          setOwnerDashboardData(null);
+        }
+      }
+    };
+
+    loadOwnerDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession.accessToken, authSession.isOwner]);
+
+  const userProfile = useMemo(() => {
+    const createdAt = profileData?.createdAt
+      ? new Date(profileData.createdAt).toLocaleDateString('pt-PT', {
+          month: 'long',
+          year: 'numeric',
+        })
+      : '—';
+
+    const stats = profileData?.stats || {};
+
+    return {
+      id: profileData?.id || authSession.user?.id || 'anonymous',
+      name: profileData?.name || authSession.user?.name || 'Utilizador',
+      email: profileData?.email || authSession.user?.email || '',
+      location: 'Luanda, Angola',
+      memberSince: createdAt,
+      avatar: null,
+      stats: {
+        businessesViewed: Number(stats.bookings || 0),
+        reviewsWritten: Number(stats.notifications || 0),
+        checkIns: Number(stats.bookings || 0),
+        photosUploaded: Number(stats.businesses || 0),
+        favoritesSaved: Number(stats.notifications || 0),
+        achievementsUnlocked: Number(stats.businesses || 0),
+      },
+    };
+  }, [authSession.user?.email, authSession.user?.id, authSession.user?.name, profileData]);
+
+  const ownerMetrics = useMemo(() => ({
+    views: Number(ownerDashboardData?.totalBookings || 0),
+    viewsChange: 0,
+    clicks: Number(ownerDashboardData?.confirmedBookings || 0),
+    clicksChange: 0,
+    checkIns: Number(ownerDashboardData?.pendingBookings || 0),
+    checkInsChange: 0,
+    favorites: Number(ownerDashboardData?.totalBusinesses || 0),
+    favoritesChange: 0,
+  }), [ownerDashboardData]);
+
+  const refreshOwnerData = useCallback(async () => {
+    if (!authSession.accessToken || !authSession.isOwner) return;
+
+    await liveSync.reloadAll();
+    try {
+      const response = await backendApi.getOwnerDashboard(authSession.accessToken);
+      setOwnerDashboardData(response || null);
+    } catch {
+      // Keep current dashboard snapshot if owner metrics refresh fails.
+    }
+  }, [authSession.accessToken, authSession.isOwner, liveSync]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
-  const [businesses, setBusinesses] = useState([OWNER_BUSINESS, ...(MOCK_BUSINESSES_INITIAL || [])]);
+  const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
+
+  // ── Reservas de quartos partilhadas (dono ↔ cliente) ──────────────────────
+  // Estado elevado para Main para que OwnerModule e HospitalityModule (via
+  // OperationalLayerRenderer) partilhem exactamente os mesmos dados.
+  // Quando o backend estiver ligado, substituir por liveSync.bookings.
+  const [ownerRoomBookings, setOwnerRoomBookings] = useState([
+    { id: 'rb_1', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
+      guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
+      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
+      adults: 2, children: 0, rooms: 1, totalPrice: 60000, status: 'confirmed' },
+    { id: 'rb_2', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
+      guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
+      checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
+      adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
+  ]);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
@@ -225,9 +412,19 @@ function AppContent() {
   const layer   = useOperationalLayer(); // Nível 2 — módulos operacionais
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const updateOwnerBiz = useCallback((fields) => {
-    setBusinesses(prev => prev.map(b => b.id === OWNER_BUSINESS.id ? { ...b, ...fields } : b));
-  }, []);
+  const updateOwnerBiz = useCallback((fields, explicitBusinessId = null) => {
+    setBusinesses((prev) => {
+      const ownerBusinessFromSession = authSession.user?.id
+        ? prev.find((b) => b?.owner?.id === authSession.user.id)
+        : null;
+      const targetBusinessId =
+        explicitBusinessId ||
+        ownerBusinessFromSession?.id ||
+        OWNER_BUSINESS.id;
+
+      return prev.map((b) => (b.id === targetBusinessId ? { ...b, ...fields } : b));
+    });
+  }, [authSession.user?.id]);
 
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
@@ -262,6 +459,46 @@ function AppContent() {
 
   useEffect(() => {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBusinesses = async () => {
+      try {
+        const response = await backendApi.getBusinesses();
+        const fromApi = (Array.isArray(response) ? response : [])
+          .map(normalizeBusiness)
+          .filter(Boolean);
+
+        // Negócios da API têm prioridade; mocks preenchem os que não existem na API
+        const apiIds = new Set(fromApi.map(b => b.id));
+        const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
+        const merged = [...fromApi, ...mocksNotInApi];
+
+        if (!cancelled) {
+          setBusinesses(merged);
+        }
+      } catch (error) {
+        console.error('[Businesses][API_FAIL]', {
+          reason: error?.type || 'unknown',
+          status: error?.status || null,
+          url: error?.url || null,
+          message: error?.message || 'Falha ao carregar negócios da API.',
+        });
+
+        // Em caso de falha total, mostrar os mocks completos
+        if (!cancelled) {
+          setBusinesses(MOCK_BUSINESSES_INITIAL);
+        }
+      }
+    };
+
+    loadBusinesses();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleTabPress = useCallback((tabId) => {
@@ -299,9 +536,9 @@ function AppContent() {
               {...filters}
               activeNavTab={activeNavTab}
               onSetActiveNavTab={setActiveNavTab}
-              onSetIsBusinessMode={setIsBusinessMode}
+              onToggleOwnerMode={handleToggleOwnerMode}
               setActiveBusinessTab={setActiveBusinessTab}
-              USER_PROFILE={USER_PROFILE}
+              USER_PROFILE={userProfile}
               businesses={filters.filteredBusinesses}
               featuredBusinesses={businesses}
               onSelectBusiness={handleBusinessPress}
@@ -309,7 +546,6 @@ function AppContent() {
               onToggleBookmark={toggleBookmark}
               notifications={notifications}
               onOpenAppLayer={meta.openAppLayer}
-              onToggleOwnerMode={handleToggleOwnerMode}
               isBusinessMode={isBusinessMode}
               locationPermission={locationPermission}
               onRequestLocation={requestLocationPermission}
@@ -335,6 +571,12 @@ function AppContent() {
               onMarkNotificationRead={liveSync.markNotificationRead}
               onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
               authRole={authSession.user?.role || 'CLIENT'}
+              authUserId={authSession.user?.id || null}
+              accessToken={authSession.accessToken}
+              onRefreshOwnerData={refreshOwnerData}
+              ownerMetrics={ownerMetrics}
+              ownerRoomBookings={ownerRoomBookings}
+              onOwnerRoomBookingsChange={setOwnerRoomBookings}
             />
           )}
 
@@ -469,6 +711,12 @@ function AppContent() {
             layer={layer}
             isOwner={isBusinessMode}
             tenantId={selectedBusiness?.id}
+            accessToken={authSession.accessToken}
+            createBooking={liveSync.createBooking}
+            liveBookings={liveSync.bookings}
+            updateOwnerBiz={updateOwnerBiz}
+            ownerRoomBookings={ownerRoomBookings}
+            onOwnerRoomBookingsChange={setOwnerRoomBookings}
           />
         </View>
       )}

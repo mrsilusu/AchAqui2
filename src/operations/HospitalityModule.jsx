@@ -766,7 +766,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -790,8 +790,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
 
-  // Reservas activas (SF_H2: mock; SF_H3: virá do estado global)
-  const [roomBookings, setRoomBookings] = useState([
+  // ── Reservas — fonte única de verdade ─────────────────────────────────────
+  // Prioridade (maior → menor):
+  //   1. Supabase Realtime (liveBookings do backend) — produção
+  //   2. ownerRoomBookingsProp (estado elevado no Main) — desenvolvimento local
+  //   3. localBookings (fallback isolado, sem Main)
+  const LOCAL_MOCK_BOOKINGS = [
     { id: 'rb_1', businessId: business?.id, roomTypeId: '1',
       guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
       checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
@@ -800,7 +804,63 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
       checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
       adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
-  ]);
+  ];
+
+  const [localBookings, setLocalBookings] = useState(LOCAL_MOCK_BOOKINGS);
+
+  // Converte liveBookings (formato API) para o formato interno do HospitalityModule
+  const apiBookings = useMemo(() => {
+    if (!Array.isArray(liveBookings) || liveBookings.length === 0) return null;
+    return liveBookings
+      .filter(b => b.businessId === business?.id || !b.businessId)
+      .map(b => {
+        const start = b.startDate ? new Date(b.startDate) : null;
+        const end   = b.endDate   ? new Date(b.endDate)   : null;
+        const nights = (start && end) ? Math.round((end - start) / 86400000) : 1;
+        const toFmt  = (d) => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` : '';
+        return {
+          id:          b.id,
+          businessId:  b.businessId || business?.id,
+          roomTypeId:  b.roomTypeId || '1',
+          guestName:   b.user?.name  || b.guestName  || 'Cliente',
+          guestPhone:  b.user?.email || b.guestPhone || '',
+          checkIn:     toFmt(start),
+          checkOut:    toFmt(end),
+          nights,
+          adults:      b.adults   || 1,
+          children:    b.children || 0,
+          rooms:       b.rooms    || 1,
+          totalPrice:  b.totalPrice || 0,
+          status:      (b.status || 'PENDING').toLowerCase(),
+        };
+      });
+  }, [liveBookings, business?.id]);
+
+  // roomBookings: fonte única de verdade com fallback em cascata
+  // apiBookings > ownerRoomBookingsProp (filtrado por negócio) > localBookings
+  const sharedBookings = useMemo(() => {
+    if (!ownerRoomBookingsProp) return null;
+    return ownerRoomBookingsProp.filter(b => !b.businessId || b.businessId === business?.id);
+  }, [ownerRoomBookingsProp, business?.id]);
+
+  const roomBookings = apiBookings ?? sharedBookings ?? localBookings;
+
+  const setRoomBookings = useCallback((updater) => {
+    // Se temos estado partilhado, propagar para o Main (e portanto para o OwnerModule)
+    if (onOwnerRoomBookingsChange) {
+      onOwnerRoomBookingsChange(prev => {
+        const currentAll = prev ?? [];
+        const updated = typeof updater === 'function'
+          ? updater(currentAll.filter(b => !b.businessId || b.businessId === business?.id))
+          : updater;
+        // Substituir as reservas deste negócio e manter as dos outros
+        const others = currentAll.filter(b => b.businessId && b.businessId !== business?.id);
+        return [...others, ...updated];
+      });
+    } else {
+      setLocalBookings(updater);
+    }
+  }, [onOwnerRoomBookingsChange, business?.id]);
 
   // iCal state — dados privados do dono
   const [icalLink, setIcalLink]   = useState(ownerBusinessPrivate?.icalLink || '');
@@ -843,14 +903,73 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, []);
 
   // ── Confirmar reserva ────────────────────────────────────────────────────
-  const handleConfirmBooking = useCallback((booking) => {
-    setRoomBookings(prev => [...prev, booking]);
+  // Se onCreateBooking está disponível (cliente autenticado via backendApi),
+  // a reserva é persistida no Supabase/Postgres.
+  // O Supabase Realtime notifica o dono automaticamente via useLiveSync.
+  // Se não estiver disponível (modo dono ou sem rede), fica em estado local.
+  const handleConfirmBooking = useCallback(async (booking) => {
     setShowBookingModal(false);
-    const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
-    Alert.alert('Reserva Confirmada! 🎉',
-      `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
-      [{ text: 'OK' }]);
-  }, []);
+
+    if (typeof onCreateBooking === 'function') {
+      try {
+        // Converter datas DD/MM/YYYY -> ISO 8601 UTC para evitar drift de timezone.
+        const toISO = (str) => {
+          if (!str) return null;
+          if (str.includes('/')) {
+            const [d, m, y] = str.split('/').map(Number);
+            return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            const [y, m, d] = str.split('-').map(Number);
+            return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
+          }
+          return new Date(str).toISOString();
+        };
+
+        await onCreateBooking({
+          businessId: business.id,
+          bookingType: 'ROOM',
+          startDate: toISO(booking.checkIn),
+          endDate: toISO(booking.checkOut),
+        });
+
+        // Optimistic update: adicionar ao estado partilhado imediatamente
+        // O Supabase Realtime irá confirmar/substituir quando chegar
+        const newBooking = {
+          ...booking,
+          id: booking.id || `rb_${Date.now()}`,
+          businessId: business.id,
+          status: 'pending',
+        };
+        setRoomBookings(prev => {
+          const exists = prev.some(b => b.id === newBooking.id);
+          return exists ? prev : [...prev, newBooking];
+        });
+
+        const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
+        Alert.alert(
+          'Reserva Enviada! 🎉',
+          `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz\n\n📩 O dono será notificado em tempo real.`,
+          [{ text: 'OK' }],
+        );
+      } catch (err) {
+        Alert.alert(
+          'Erro ao Reservar',
+          err?.message || 'Não foi possível criar a reserva. Verifica a tua ligação.',
+          [{ text: 'OK' }],
+        );
+      }
+    } else {
+      // Fallback local (modo dono a testar, ou sem sessão)
+      setRoomBookings(prev => [...prev, booking]);
+      const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
+      Alert.alert(
+        'Reserva Confirmada! 🎉',
+        `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
+        [{ text: 'OK' }],
+      );
+    }
+  }, [business.id, onCreateBooking, setRoomBookings]);
 
   // ── Mudar status de reserva (modo dono) ──────────────────────────────────
   const handleStatusChange = useCallback((bookingId, newStatus) => {

@@ -31,34 +31,36 @@ enum BookingStatus {
 }
 
 model User {
-  id         String     @id @default(uuid())
-  email      String     @unique
-  password   String
-  role       UserRole
-  name       String
-  bookings   Booking[]
-  businesses Business[]
+  id            String          @id @default(uuid())
+  email         String          @unique
+  password      String
+  role          UserRole
+  name          String
+  bookings      Booking[]
+  roomBookings  RoomBooking[]
+  businesses    Business[]
   refreshTokens RefreshToken[]
   notifications Notification[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 }
 
 model Business {
-  id          String           @id @default(uuid())
-  name        String
-  category    BusinessCategory
-  description String
-  metadata    Json?
-  latitude    Float
-  longitude   Float
-  ownerId     String
-  owner       User             @relation(fields: [ownerId], references: [id])
-  bookings    Booking[]
-  items       Item[]
+  id             String           @id @default(uuid())
+  name           String
+  category       BusinessCategory
+  description    String
+  metadata       Json?
+  latitude       Float
+  longitude      Float
+  ownerId        String
+  owner          User             @relation(fields: [ownerId], references: [id])
+  bookings       Booking[]
+  roomBookings   RoomBooking[]
+  items          Item[]
   operatingHours OperatingHour[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 model Booking {
@@ -72,6 +74,23 @@ model Booking {
   business   Business      @relation(fields: [businessId], references: [id])
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+
+  @@map("table_bookings")
+}
+
+model RoomBooking {
+  id         String        @id @default(uuid())
+  startDate  DateTime
+  endDate    DateTime
+  status     BookingStatus
+  userId     String
+  businessId String
+  user       User          @relation(fields: [userId], references: [id])
+  business   Business      @relation(fields: [businessId], references: [id])
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@map("room_bookings")
 }
 
 model RefreshToken {

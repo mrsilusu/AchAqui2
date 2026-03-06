@@ -357,8 +357,8 @@ export const DISTANCE_FILTERS = [
 // }
 // ─────────────────────────────────────────────────────────────────────────────
 export const OWNER_BUSINESS = {
-  id: 'biz_owner_1',
-  name: 'Pizzaria Bela Vista',
+  id: '5d5f1a56-0b74-4e40-b4d7-fdb2c438efaa',
+  name: 'AchAqui Real',
   category: 'Restaurante Italiano',
   businessType: 'accommodation',
   primaryCategoryId: 'hotelsTravel',
@@ -522,7 +522,7 @@ const DEFAULT_LOCATION = 'Talatona, Luanda';
 // Mock userId — FASE 2+: vem do JWT após autenticação
 const MOCK_USER_ID = 'user_client_1';
 // Mock tenantId — FASE 2+: vem do JWT claim após login como dono
-const MOCK_TENANT_ID = OWNER_BUSINESS.id; // 'biz_owner_1'
+const MOCK_TENANT_ID = OWNER_BUSINESS.id; // business UUID real (Supabase)
 
 export const AppContext = createContext(null);
 export const useAppContext = () => {

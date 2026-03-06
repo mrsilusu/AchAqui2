@@ -550,7 +550,7 @@ export function HomeModuleFull(props) {
   const {
     activeNavTab = 'home',
     onSetActiveNavTab = () => {},
-    onSetIsBusinessMode = () => {},
+    onToggleOwnerMode = () => {},
     setActiveBusinessTab = () => {},
     USER_PROFILE,
     isBusinessMode = false,
@@ -564,7 +564,7 @@ export function HomeModuleFull(props) {
     <ProfileTab
       {...rest}
       onSetActiveNavTab={onSetActiveNavTab}
-      onSetIsBusinessMode={onSetIsBusinessMode}
+      onToggleOwnerMode={onToggleOwnerMode}
       setActiveBusinessTab={setActiveBusinessTab}
       USER_PROFILE={USER_PROFILE}
       isBusinessMode={isBusinessMode}
@@ -771,7 +771,7 @@ function ProfileTab({
   bookmarkedIds = [], onToggleBookmark = () => {},
   insets = { top: 0, bottom: 0 },
   onSetActiveNavTab = () => {},
-  onSetIsBusinessMode = () => {},
+  onToggleOwnerMode = () => {},
   setActiveBusinessTab = () => {},
   USER_PROFILE = USER_PROFILE_DEFAULT,
   isBusinessMode = false,
@@ -987,7 +987,11 @@ function ProfileTab({
                 <TouchableOpacity 
                   style={bizS.premiumCard}
                   activeOpacity={0.8}
-                  onPress={()=>{ onSetIsBusinessMode(true); onSetActiveNavTab('dashboard'); setActiveBusinessTab('dashboard'); }}
+                  onPress={()=>{
+                    onSetActiveNavTab('home');
+                    setActiveBusinessTab('dashboard');
+                    onToggleOwnerMode();
+                  }}
                 >
                   <View style={bizS.premiumCardContent}>
                     <View style={bizS.premiumIcon}>

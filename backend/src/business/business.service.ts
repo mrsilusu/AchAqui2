@@ -8,6 +8,12 @@ import { UpdateBusinessDto } from './dto/update-business.dto';
 export class BusinessService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private asMetadataObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
   async searchNearby(params: {
     latitude: string;
     longitude: string;
@@ -142,6 +148,79 @@ export class BusinessService {
     });
   }
 
+  async updateStatus(id: string, ownerId: string, isOpen: boolean) {
+    const business = await this.prisma.business.findFirst({
+      where: {
+        id,
+        ownerId,
+      },
+      select: {
+        id: true,
+        metadata: true,
+      },
+    });
+
+    if (!business) {
+      throw new NotFoundException(
+        'Estabelecimento não encontrado para este proprietário.',
+      );
+    }
+
+    const currentMetadata =
+      business.metadata && typeof business.metadata === 'object'
+        ? (business.metadata as Record<string, unknown>)
+        : {};
+
+    const metadata: Prisma.InputJsonValue = {
+      ...currentMetadata,
+      isOpen,
+      statusText: isOpen ? 'Aberto agora' : 'Fechado',
+    };
+
+    return this.prisma.business.update({
+      where: { id },
+      data: { metadata },
+    });
+  }
+
+  async updateInfo(id: string, ownerId: string, updateBusinessInfoDto: any) {
+    const business = await this.prisma.business.findFirst({
+      where: { id, ownerId },
+      select: { id: true, metadata: true },
+    });
+
+    if (!business) {
+      throw new NotFoundException(
+        'Estabelecimento não encontrado para este proprietário.',
+      );
+    }
+
+    const dataToUpdate: any = {};
+    if (updateBusinessInfoDto.name) dataToUpdate.name = updateBusinessInfoDto.name;
+    if (updateBusinessInfoDto.description) dataToUpdate.description = updateBusinessInfoDto.description;
+    if (updateBusinessInfoDto.latitude !== undefined) dataToUpdate.latitude = updateBusinessInfoDto.latitude;
+    if (updateBusinessInfoDto.longitude !== undefined) dataToUpdate.longitude = updateBusinessInfoDto.longitude;
+
+    // Store contact info in metadata
+    const currentMetadata = this.asMetadataObject(business.metadata);
+
+    if (updateBusinessInfoDto.phone || updateBusinessInfoDto.email || updateBusinessInfoDto.website || updateBusinessInfoDto.address) {
+      const metadata: Prisma.InputJsonValue = {
+        ...currentMetadata,
+        ...(updateBusinessInfoDto.phone && { phone: updateBusinessInfoDto.phone }),
+        ...(updateBusinessInfoDto.email && { email: updateBusinessInfoDto.email }),
+        ...(updateBusinessInfoDto.website && { website: updateBusinessInfoDto.website }),
+        ...(updateBusinessInfoDto.address && { address: updateBusinessInfoDto.address }),
+      };
+      dataToUpdate.metadata = metadata;
+    }
+
+    return this.prisma.business.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+  }
+
   async remove(id: string, ownerId: string) {
     const business = await this.prisma.business.findFirst({
       where: {
@@ -161,5 +240,150 @@ export class BusinessService {
     });
 
     return { message: 'Estabelecimento removido com sucesso.' };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROMOTIONS METHODS (Secção 11 — Promo Manager)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getPromosByBusiness(businessId: string) {
+    if (!businessId) {
+      throw new BadRequestException('businessId é obrigatório.');
+    }
+
+    // Store promos in business metadata for simplicity
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { metadata: true },
+    });
+
+    if (!business) throw new NotFoundException('Estabelecimento não encontrado.');
+
+    const metadata = business.metadata && typeof business.metadata === 'object'
+      ? (business.metadata as Record<string, unknown>)
+      : {};
+
+    return (metadata.promos as any[]) || [];
+  }
+
+  async createPromo(businessId: string, ownerId: string, createPromoDto: any) {
+    const business = await this.prisma.business.findFirst({
+      where: { id: businessId, ownerId },
+      select: { metadata: true },
+    });
+
+    if (!business) {
+      throw new NotFoundException('Estabelecimento não encontrado para este proprietário.');
+    }
+
+    const metadata = business.metadata && typeof business.metadata === 'object'
+      ? (business.metadata as Record<string, unknown>)
+      : {};
+
+    const promos = (metadata.promos as any[]) || [];
+    const newPromo = {
+      id: `promo_${Date.now()}`,
+      ...createPromoDto,
+      createdAt: new Date().toISOString(),
+    };
+
+    promos.push(newPromo);
+
+    await this.prisma.business.update({
+      where: { id: businessId },
+      data: {
+        metadata: {
+          ...metadata,
+          promos,
+        },
+      },
+    });
+
+    return newPromo;
+  }
+
+  async updatePromo(promoId: string, ownerId: string, updatePromoDto: any) {
+    // Find business and promo
+    const businesses = await this.prisma.business.findMany({
+      where: { ownerId },
+      select: { id: true, metadata: true },
+    });
+
+    let targetBusiness: { id: string; metadata: Prisma.JsonValue | null } | null = null;
+    let promos: any[] = [];
+
+    for (const biz of businesses) {
+      const bizMetadata = this.asMetadataObject(biz.metadata);
+      const bizPromos = (bizMetadata.promos as any[]) || [];
+
+      if (bizPromos.find(p => p.id === promoId)) {
+        targetBusiness = biz;
+        promos = bizPromos;
+        break;
+      }
+    }
+
+    if (!targetBusiness) {
+      throw new NotFoundException('Promoção não encontrada para este proprietário.');
+    }
+
+    promos = promos.map(p =>
+      p.id === promoId ? { ...p, ...updatePromoDto, updatedAt: new Date().toISOString() } : p
+    );
+
+    const metadata = this.asMetadataObject(targetBusiness.metadata);
+
+    await this.prisma.business.update({
+      where: { id: targetBusiness.id },
+      data: {
+        metadata: {
+          ...metadata,
+          promos,
+        },
+      },
+    });
+
+    return promos.find(p => p.id === promoId);
+  }
+
+  async deletePromo(promoId: string, ownerId: string) {
+    const businesses = await this.prisma.business.findMany({
+      where: { ownerId },
+      select: { id: true, metadata: true },
+    });
+
+    let targetBusiness: { id: string; metadata: Prisma.JsonValue | null } | null = null;
+    let promos: any[] = [];
+
+    for (const biz of businesses) {
+      const bizMetadata = this.asMetadataObject(biz.metadata);
+      const bizPromos = (bizMetadata.promos as any[]) || [];
+
+      if (bizPromos.find(p => p.id === promoId)) {
+        targetBusiness = biz;
+        promos = bizPromos;
+        break;
+      }
+    }
+
+    if (!targetBusiness) {
+      throw new NotFoundException('Promoção não encontrada para este proprietário.');
+    }
+
+    promos = promos.filter(p => p.id !== promoId);
+
+    const metadata = this.asMetadataObject(targetBusiness.metadata);
+
+    await this.prisma.business.update({
+      where: { id: targetBusiness.id },
+      data: {
+        metadata: {
+          ...metadata,
+          promos,
+        },
+      },
+    });
+
+    return { message: 'Promoção removida com sucesso.' };
   }
 }

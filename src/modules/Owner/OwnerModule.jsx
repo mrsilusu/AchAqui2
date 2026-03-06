@@ -27,6 +27,7 @@ import {
   Dimensions, Platform, Animated, PanResponder,
   KeyboardAvoidingView, Linking,
 } from 'react-native';
+import * as Location from 'expo-location';
 
 import {
   Icon, COLORS, OWNER_BUSINESS,
@@ -36,8 +37,32 @@ import {
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
+import { backendApi } from '../../lib/backendApi';
 
 import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
+
+// ── Constantes locais (derivadas de ALL_CATEGORIES do Core) ─────────────────
+import { ALL_CATEGORIES } from '../../core/AchAqui_Core';
+const ALL_CAT_LABEL = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.label])));
+const ALL_CAT_ICON  = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.icon])));
+const BUSINESS_TYPE_BADGES = {
+  food:          { icon: '🍴', label: 'Alimentação',    color: '#EA580C' },
+  retail:        { icon: '🛍️', label: 'Comércio',       color: '#D97706' },
+  health:        { icon: '🏥', label: 'Saúde',          color: '#10B981' },
+  beauty:        { icon: '💅', label: 'Beleza',          color: '#EC4899' },
+  professional:  { icon: '👔', label: 'Profissional',   color: '#059669' },
+  service:       { icon: '⚙️', label: 'Serviço',        color: '#3B82F6' },
+  education:     { icon: '🎓', label: 'Educação',       color: '#DC2626' },
+  freelancer:    { icon: '💼', label: 'Freelancer',     color: '#8B5CF6' },
+  accommodation: { icon: '🏨', label: 'Alojamento',     color: '#0EA5E9' },
+  entertainment: { icon: '🎭', label: 'Entretenimento', color: '#7C3AED' },
+  sports:        { icon: '⚽', label: 'Desporto',       color: '#16A34A' },
+  automotive:    { icon: '🚗', label: 'Automóvel',      color: '#6B7280' },
+  tech:          { icon: '💻', label: 'Tecnologia',     color: '#2563EB' },
+  finance:       { icon: '💰', label: 'Finanças',       color: '#B45309' },
+  logistics:     { icon: '🚚', label: 'Logística',      color: '#78716C' },
+  other:         { icon: '🏢', label: 'Outro',          color: '#6B7280' },
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -204,26 +229,35 @@ const calS = StyleSheet.create({
 // OwnerModule — componente principal
 // ─────────────────────────────────────────────────────────────────────────────
 export function OwnerModule({
-  businesses,
+  businesses = [],
   activeBusinessTab,
   setActiveBusinessTab,
   insets,
-  onUpdateBusiness,
-  onSyncPromoDeals,
-  onExitOwnerMode,
-  onViewBusiness,
+  onUpdateBusiness = () => {},
+  onSyncPromoDeals = () => {},
+  onExitOwnerMode = () => {},
+  onViewBusiness = () => {},
   liveBookings = [],
   liveNotifications = [],
   onMarkNotificationRead = () => {},
   onMarkAllNotificationsRead = () => {},
   authRole = 'CLIENT',
+  ownerMetrics: ownerMetricsProp = null,
+  accessToken = null,
+  authUserId = null,
+  onRefreshOwnerData = () => {},
+  ownerRoomBookings: ownerRoomBookingsProp = null,
+  onOwnerRoomBookingsChange = null,
 }) {
-  // ── Owner metrics (mock — Fase 2+: GET /businesses/:id/analytics) ─────────
-  const ownerMetrics = {
-    views: 1247, viewsChange: 12,
-    clicks: 89,  clicksChange: 8,
-    checkIns: 34, checkInsChange: -3,
-    favorites: 156, favoritesChange: 5,
+  const ownerMetrics = ownerMetricsProp || {
+    views: 0,
+    viewsChange: 0,
+    clicks: 0,
+    clicksChange: 0,
+    checkIns: 0,
+    checkInsChange: 0,
+    favorites: 0,
+    favoritesChange: 0,
   };
 
   // ── App layer (dono) — ownerReservasDining / ownerReservas / ownerStats / ownerPromos
@@ -316,19 +350,23 @@ export function OwnerModule({
   const [showMenuItemForm, setShowMenuItemForm] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState(null);
   const [menuItemForm, setMenuItemForm] = useState({ name: '', description: '', price: '', category: '', available: true });
+  const [isMenuItemLoading, setIsMenuItemLoading] = useState(false);
   const [inventoryItems, setInventoryItems] = useState(OWNER_BUSINESS.inventoryItems || []);
   const [showInventoryEditor, setShowInventoryEditor] = useState(false);
   const [showInventoryForm, setShowInventoryForm] = useState(false);
   const [editingInventoryItem, setEditingInventoryItem] = useState(null);
   const [inventoryForm, setInventoryForm] = useState({ name: '', price: '', stock: '', category: '', available: true });
+  const [isInventoryItemLoading, setIsInventoryItemLoading] = useState(false);
   const [servicesList, setServicesList] = useState(OWNER_BUSINESS.servicesList || []);
   const [showServicesEditor, setShowServicesEditor] = useState(false);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [editingService, setEditingService] = useState(null);
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', basePrice: '', duration: '', available: true });
+  const [isServiceLoading, setIsServiceLoading] = useState(false);
   const [roomTypes, setRoomTypes] = useState(OWNER_BUSINESS.roomTypes || []);
   const [showRoomsEditor, setShowRoomsEditor] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
+  const [isRoomLoading, setIsRoomLoading] = useState(false);
   const [checkInTime, setCheckInTime] = useState(OWNER_BUSINESS.checkInTime || '14:00');
   const [checkOutTime, setCheckOutTime] = useState(OWNER_BUSINESS.checkOutTime || '12:00');
   const [minNights, setMinNights] = useState(OWNER_BUSINESS.minNights || '1');
@@ -342,6 +380,24 @@ export function OwnerModule({
   const [blockEndDate, setBlockEndDate] = useState('');
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+  const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
+  // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
+  // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
+  const LOCAL_ROOM_BOOKINGS_FALLBACK = [
+    { id: 'rb_1', businessId: OWNER_BUSINESS.id, roomTypeId: '1', guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
+      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4, totalPrice: 60000, status: 'confirmed', createdAt: '2026-02-20' },
+    { id: 'rb_2', businessId: OWNER_BUSINESS.id, roomTypeId: '1', guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
+      checkIn: '03/03/2026', checkOut: '06/03/2026', nights: 3, totalPrice: 45000, status: 'pending', createdAt: '2026-02-21' },
+    { id: 'rb_3', businessId: OWNER_BUSINESS.id, roomTypeId: '2', guestName: 'Margarida Sousa', guestPhone: '+244 934 555 666',
+      checkIn: '28/02/2026', checkOut: '02/03/2026', nights: 2, totalPrice: 70000, status: 'confirmed', createdAt: '2026-02-19' },
+  ];
+  const [localRoomBookings, setLocalRoomBookings] = useState(LOCAL_ROOM_BOOKINGS_FALLBACK);
+  // roomBookings: se Main forneceu estado partilhado usa-o; senão usa local (testes isolados)
+  const roomBookings = ownerRoomBookingsProp ?? localRoomBookings;
+  const setRoomBookings = onOwnerRoomBookingsChange ?? setLocalRoomBookings;
+  const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
+  const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
+  const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
   const [deliveryAreas, setDeliveryAreas] = useState(OWNER_BUSINESS.deliveryAreas || []);
   const [showDeliveryConfig, setShowDeliveryConfig] = useState(false);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
@@ -366,6 +422,10 @@ export function OwnerModule({
   const [showReservationsModal, setShowReservationsModal] = useState(false);
   const [reservationFilter, setReservationFilter] = useState('active');
   const [businessReservations, setBusinessReservations] = useState(INITIAL_RESERVATIONS);
+  const [isUpdatingBusinessStatus, setIsUpdatingBusinessStatus] = useState(false);
+  const [bookingActionLoadingById, setBookingActionLoadingById] = useState({});
+  const [recentBookingActionById, setRecentBookingActionById] = useState({});
+  const [isUpdatingBusinessInfo, setIsUpdatingBusinessInfo] = useState(false);
   const [reservationToCancel, setReservationToCancel] = useState(null);
   const [showResCancelModal, setShowResCancelModal] = useState(false);
   const [resCancelReason, setResCancelReason] = useState('');
@@ -376,10 +436,16 @@ export function OwnerModule({
   const [showAmenitiesModal, setShowAmenitiesModal] = useState(false);
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showOwnerCategoryPicker, setShowOwnerCategoryPicker] = useState(false);
+  const [showOwnerSubCategoryPicker, setShowOwnerSubCategoryPicker] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [showICalModal, setShowICalModal] = useState(false);
   const [ownerDarkMode, setOwnerDarkMode] = useState(false);
   const [ownerNotifEnabled, setOwnerNotifEnabled] = useState(true);
   const [ownerAutoReply, setOwnerAutoReply] = useState(false);
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
+  const [isPromoLoading, setIsPromoLoading] = useState(false);
+  const [promosList, setPromosList] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState(null);
   const [settingsInfo, setSettingsInfo] = useState({
@@ -458,16 +524,109 @@ export function OwnerModule({
     hours: OWNER_BUSINESS.hours||'', description: OWNER_BUSINESS.description||'', isPublic: true,
   });
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const updateOwnerBiz = useCallback((fields) => {
-    onUpdateBusiness(fields);
-    OWNER_BUSINESS.promo = fields.promo ?? OWNER_BUSINESS.promo;
-  }, [onUpdateBusiness]);
+  // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
+  const ownerBiz =
+    businesses?.find((b) => b?.owner?.id === authUserId) ||
+    businesses?.find((b) => b.id === OWNER_BUSINESS.id) ||
+    OWNER_BUSINESS;
+  const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
 
-  const setBusinessOpen = useCallback((isOpen) => {
-    setBusinessStatusOverride(isOpen ? 'open' : 'closed');
-    updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' });
-  }, [updateOwnerBiz]);
+  const persistBusinessDraft = useCallback(async (fields) => {
+    if (!ownerBusinessId || !accessToken || !fields || Object.keys(fields).length === 0) {
+      return;
+    }
+
+    const {
+      name,
+      description,
+      latitude,
+      longitude,
+      ...metadataPatch
+    } = fields;
+
+    const payload = {};
+    if (typeof name === 'string' && name.trim()) payload.name = name;
+    if (typeof description === 'string' && description.trim()) payload.description = description;
+    if (typeof latitude === 'number') payload.latitude = latitude;
+    if (typeof longitude === 'number') payload.longitude = longitude;
+
+    if (Object.keys(metadataPatch).length > 0) {
+      const currentMetadata =
+        ownerBiz?.metadata && typeof ownerBiz.metadata === 'object'
+          ? ownerBiz.metadata
+          : {};
+      payload.metadata = { ...currentMetadata, ...metadataPatch };
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    await backendApi.updateBusiness(ownerBusinessId, payload, accessToken);
+  }, [ownerBiz?.metadata, ownerBusinessId, accessToken]);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const updateOwnerBiz = useCallback((fields, { persist = true } = {}) => {
+    onUpdateBusiness(fields, ownerBusinessId);
+    OWNER_BUSINESS.promo = fields.promo ?? OWNER_BUSINESS.promo;
+
+    if (!persist) return;
+
+    persistBusinessDraft(fields).catch((error) => {
+      console.error('[OwnerModule][PERSIST_FAIL]', {
+        status: error?.status || null,
+        message: error?.message || 'Falha ao persistir alterações do dono.',
+      });
+    });
+  }, [onUpdateBusiness, ownerBusinessId, persistBusinessDraft]);
+
+  const setBusinessOpen = useCallback(async (isOpen) => {
+    if (!ownerBusinessId || !accessToken) {
+      Alert.alert('Sessão inválida', 'Não foi possível validar a sessão do dono.');
+      return;
+    }
+
+    const previousStatus =
+      businessStatusOverride ||
+      (ownerBiz.isOpen ? 'open' : 'closed');
+    const nextStatus = isOpen ? 'open' : 'closed';
+    setIsUpdatingBusinessStatus(true);
+    setBusinessStatusOverride(nextStatus);
+
+    try {
+      await backendApi.updateBusinessStatus(ownerBusinessId, { isOpen }, accessToken);
+      updateOwnerBiz({ isOpen, statusText: isOpen ? 'Aberto agora' : 'Fechado' }, { persist: false });
+    } catch (error) {
+      setBusinessStatusOverride(previousStatus);
+      Alert.alert(
+        'Falha ao atualizar',
+        error?.message || 'Não foi possível atualizar o estado do negócio.',
+      );
+    } finally {
+      setIsUpdatingBusinessStatus(false);
+    }
+  }, [ownerBusinessId, accessToken, businessStatusOverride, ownerBiz.isOpen, updateOwnerBiz]);
+
+  const captarLocalizacao = useCallback(async () => {
+    setLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão negada', 'Ative a localização nas configurações do dispositivo.');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setSettingsInfo(s => ({
+        ...s,
+        latitude:  loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      }));
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível captar a localização.');
+    } finally {
+      setLocationLoading(false);
+    }
+  }, []);
 
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
@@ -479,9 +638,6 @@ export function OwnerModule({
     updateOwnerBiz({ deals, promo: activePromo ? activePromo.title : null });
     onSyncPromoDeals?.(updatedPromotions);
   }, [updateOwnerBiz, onSyncPromoDeals]);
-
-  // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
-  const ownerBiz = businesses?.find(b => b.id === OWNER_BUSINESS.id) || OWNER_BUSINESS;
 
   useEffect(() => {
     if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
@@ -511,15 +667,19 @@ export function OwnerModule({
 
     const mappedReservations = liveBookings.map((booking) => {
       const startDate = booking.startDate ? new Date(booking.startDate) : null;
+      let normalizedStatus = 'pending';
+      if (booking.status === 'CONFIRMED') normalizedStatus = 'active';
+      if (booking.status === 'CANCELLED') normalizedStatus = 'cancelled';
 
       return {
         id: booking.id,
+        businessId: booking.businessId || booking.business?.id || null,
         user: booking.user?.name || 'Cliente',
         userAvatar: '👤',
         date: startDate ? startDate.toISOString().slice(0, 10) : '',
         time: startDate ? startDate.toISOString().slice(11, 16) : '',
         people: 1,
-        status: booking.status === 'CANCELLED' ? 'cancelled' : 'active',
+        status: normalizedStatus,
         phone: booking.user?.email || '',
         notes: '',
         createdAt: booking.createdAt || '',
@@ -528,6 +688,488 @@ export function OwnerModule({
 
     setBusinessReservations(mappedReservations);
   }, [authRole, liveBookings]);
+
+  const setBookingActionLoading = useCallback((bookingId, isLoading) => {
+    setBookingActionLoadingById((prev) => ({ ...prev, [bookingId]: isLoading }));
+  }, []);
+
+  const markBookingActionSuccess = useCallback((bookingId, actionType) => {
+    setRecentBookingActionById((prev) => ({ ...prev, [bookingId]: actionType }));
+    setTimeout(() => {
+      setRecentBookingActionById((prev) => {
+        const next = { ...prev };
+        delete next[bookingId];
+        return next;
+      });
+    }, 1800);
+  }, []);
+
+  const handleConfirmReservation = useCallback(async (reservation) => {
+    if (!accessToken || !ownerBusinessId || !reservation?.id) {
+      Alert.alert('Sessão inválida', 'Não foi possível confirmar a reserva.');
+      return;
+    }
+
+    setBookingActionLoading(reservation.id, true);
+    try {
+      await backendApi.confirmBooking(
+        reservation.id,
+        { businessId: reservation.businessId || ownerBusinessId },
+        accessToken,
+      );
+
+      setBusinessReservations((prev) =>
+        prev.map((item) => (item.id === reservation.id ? { ...item, status: 'active' } : item)),
+      );
+      markBookingActionSuccess(reservation.id, 'confirmed');
+      onRefreshOwnerData?.();
+    } catch (error) {
+      Alert.alert('Falha', error?.message || 'Não foi possível confirmar a reserva.');
+    } finally {
+      setBookingActionLoading(reservation.id, false);
+    }
+  }, [accessToken, markBookingActionSuccess, onRefreshOwnerData, ownerBusinessId, setBookingActionLoading]);
+
+  const handleRejectReservation = useCallback(async (reservation, reason) => {
+    if (!accessToken || !ownerBusinessId || !reservation?.id) {
+      Alert.alert('Sessão inválida', 'Não foi possível recusar a reserva.');
+      return;
+    }
+
+    setBookingActionLoading(reservation.id, true);
+    try {
+      await backendApi.rejectBooking(
+        reservation.id,
+        {
+          businessId: reservation.businessId || ownerBusinessId,
+          reason: reason || undefined,
+        },
+        accessToken,
+      );
+
+      setBusinessReservations((prev) =>
+        prev.map((item) =>
+          item.id === reservation.id
+            ? { ...item, status: 'cancelled', cancelReason: reason || item.cancelReason }
+            : item,
+        ),
+      );
+      markBookingActionSuccess(reservation.id, 'rejected');
+      onRefreshOwnerData?.();
+    } catch (error) {
+      Alert.alert('Falha', error?.message || 'Não foi possível recusar a reserva.');
+    } finally {
+      setBookingActionLoading(reservation.id, false);
+    }
+  }, [accessToken, markBookingActionSuccess, onRefreshOwnerData, ownerBusinessId, setBookingActionLoading]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MENU ITEMS HANDLERS (Secção 2 — Menu Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveMenuItem = useCallback(async () => {
+    if (!menuItemForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do prato é obrigatório.');
+      return;
+    }
+
+    if (!menuItemForm.price) {
+      Alert.alert('Erro', 'Preço é obrigatório.');
+      return;
+    }
+
+    setIsMenuItemLoading(true);
+
+    try {
+      const payload = {
+        name: menuItemForm.name,
+        description: menuItemForm.description || '',
+        price: parseFloat(menuItemForm.price),
+        category: menuItemForm.category || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingMenuItem) {
+        // Update existing menu item
+        await backendApi.updateMenuItem(editingMenuItem.id, payload, accessToken);
+        
+        setMenuItems((prev) => {
+          const updated = prev.map((item) =>
+            item.id === editingMenuItem.id
+              ? { ...item, ...payload }
+              : item,
+          );
+          OWNER_BUSINESS.menuItems = updated;
+          updateOwnerBiz({ menuItems: updated });
+          return updated;
+        });
+      } else {
+        // Create new menu item
+        const response = await backendApi.createMenuItem(payload, accessToken);
+        setMenuItems((prev) => {
+          const updated = [...prev, response];
+          OWNER_BUSINESS.menuItems = updated;
+          updateOwnerBiz({ menuItems: updated });
+          return updated;
+        });
+      }
+
+      setShowMenuItemForm(false);
+      setEditingMenuItem(null);
+      setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+      Alert.alert('Sucesso', editingMenuItem ? 'Item atualizado.' : 'Item criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o item.');
+    } finally {
+      setIsMenuItemLoading(false);
+    }
+  }, [menuItemForm, editingMenuItem, ownerBusinessId, accessToken]);
+
+  const handleDeleteMenuItem = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Item',
+      'Tem certeza que deseja remover este item do menu?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsMenuItemLoading(true);
+            try {
+              await backendApi.deleteMenuItem(itemId, accessToken);
+              setMenuItems((prev) => {
+                const updated = prev.filter((item) => item.id !== itemId);
+                OWNER_BUSINESS.menuItems = updated;
+                updateOwnerBiz({ menuItems: updated });
+                return updated;
+              });
+              Alert.alert('Sucesso', 'Item removido do menu.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o item.');
+            } finally {
+              setIsMenuItemLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // INVENTORY ITEMS HANDLERS (Secção 5 — Inventory Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveInventoryItem = useCallback(async () => {
+    if (!inventoryForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do produto é obrigatório.');
+      return;
+    }
+
+    setIsInventoryItemLoading(true);
+
+    try {
+      const payload = {
+        name: inventoryForm.name,
+        price: parseFloat(inventoryForm.price) || 0,
+        stock: parseInt(inventoryForm.stock) || 0,
+        category: inventoryForm.category || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingInventoryItem) {
+        await backendApi.updateInventoryItem(editingInventoryItem.id, payload, accessToken);
+        setInventoryItems((prev) =>
+          prev.map((item) =>
+            item.id === editingInventoryItem.id
+              ? { ...item, ...payload }
+              : item,
+          ),
+        );
+      } else {
+        const response = await backendApi.createInventoryItem(payload, accessToken);
+        setInventoryItems((prev) => [...prev, response]);
+      }
+
+      setShowInventoryForm(false);
+      setEditingInventoryItem(null);
+      setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+      Alert.alert('Sucesso', editingInventoryItem ? 'Produto atualizado.' : 'Produto criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o produto.');
+    } finally {
+      setIsInventoryItemLoading(false);
+    }
+  }, [inventoryForm, editingInventoryItem, ownerBusinessId, accessToken]);
+
+  const handleDeleteInventoryItem = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Produto',
+      'Tem certeza que deseja remover este produto do inventário?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsInventoryItemLoading(true);
+            try {
+              await backendApi.deleteInventoryItem(itemId, accessToken);
+              setInventoryItems((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Produto removido do inventário.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o produto.');
+            } finally {
+              setIsInventoryItemLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SERVICES HANDLERS (Secção 6 — Services Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveService = useCallback(async () => {
+    if (!serviceForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do serviço é obrigatório.');
+      return;
+    }
+
+    setIsServiceLoading(true);
+
+    try {
+      const payload = {
+        name: serviceForm.name,
+        description: serviceForm.description || '',
+        basePrice: parseFloat(serviceForm.basePrice) || 0,
+        duration: serviceForm.duration || '',
+        businessId: ownerBusinessId,
+      };
+
+      if (editingService) {
+        await backendApi.updateService(editingService.id, payload, accessToken);
+        setServicesList((prev) =>
+          prev.map((item) =>
+            item.id === editingService.id ? { ...item, ...payload } : item,
+          ),
+        );
+      } else {
+        const response = await backendApi.createService(payload, accessToken);
+        setServicesList((prev) => [...prev, response]);
+      }
+
+      setShowServiceForm(false);
+      setEditingService(null);
+      setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
+      Alert.alert('Sucesso', editingService ? 'Serviço atualizado.' : 'Serviço criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o serviço.');
+    } finally {
+      setIsServiceLoading(false);
+    }
+  }, [serviceForm, editingService, ownerBusinessId, accessToken]);
+
+  const handleDeleteService = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Serviço',
+      'Tem certeza que deseja remover este serviço?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsServiceLoading(true);
+            try {
+              await backendApi.deleteService(itemId, accessToken);
+              setServicesList((prev) => prev.filter((item) => item.id !== itemId));
+              Alert.alert('Sucesso', 'Serviço removido.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o serviço.');
+            } finally {
+              setIsServiceLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ROOMS HANDLERS (Secção 7 — Rooms Editor)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveRoom = useCallback(async () => {
+    if (!roomForm.name.trim()) {
+      Alert.alert('Erro', 'Nome do quarto é obrigatório.');
+      return;
+    }
+
+    if (!roomForm.pricePerNight) {
+      Alert.alert('Erro', 'Preço por noite é obrigatório.');
+      return;
+    }
+
+    setIsRoomLoading(true);
+
+    try {
+      const payload = {
+        name: roomForm.name,
+        description: roomForm.description || '',
+        pricePerNight: parseFloat(roomForm.pricePerNight),
+        maxGuests: parseInt(roomForm.maxGuests) || 1,
+        amenities: typeof roomForm.amenities === 'string' ? roomForm.amenities : JSON.stringify(roomForm.amenities || []),
+        businessId: ownerBusinessId,
+      };
+
+      if (editingRoom) {
+        await backendApi.updateRoom(editingRoom.id, payload, accessToken);
+        setRoomTypes((prev) => {
+          const updated = prev.map((item) =>
+            item.id === editingRoom.id ? { ...item, ...payload } : item,
+          );
+          OWNER_BUSINESS.roomTypes = updated;
+          updateOwnerBiz({ roomTypes: updated });
+          return updated;
+        });
+      } else {
+        const response = await backendApi.createRoom(payload, accessToken);
+        setRoomTypes((prev) => {
+          const updated = [...prev, response];
+          OWNER_BUSINESS.roomTypes = updated;
+          updateOwnerBiz({ roomTypes: updated });
+          return updated;
+        });
+      }
+
+      setShowRoomForm(false);
+      setEditingRoom(null);
+      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+      Alert.alert('Sucesso', editingRoom ? 'Quarto atualizado.' : 'Quarto criado.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar o quarto.');
+    } finally {
+      setIsRoomLoading(false);
+    }
+  }, [roomForm, editingRoom, ownerBusinessId, accessToken]);
+
+  const handleDeleteRoom = useCallback(async (itemId) => {
+    Alert.alert(
+      'Remover Quarto',
+      'Tem certeza que deseja remover este quarto?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsRoomLoading(true);
+            try {
+              await backendApi.deleteRoom(itemId, accessToken);
+              setRoomTypes((prev) => {
+                const updated = prev.filter((item) => item.id !== itemId);
+                OWNER_BUSINESS.roomTypes = updated;
+                updateOwnerBiz({ roomTypes: updated });
+                return updated;
+              });
+              Alert.alert('Sucesso', 'Quarto removido.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover o quarto.');
+            } finally {
+              setIsRoomLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUSINESS INFO HANDLER (Secção 3 — MyBusiness)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleUpdateBusinessInfo = useCallback(async (updatedFields) => {
+    if (!updatedFields || Object.keys(updatedFields).length === 0) return;
+
+    setIsUpdatingBusinessInfo(true);
+
+    try {
+      const payload = {
+        name: updatedFields.name || ownerBiz?.name,
+        description: updatedFields.description || ownerBiz?.description,
+        phone: updatedFields.phone || (ownerBiz?.metadata?.phone),
+        email: updatedFields.email || (ownerBiz?.metadata?.email),
+        website: updatedFields.website || (ownerBiz?.metadata?.website),
+        address: updatedFields.address || (ownerBiz?.metadata?.address),
+      };
+
+      await backendApi.updateBusinessInfo(ownerBusinessId, payload, accessToken);
+      
+      // Update local state
+      updateOwnerBiz(payload, { persist: false });
+      Alert.alert('Sucesso', 'Informações do negócio actualizadas.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível actualizar as informações.');
+    } finally {
+      setIsUpdatingBusinessInfo(false);
+    }
+  }, [ownerBusinessId, accessToken, ownerBiz, updateOwnerBiz]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // OWNER SETTINGS HANDLER (Secção 9 — Settings)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleSaveOwnerSettings = useCallback(async () => {
+    setIsUpdatingSettings(true);
+
+    try {
+      const payload = {
+        darkMode: ownerDarkMode,
+        notificationsEnabled: ownerNotifEnabled,
+        autoReplyEnabled: ownerAutoReply,
+      };
+
+      await backendApi.updateOwnerSettings(payload, accessToken);
+      Alert.alert('Sucesso', 'Configurações guardadas.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Não foi possível guardar as configurações.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  }, [ownerDarkMode, ownerNotifEnabled, ownerAutoReply, accessToken]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROMOTIONS HANDLER (Secção 11 — Promo Manager)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleDeletePromo = useCallback(async (promoId) => {
+    Alert.alert(
+      'Remover Promoção',
+      'Tem certeza que deseja remover esta promoção?',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            setIsPromoLoading(true);
+            try {
+              await backendApi.deletePromo(promoId, accessToken);
+              setPromosList((prev) => prev.filter((item) => item.id !== promoId));
+              Alert.alert('Sucesso', 'Promoção removida.');
+            } catch (error) {
+              Alert.alert('Erro', error?.message || 'Não foi possível remover a promoção.');
+            } finally {
+              setIsPromoLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  }, [accessToken]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -558,11 +1200,11 @@ export function OwnerModule({
           <View style={bizS.businessHeader}>
             <View style={bizS.businessHeaderTop}>
               <View style={{flex:1}}>
-                <Text style={bizS.businessName}>{OWNER_BUSINESS.name}</Text>
+                <Text style={bizS.businessName}>{ownerBiz.name || OWNER_BUSINESS.name}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', gap:6, marginTop:4}}>
                   <Icon name="mapPin" size={12} color={COLORS.grayText} strokeWidth={2} />
-                  <Text style={bizS.businessAddress}>{OWNER_BUSINESS.category}</Text>
-                  {OWNER_BUSINESS.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
+                  <Text style={bizS.businessAddress}>{ownerBiz.category || OWNER_BUSINESS.category}</Text>
+                  {ownerBiz.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
                 </View>
               </View>
             </View>
@@ -571,18 +1213,23 @@ export function OwnerModule({
               <View style={{flex:1}}>
                 <Text style={bizS.statusLabel}>Status do Negócio</Text>
                 <Text style={bizS.statusValue}>
-                  {businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen) ? 'Aberto' : 'Fechado'}
+                  {isUpdatingBusinessStatus
+                    ? 'A atualizar...'
+                    : businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)
+                      ? 'Aberto'
+                      : 'Fechado'}
                 </Text>
               </View>
               <TouchableOpacity
-                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchActive]}
+                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchActive]}
                 onPress={() => {
-                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen);
+                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen);
                   setBusinessOpen(!currentlyOpen);
                 }}
                 activeOpacity={0.7}
+                disabled={isUpdatingBusinessStatus}
               >
-                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchKnobActive]} />
+                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchKnobActive]} />
               </TouchableOpacity>
             </View>
           </View>
@@ -630,261 +1277,290 @@ export function OwnerModule({
           <View style={bizS.actionsSection}>
               <Text style={bizS.sectionTitle}>Gestão</Text>
 
-              {/* CONTENT EDITORS - FASE 1: Conditional based on active modules */}
-              {OWNER_BUSINESS.modules?.gastronomy && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowMenuEditor(true)}
-                >
+              {/* Gestão por Módulos (apenas perfil OWNER) */}
+              {authRole !== 'OWNER' ? (
+                <View style={bizS.actionCard}>
                   <View style={bizS.actionIcon}>
-                    <Icon name="web" size={22} color={COLORS.red} strokeWidth={2} />
+                    <Icon name="shield" size={22} color={COLORS.red} strokeWidth={2} />
                   </View>
                   <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Editar Menu</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.menuItems||[]).length} itens</Text>
+                    <Text style={bizS.actionTitle}>Acesso restrito</Text>
+                    <Text style={bizS.actionDesc}>Esta secção é visível apenas para o perfil de teste Owner.</Text>
                   </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.retail && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowInventoryEditor(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Editar Inventário</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.inventoryItems||[]).length} produtos</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowServicesEditor(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="portfolio" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Editar Serviços</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Serviços Oferecidos','Disponível no módulo.')}>
-                  <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Serviços Oferecidos</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços no perfil</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Portfólio','Disponível no módulo.')}>
-                  <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Portfólio</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.portfolio||[]).length} imagem{(OWNER_BUSINESS.portfolio||[]).length!==1?'ns':''}</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.professional && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Disponibilidade','Abra o módulo de Beleza & Bem-estar para gerir a sua disponibilidade.')}>
-                  <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Disponibilidade</Text>
-                    <Text style={bizS.actionDesc}>Horários de marcação</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.accommodation && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomsEditor(true)}>
-                  <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.accommodation && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
-                  <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
-                    <Text style={bizS.actionDesc}>{0} pendente{0!==1?'s':''} · {0} confirmada{0!==1?'s':''}</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {/* iCal Sync card — v2.9.21 fix: acessível directamente no dashboard */}
-              {(OWNER_BUSINESS.modules?.accommodation || OWNER_BUSINESS.modules?.tourism) && (
-                <TouchableOpacity
-                  style={[bizS.actionCard, {borderColor: COLORS.grayLine, borderWidth: 1}]}
-                  activeOpacity={0.8}
-                  onPress={() => setShowICalModal(true)}
-                >
-                  <View style={[bizS.actionIcon, {backgroundColor: COLORS.grayBg}]}>
-                    <Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Sincronização iCal</Text>
-                    <Text style={bizS.actionDesc} numberOfLines={1}>
-                      {'Booking.com · Airbnb · Google Calendar'}
-                    </Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.gastronomy && (
-                <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Pratos em Destaque','Disponível no módulo.')}>
-                  <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Pratos em Destaque</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.popularDishes||[]).length} prato{(OWNER_BUSINESS.popularDishes||[]).length!==1?'s':''} destacado{(OWNER_BUSINESS.popularDishes||[]).length!==1?'s':''}</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.accommodation && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowRoomsEditor(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Editar Tipos de Quarto</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).length} tipos</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.delivery && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowDeliveryConfig(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Config de Entrega</Text>
-                    <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.deliveryAreas||[]).length} áreas</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.customorder && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowCustomOrders(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="star" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Encomendas Personalizadas</Text>
-                    <Text style={bizS.actionDesc}>{0} pendentes</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {OWNER_BUSINESS.modules?.delivery && (
-                <TouchableOpacity 
-                  style={bizS.actionCard} 
-                  activeOpacity={0.8}
-                  onPress={() => setShowDeliveryOrders(true)}
-                >
-                  <View style={bizS.actionIcon}>
-                    <Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} />
-                  </View>
-                  <View style={{flex:1}}>
-                    <Text style={bizS.actionTitle}>Rastreamento de Entregas</Text>
-                    <Text style={bizS.actionDesc}>{0} em curso</Text>
-                  </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                </TouchableOpacity>
-              )}
-
-              {/* Promotions */}
-              <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoCodeModal(true)}>
-                <View style={bizS.actionIcon}>
-                  <Icon name="tag" size={22} color={COLORS.red} strokeWidth={2} />
                 </View>
-                <View style={{flex:1}}>
-                  <Text style={bizS.actionTitle}>Código Promocional</Text>
-                  <Text style={bizS.actionDesc}>
-                    {'Ver códigos'}
-                  </Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+              ) : (
+                <>
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 8, marginBottom: 10 }]}>Gastronomia e Vida Noturna</Text>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservasDining')}>
+                    <View style={bizS.actionIcon}><Icon name="grid" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.actionTitle}>Gestão de Mesas</Text>
+                      <Text style={bizS.actionDesc}>Mapa de mesas e turnos</Text>
+                    </View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowReservationsModal(true)}>
+                    <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.actionTitle}>Reservas de Mesas</Text>
+                      <Text style={bizS.actionDesc}>{businessReservations.filter((r) => r.status === 'pending').length} pendentes · {businessReservations.filter((r) => r.status === 'active').length} ativas</Text>
+                    </View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  {OWNER_BUSINESS.modules?.gastronomy && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowMenuEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="web" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Editar Menu</Text>
+                        <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.menuItems||[]).length} itens</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.retail && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowInventoryEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Editar Inventário</Text>
+                        <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.inventoryItems||[]).length} produtos</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
 
-              {/* Client Preview */}
-              {/* Reservas Restaurante */}
-              <TouchableOpacity 
-                style={bizS.actionCard} 
-                activeOpacity={0.8}
-                onPress={() => openAppLayer('ownerReservasDining')}
-              >
-                <View style={bizS.actionIcon}>
-                  <Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={{flex:1}}>
-                  <Text style={bizS.actionTitle}>Reservas de Mesas</Text>
-                  <Text style={bizS.actionDesc}>Gerir reservas do restaurante</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Alojamento e Turismo</Text>
+                  {OWNER_BUSINESS.modules?.accommodation && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomTypesEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Editar Tipos de Quarto</Text>
+                        <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).length} tipos</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.accommodation && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomBookingsManager(true)}>
+                      <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
+                        <Text style={bizS.actionDesc}>{roomBookings.filter(rb=>rb.status==='pending').length} pendente{roomBookings.filter(rb=>rb.status==='pending').length!==1?'s':''} · {roomBookings.filter(rb=>rb.status==='confirmed').length} confirmada{roomBookings.filter(rb=>rb.status==='confirmed').length!==1?'s':''}</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.accommodation && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomsEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
+                        <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {(OWNER_BUSINESS.modules?.accommodation || OWNER_BUSINESS.modules?.tourism) && (
+                    <TouchableOpacity style={[bizS.actionCard, {borderColor: COLORS.grayLine, borderWidth: 1}]} activeOpacity={0.8} onPress={() => setShowICalModal(true)}>
+                      <View style={[bizS.actionIcon, {backgroundColor: COLORS.grayBg}]}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>Sincronização iCal</Text>
+                        <Text style={bizS.actionDesc} numberOfLines={1}>{'Booking.com · Airbnb · Google Calendar'}</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Tours e Atividades', 'Gestão de tours será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="mapPin" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Tours e Atividades</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
 
-              {/* Ver como Cliente */}
-              <TouchableOpacity 
-                style={bizS.actionCard} 
-                activeOpacity={0.8}
-                onPress={() => {
-                  // Ver como cliente
-                  const ob = businesses.find(b=>b.name===OWNER_BUSINESS.name); if(ob){ onViewBusiness?.(ob); }
-                }}
-              >
-                <View style={bizS.actionIcon}>
-                  <Icon name="eye" size={22} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={{flex:1}}>
-                  <Text style={bizS.actionTitle}>Ver como Cliente</Text>
-                  <Text style={bizS.actionDesc}>Pré-visualizar seu perfil público</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Comércio e Retalho</Text>
+                  {OWNER_BUSINESS.modules?.retail && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowInventoryEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Editar Inventário</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.inventoryItems||[]).length} produtos</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoCodeModal(true)}>
+                    <View style={bizS.actionIcon}><Icon name="tag" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Código Promocional</Text><Text style={bizS.actionDesc}>{'Ver códigos'}</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Preços', 'Configuração avançada de preços será adicionada em breve.') }>
+                    <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Preços</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Código de Barras/SKU', 'Gestão de código de barras e SKU será adicionada em breve.') }>
+                    <View style={bizS.actionIcon}><Icon name="certified" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Código de Barras/SKU</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Saúde e Bem-estar</Text>
+                  {OWNER_BUSINESS.modules?.professional && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Disponibilidade</Text><Text style={bizS.actionDesc}>Horários de marcação</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.professional && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="portfolio" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Editar Serviços</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Fichas de Clientes', 'Gestão de fichas de clientes será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="user" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Fichas de Clientes</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Especialistas', 'Gestão de especialistas será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="users" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Especialistas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Educação e Formação</Text>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Cursos/Turmas', 'Funcionalidade prevista para próxima fase.') }>
+                    <View style={bizS.actionIcon}><Icon name="briefcase" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Cursos/Turmas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Inscrições de Alunos', 'Funcionalidade prevista para próxima fase.') }>
+                    <View style={bizS.actionIcon}><Icon name="checkCircle" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Inscrições de Alunos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Horários de Aulas', 'Funcionalidade prevista para próxima fase.') }>
+                    <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Horários de Aulas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Material Didático', 'Funcionalidade prevista para próxima fase.') }>
+                    <View style={bizS.actionIcon}><Icon name="fileText" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Material Didático</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Serviços Profissionais</Text>
+                  {OWNER_BUSINESS.modules?.professional && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesOfferedEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Serviços Oferecidos</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços no perfil</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.professional && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPortfolioEditor(true)}>
+                      <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Portfólio</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.portfolio||[]).length} imagem{(OWNER_BUSINESS.portfolio||[]).length!==1?'ns':''}</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Emissão de Orçamentos', 'Emissão de orçamentos será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Emissão de Orçamentos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Contratos', 'Gestão de contratos será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="fileText" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Contratos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Logística e Operações</Text>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Frota', 'Gestão de frota será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Frota</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Controlo de Armazém', 'Controlo de armazém será integrado neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="briefcase" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Controlo de Armazém</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Rastreamento de Cargas', 'Rastreamento de cargas será integrado neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Rastreamento de Cargas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Manutenção de Veículos', 'Manutenção de veículos será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Manutenção de Veículos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Encomendas Personalizadas</Text>
+                  {OWNER_BUSINESS.modules?.customorder && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowCustomOrders(true)}>
+                      <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Encomendas Personalizadas</Text><Text style={bizS.actionDesc}>{0} pendentes</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Status de Produção', 'Acompanhar status de produção será integrado neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Status de Produção</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Orçamentos por Medida', 'Orçamentos por medida serão integrados neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Orçamentos por Medida</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Aprovação de Design', 'Aprovação de design será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="checkCircle" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Aprovação de Design</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Entregas e Delivery</Text>
+                  {OWNER_BUSINESS.modules?.delivery && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowDeliveryConfig(true)}>
+                      <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Config de Entrega</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.deliveryAreas||[]).length} áreas</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.delivery && (
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowDeliveryOrders(true)}>
+                      <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={{flex:1}}><Text style={bizS.actionTitle}>Rastreamento de Entregas</Text><Text style={bizS.actionDesc}>{0} em curso</Text></View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Estafetas', 'Gestão de estafetas será integrada neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="users" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Estafetas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Taxas de Entrega', 'Taxas de entrega serão integradas neste módulo.') }>
+                    <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}><Text style={bizS.actionTitle}>Taxas de Entrega</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={bizS.actionCard} 
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      const ob = businesses.find(b=>b.name===OWNER_BUSINESS.name); if(ob){ onViewBusiness?.(ob); }
+                    }}
+                  >
+                    <View style={bizS.actionIcon}><Icon name="eye" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.actionTitle}>Ver como Cliente</Text>
+                      <Text style={bizS.actionDesc}>Pré-visualizar seu perfil público</Text>
+                    </View>
+                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                </>
+              )}
 
               {/* Recent Reviews */}
               <View style={bizS.reviewsSection}>
@@ -1087,7 +1763,7 @@ export function OwnerModule({
                 </View>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
-              <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowConfigModal(true)}>
+              <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowSettings(true)}>
                 <View style={bizS.actionIcon}>
                   <Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} />
                 </View>
@@ -1120,9 +1796,9 @@ export function OwnerModule({
             </TouchableOpacity>
           </View>
           <DiningModule
-            business={businesses.find(b=>b.id===OWNER_BUSINESS.id)||OWNER_BUSINESS}
+            business={ownerBiz}
             ownerMode={true}
-            tenantId={OWNER_BUSINESS.id}
+            tenantId={ownerBusinessId}
           />
         </SafeAreaView>
           </Animated.View>
@@ -1145,9 +1821,9 @@ export function OwnerModule({
           </View>
           <ScrollView contentContainerStyle={{paddingBottom:40}}>
             <HospitalityModule
-              business={businesses.find(b=>b.id===OWNER_BUSINESS.id)||OWNER_BUSINESS}
+              business={ownerBiz}
               ownerMode={true}
-              tenantId={OWNER_BUSINESS.id}
+              tenantId={ownerBusinessId}
               onBookingDone={()=>closeAppLayer()}
             />
           </ScrollView>
@@ -1251,8 +1927,8 @@ export function OwnerModule({
             </TouchableOpacity>
             {/* Active promos */}
             <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText,marginTop:4}}>Promoções Activas</Text>
-            {(businesses.find(b=>b.id===OWNER_BUSINESS.id)?.deals||[]).length>0 ? (
-              (businesses.find(b=>b.id===OWNER_BUSINESS.id)?.deals||[]).map(deal=>(
+            {(ownerBiz?.deals||[]).length>0 ? (
+              (ownerBiz?.deals||[]).map(deal=>(
                 <View key={deal.id} style={{backgroundColor:'#FFFBF0',borderRadius:14,padding:16,borderWidth:1.5,borderColor:'#FFE082'}}>
                   <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                     <Text style={{fontSize:15,fontWeight:'700',color:COLORS.darkText,flex:1,marginRight:8}}>{deal.title}</Text>
@@ -1322,12 +1998,8 @@ export function OwnerModule({
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={editorS.itemActionBtn}
-                        onPress={() => {
-                          const updated = menuItems.filter(i => i.id !== item.id);
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        }}
+                        onPress={() => handleDeleteMenuItem(item.id)}
+                        disabled={isMenuItemLoading}
                       >
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
@@ -1427,36 +2099,11 @@ export function OwnerModule({
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
-                      style={[editorS.formBtnSave, (!menuItemForm.name || !menuItemForm.price) && {opacity:0.5}]}
-                      disabled={!menuItemForm.name || !menuItemForm.price}
-                      onPress={() => {
-                        if (!menuItemForm.name || !menuItemForm.price) return;
-                        
-                        if (editingMenuItem) {
-                          const updated = menuItems.map(i => 
-                            i.id === editingMenuItem.id ? {...menuItemForm, id: editingMenuItem.id, price: parseFloat(menuItemForm.price)} : i
-                          );
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        } else {
-                          const newItem = {
-                            ...menuItemForm,
-                            id: Date.now().toString(),
-                            price: parseFloat(menuItemForm.price)
-                          };
-                          const updated = [...menuItems, newItem];
-                          setMenuItems(updated);
-                          OWNER_BUSINESS.menuItems = updated;
-                          updateOwnerBiz({ menuItems: updated });
-                        }
-                        
-                        setShowMenuItemForm(false);
-                        setEditingMenuItem(null);
-                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
-                      }}
+                      style={[editorS.formBtnSave, ((!menuItemForm.name || !menuItemForm.price) || isMenuItemLoading) && {opacity:0.5}]}
+                      disabled={(!menuItemForm.name || !menuItemForm.price) || isMenuItemLoading}
+                      onPress={handleSaveMenuItem}
                     >
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                      <Text style={editorS.formBtnSaveText}>{isMenuItemLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1515,12 +2162,8 @@ export function OwnerModule({
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={editorS.itemActionBtn}
-                        onPress={() => {
-                          const updated = inventoryItems.filter(i => i.id !== item.id);
-                          setInventoryItems(updated);
-                          OWNER_BUSINESS.inventoryItems = updated;
-                          updateOwnerBiz({ inventoryItems: updated });
-                        }}
+                        onPress={() => handleDeleteInventoryItem(item.id)}
+                        disabled={isInventoryItemLoading}
                       >
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
@@ -1562,21 +2205,12 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true }); }}>
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!inventoryForm.name) && {opacity:0.5}]} disabled={!inventoryForm.name} onPress={() => {
-                      if (!inventoryForm.name) return;
-                      if (editingInventoryItem) {
-                        const updated = inventoryItems.map(i => i.id === editingInventoryItem.id ? {...inventoryForm, id: editingInventoryItem.id, price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0} : i);
-                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
-                        updateOwnerBiz({ inventoryItems: updated });
-                      } else {
-                        const newItem = { ...inventoryForm, id: Date.now().toString(), price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0 };
-                        const updated = [...inventoryItems, newItem];
-                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
-                        updateOwnerBiz({ inventoryItems: updated });
-                      }
-                      setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
-                    }}>
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!inventoryForm.name) || isInventoryItemLoading) && {opacity:0.5}]} 
+                      disabled={!inventoryForm.name || isInventoryItemLoading} 
+                      onPress={handleSaveInventoryItem}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isInventoryItemLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1622,11 +2256,7 @@ export function OwnerModule({
                         <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} />
                         <Text style={editorS.itemActionText}>Editar</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={editorS.itemActionBtn} onPress={() => {
-                        const updated = servicesList.filter(s => s.id !== service.id);
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      }}>
+                      <TouchableOpacity style={editorS.itemActionBtn} onPress={() => handleDeleteService(service.id)} disabled={isServiceLoading}>
                         <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
                         <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
                       </TouchableOpacity>
@@ -1667,21 +2297,12 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true }); }}>
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!serviceForm.name) && {opacity:0.5}]} disabled={!serviceForm.name} onPress={() => {
-                      if (!serviceForm.name) return;
-                      if (editingService) {
-                        const updated = servicesList.map(s => s.id === editingService.id ? {...serviceForm, id: editingService.id, basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0} : s);
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      } else {
-                        const newService = { ...serviceForm, id: Date.now().toString(), basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0 };
-                        const updated = [...servicesList, newService];
-                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
-                        updateOwnerBiz({ servicesList: updated });
-                      }
-                      setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
-                    }}>
-                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!serviceForm.name) || isServiceLoading) && {opacity:0.5}]} 
+                      disabled={!serviceForm.name || isServiceLoading} 
+                      onPress={handleSaveService}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isServiceLoading ? 'A guardar...' : 'Guardar'}</Text>
                     </TouchableOpacity>
                   </View>
                   </ScrollView>
@@ -1942,17 +2563,13 @@ export function OwnerModule({
                   <TextInput style={editorS.formInput} value={roomForm.maxGuests} onChangeText={(text) => setRoomForm({...roomForm, maxGuests: text})} placeholder="Ex: 4 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
                   <View style={editorS.formActions}>
                     <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
-                    <TouchableOpacity style={[editorS.formBtnSave, (!roomForm.name) && {opacity:0.5}]} disabled={!roomForm.name} onPress={() => {
-                      if (!roomForm.name) return;
-                      if (editingRoom) {
-                        const updated = roomTypes.map(r => r.id === editingRoom.id ? {...roomForm, id: editingRoom.id, pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0} : r);
-                        setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
-                      } else {
-                        const newRoom = { ...roomForm, id: Date.now().toString(), pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0 };
-                        const updated = [...roomTypes, newRoom]; setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
-                      }
-                      setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
-                    }}><Text style={editorS.formBtnSaveText}>Guardar</Text></TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[editorS.formBtnSave, ((!roomForm.name) || isRoomLoading) && {opacity:0.5}]} 
+                      disabled={!roomForm.name || isRoomLoading} 
+                      onPress={handleSaveRoom}
+                    >
+                      <Text style={editorS.formBtnSaveText}>{isRoomLoading ? 'A guardar...' : 'Guardar'}</Text>
+                    </TouchableOpacity>
                   </View>
                   </ScrollView>
                 </View>
@@ -1960,6 +2577,198 @@ export function OwnerModule({
             </TouchableOpacity>
           </KeyboardAvoidingView>
         </Modal>
+      )}
+
+      {/* ── RESERVAS DE QUARTOS ─────────────────────────────────────────────── */}
+      <Modal visible={showRoomBookingsManager} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoomBookingsManager(false)}>
+        <View style={{flex:1, backgroundColor:COLORS.white}}>
+          <View style={[profS.overlayHeader, {paddingTop:16}]}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowRoomBookingsManager(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.overlayTitle}>Reservas de Quartos</Text>
+            <View style={{width:32}} />
+          </View>
+
+          {/* Filter tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{maxHeight:44, paddingHorizontal:16}}>
+            {[['all','Todas'],['pending','Pendentes'],['confirmed','Confirmadas'],['cancelled','Canceladas']].map(([k,l]) => (
+              <TouchableOpacity key={k} style={[bizS.reservationFilterBtn, roomBookingsFilter===k && bizS.reservationFilterBtnActive, {marginRight:8}]} onPress={() => setRoomBookingsFilter(k)}>
+                <Text style={[bizS.reservationFilterText, roomBookingsFilter===k && bizS.reservationFilterTextActive]}>{l}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <ScrollView style={{flex:1}} contentContainerStyle={{padding:16}}>
+            {(() => {
+              const filtered = roomBookings.filter(rb =>
+                roomBookingsFilter === 'all' ? true :
+                roomBookingsFilter === 'cancelled' ? (rb.status === 'cancelled' || rb.status === 'rejected') :
+                rb.status === roomBookingsFilter
+              );
+              if (filtered.length === 0) return (
+                <View style={{alignItems:'center', paddingVertical:48}}>
+                  <Text style={{fontSize:32, marginBottom:12}}>📅</Text>
+                  <Text style={{fontSize:15, fontWeight:'700', color:COLORS.darkText}}>Sem reservas</Text>
+                  <Text style={{fontSize:13, color:COLORS.grayText, marginTop:4}}>As reservas dos clientes aparecem aqui</Text>
+                </View>
+              );
+              return filtered.map(rb => {
+                const room = roomTypes.find(r => r.id === rb.roomTypeId);
+                const statusConfig = {
+                  pending:          { label:'Pendente',          color:'#D97706', bg:'#FFFBEB' },
+                  confirmed:        { label:'Confirmada',        color:COLORS.green, bg:'#F0FDF4' },
+                  confirmed_unpaid: { label:'Aguarda Pagamento', color:COLORS.blue, bg:'#EFF6FF' },
+                  confirmed_paid:   { label:'Pago na Chegada',   color:COLORS.green, bg:'#F0FDF4' },
+                  cancelled:        { label:'Cancelada',         color:'#DC2626', bg:'#FEF2F2' },
+                  rejected:         { label:'Rejeitado',         color:'#7C3AED', bg:'#F5F3FF' },
+                }[rb.status] || { label:rb.status, color:COLORS.grayText, bg:COLORS.grayBg };
+                return (
+                  <View key={rb.id} style={{borderRadius:12, borderWidth:1, padding:14, marginBottom:12, backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30'}}>
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8}}>
+                      <View style={{flex:1}}>
+                        <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{rb.guestName}</Text>
+                        <Text style={{fontSize:12, color:COLORS.grayText, marginTop:1}}>{rb.guestPhone}</Text>
+                      </View>
+                      <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
+                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
+                      </View>
+                    </View>
+                    <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText, marginBottom:4}}>{room?.name || 'Quarto'}</Text>
+                    <View style={{flexDirection:'row', gap:16, marginBottom:4}}>
+                      <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
+                      <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
+                    </View>
+                    {(rb.adults || rb.children > 0) && (
+                      <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:4}}>
+                        👤 {rb.adults||1} adulto{(rb.adults||1)!==1?'s':''}{rb.children>0?` · ${rb.children} criança${rb.children!==1?'s':''}`:''} · {rb.rooms||1} quarto{(rb.rooms||1)!==1?'s':''}
+                      </Text>
+                    )}
+                    {(rb.rooms && rb.rooms > 1) && (
+                      <View style={{flexDirection:'row', alignItems:'center', gap:4, marginBottom:4}}>
+                        <View style={{backgroundColor:COLORS.blue+'18', paddingHorizontal:8, paddingVertical:3, borderRadius:6, flexDirection:'row', alignItems:'center', gap:4}}>
+                          <Icon name="home" size={11} color={COLORS.blue} strokeWidth={2.5}/>
+                          <Text style={{fontSize:11, fontWeight:'700', color:COLORS.blue}}>Reserva de {rb.rooms} quartos</Text>
+                        </View>
+                      </View>
+                    )}
+                    {rb.specialRequest ? (
+                      <View style={{marginBottom:4, padding:8, backgroundColor:'#FEF9C3', borderRadius:8, borderLeftWidth:3, borderLeftColor:'#D97706'}}>
+                        <Text style={{fontSize:11, fontWeight:'700', color:'#92400E', marginBottom:1}}>Pedido especial</Text>
+                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.specialRequest}</Text>
+                      </View>
+                    ) : null}
+                    {rb.cancelReason && (
+                      <View style={{marginTop:6, marginBottom:4, paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
+                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
+                          {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
+                        </Text>
+                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
+                      </View>
+                    )}
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
+                      <View>
+                        <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
+                        {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
+                          <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
+                        )}
+                        {rb.status === 'confirmed_paid' && (
+                          <Text style={{fontSize:10, color:COLORS.green, fontWeight:'600', marginTop:2}}>✅ Pago na chegada</Text>
+                        )}
+                      </View>
+                      <View style={{flexDirection:'row', gap:8}}>
+                        {rb.status === 'pending' && (
+                          <>
+                            <TouchableOpacity
+                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                              onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status: rb.payOnArrival ? 'confirmed_unpaid' : 'confirmed'} : b)); Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`); }}
+                            >
+                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
+                              onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('reject'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
+                            >
+                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                        {rb.status === 'confirmed_unpaid' && (
+                          <TouchableOpacity
+                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                            onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status:'confirmed_paid'} : b)); Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`); }}
+                          >
+                            <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>💵 Marcar Pago</Text>
+                          </TouchableOpacity>
+                        )}
+                        {(rb.status === 'confirmed' || rb.status === 'confirmed_paid') && (
+                          <TouchableOpacity
+                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
+                            onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('cancel'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
+                          >
+                            <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              });
+            })()}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── EDITAR TIPOS DE QUARTO ───────────────────────────────────────────── */}
+      {showRoomTypesEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowRoomTypesEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Tipos de Quarto</Text>
+            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); setShowRoomForm(true); }}>
+              <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              {roomTypes.length > 0 ? roomTypes.map(room => (
+                <View key={room.id} style={editorS.itemCard}>
+                  <View style={editorS.itemHeader}>
+                    <View style={{flex:1}}>
+                      <Text style={editorS.itemName}>{room.name}</Text>
+                      <Text style={editorS.itemCategory}>
+                        {room.maxGuests ? `👥 ${room.maxGuests} hósp.` : ''}{room.pricePerNight ? `  ·  ${Number(room.pricePerNight).toLocaleString()} Kz/noite` : ''}
+                      </Text>
+                      {room.description ? <Text style={editorS.itemDesc} numberOfLines={2}>{room.description}</Text> : null}
+                    </View>
+                    <View style={[editorS.availBadge, !room.available && editorS.availBadgeOff]}>
+                      <Text style={[editorS.availBadgeText, !room.available && editorS.availBadgeTextOff]}>
+                        {room.available ? 'Disponível' : 'Indisponível'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={editorS.itemActions}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
+                      <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover', `Remover "${room.name}"?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{ const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); }}])}>
+                      <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText,{color:COLORS.grayText}]}>Remover</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )) : (
+                <View style={editorS.emptyState}>
+                  <Icon name="home" size={64} color={COLORS.grayText} strokeWidth={1} />
+                  <Text style={editorS.emptyStateTitle}>Nenhum Tipo de Quarto</Text>
+                  <Text style={editorS.emptyStateText}>Toque em + para adicionar o primeiro</Text>
+                </View>
+              )}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
       )}
 
       {/* DELIVERY CONFIG - FASE 3 */}
@@ -2523,7 +3332,7 @@ export function OwnerModule({
               activeOpacity={0.7}
             >
               <Text style={[bizS.reservationFilterText, reservationFilter === 'active' && bizS.reservationFilterTextActive]}>
-                Ativas ({businessReservations.filter(r => r.status === 'active').length})
+                Ativas ({businessReservations.filter(r => r.status === 'active' || r.status === 'pending').length})
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
@@ -2540,7 +3349,12 @@ export function OwnerModule({
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
             <View style={{padding:16}}>
               {businessReservations
-                .filter(res => res.status === reservationFilter)
+                .filter((res) => {
+                  if (reservationFilter === 'active') {
+                    return res.status === 'active' || res.status === 'pending';
+                  }
+                  return res.status === 'cancelled';
+                })
                 .map(reservation => (
                   <View key={reservation.id} style={bizS.reservationCard}>
                     {/* Header com usuário */}
@@ -2554,7 +3368,7 @@ export function OwnerModule({
                       </View>
                       <View style={[bizS.reservationStatusBadge, reservation.status === 'cancelled' && bizS.reservationStatusBadgeCancelled]}>
                         <Text style={[bizS.reservationStatusText, reservation.status === 'cancelled' && bizS.reservationStatusTextCancelled]}>
-                          {reservation.status === 'active' ? 'Ativa' : 'Cancelada'}
+                          {reservation.status === 'pending' ? 'Pendente' : reservation.status === 'active' ? 'Ativa' : 'Cancelada'}
                         </Text>
                       </View>
                     </View>
@@ -2598,36 +3412,93 @@ export function OwnerModule({
                       <Text style={bizS.reservationCreatedAt}>
                         Criada em {new Date(reservation.createdAt).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' })} às {new Date(reservation.createdAt).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}
                       </Text>
-                      {reservation.status === 'active' && (
+                      {(reservation.status === 'active' || reservation.status === 'pending') && (
                         <View style={{flexDirection:'row', gap:8}}>
-                          {/* Ligar */}
-                          <TouchableOpacity 
-                            style={[bizS.reservationActionBtn, {backgroundColor:'#2E7D32'}]}
-                            activeOpacity={0.7}
-                            onPress={() => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})}
-                          >
-                            <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
-                          </TouchableOpacity>
-                          {/* Cancelar */}
-                          <TouchableOpacity 
-                            style={[bizS.reservationActionBtn, {backgroundColor:'#E53935'}]}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              setReservationToCancel(reservation);
-                              setResCancelReason('');
-                              setResCancelReasonOther('');
-                              setShowResCancelModal(true);
-                            }}
-                          >
-                            <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
-                          </TouchableOpacity>
+                          {reservation.status === 'pending' && (
+                            <>
+                              <TouchableOpacity
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  { backgroundColor: '#2E7D32', minWidth: 86, alignItems: 'center', justifyContent: 'center' },
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => handleConfirmReservation(reservation)}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.white }}>
+                                  {bookingActionLoadingById[reservation.id]
+                                    ? 'A confirmar...'
+                                    : recentBookingActionById[reservation.id] === 'confirmed'
+                                      ? 'Confirmada'
+                                      : 'Aceitar'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  { backgroundColor: '#E53935', minWidth: 86, alignItems: 'center', justifyContent: 'center' },
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => {
+                                  setReservationToCancel(reservation);
+                                  setResCancelReason('');
+                                  setResCancelReasonOther('');
+                                  setShowResCancelModal(true);
+                                }}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.white }}>
+                                  {bookingActionLoadingById[reservation.id]
+                                    ? 'A recusar...'
+                                    : recentBookingActionById[reservation.id] === 'rejected'
+                                      ? 'Recusada'
+                                      : 'Recusar'}
+                                </Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                          {reservation.status === 'active' && (
+                            <>
+                              <TouchableOpacity 
+                                style={[bizS.reservationActionBtn, {backgroundColor:'#2E7D32'}]}
+                                activeOpacity={0.7}
+                                onPress={() => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})}
+                              >
+                                <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={[
+                                  bizS.reservationActionBtn,
+                                  {backgroundColor:'#E53935'},
+                                  bookingActionLoadingById[reservation.id] && { opacity: 0.6 },
+                                ]}
+                                activeOpacity={0.7}
+                                disabled={Boolean(bookingActionLoadingById[reservation.id])}
+                                onPress={() => {
+                                  setReservationToCancel(reservation);
+                                  setResCancelReason('');
+                                  setResCancelReasonOther('');
+                                  setShowResCancelModal(true);
+                                }}
+                              >
+                                <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
+                              </TouchableOpacity>
+                            </>
+                          )}
                         </View>
                       )}
                     </View>
                   </View>
                 ))}
 
-              {businessReservations.filter(r => r.status === reservationFilter).length === 0 && (
+              {businessReservations.filter((r) => {
+                if (reservationFilter === 'active') {
+                  return r.status === 'active' || r.status === 'pending';
+                }
+                return r.status === 'cancelled';
+              }).length === 0 && (
                 <View style={{alignItems:'center', paddingVertical:60}}>
                   <Text style={{fontSize:48, marginBottom:16}}>📅</Text>
                   <Text style={{fontSize:18, fontWeight:'700', color:COLORS.darkText, marginBottom:8}}>
@@ -3114,18 +3985,14 @@ export function OwnerModule({
               <TouchableOpacity
                 style={[bizS.cancelSheetBtnPrimary, !resCancelReason && {opacity:0.4}]}
                 activeOpacity={0.85}
-                disabled={!resCancelReason}
-                onPress={() => {
+                disabled={!resCancelReason || !reservationToCancel || Boolean(bookingActionLoadingById[reservationToCancel?.id])}
+                onPress={async () => {
+                  if (!reservationToCancel) return;
                   const finalReason = resCancelReason === 'Outro motivo' && resCancelReasonOther.trim()
                     ? resCancelReasonOther.trim()
                     : resCancelReason;
-                  setBusinessReservations(prev =>
-                    prev.map(r =>
-                      r.id === reservationToCancel.id
-                        ? { ...r, status: 'cancelled', cancelReason: finalReason }
-                        : r
-                    )
-                  );
+
+                  await handleRejectReservation(reservationToCancel, finalReason);
                   setShowResCancelModal(false);
                   setReservationToCancel(null);
                   setResCancelReason('');
@@ -3133,7 +4000,11 @@ export function OwnerModule({
                   setReservationFilter('cancelled');
                 }}
               >
-                <Text style={bizS.cancelSheetBtnPrimaryText}>Confirmar Cancelamento</Text>
+                <Text style={bizS.cancelSheetBtnPrimaryText}>
+                  {reservationToCancel && bookingActionLoadingById[reservationToCancel.id]
+                    ? 'A recusar...'
+                    : 'Confirmar Cancelamento'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3816,6 +4687,8 @@ export function OwnerModule({
                     setShowCustomOrderDetail(true);
                   } else if (cancelTarget === 'delivery') {
                     setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
                   }
                 }, 50);
               }}>
@@ -3833,17 +4706,21 @@ export function OwnerModule({
                     setShowCustomOrderDetail(true);
                   } else if (cancelTarget === 'delivery') {
                     setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
                   }
                 }, 50);
               }}>
                 <Text style={{fontSize:13, fontWeight:'bold', color:'#666'}}>Voltar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor: cancelReason.trim() ? '#D32F2F' : '#ddd', alignItems:'center'}} disabled={!cancelReason.trim()} onPress={() => { if (!cancelReason.trim()) return; if (cancelTarget === 'order') { const newStatus = actionType === 'reject' ? 'rejected' : 'cancelled'; const reasonKey = actionType === 'reject' ? 'rejectReason' : 'cancelReason'; const updated = customOrders.map(o => o.id === selectedCustomOrder.id ? {...o, status: newStatus, [reasonKey]: cancelReason.trim()} : o); setCustomOrders(updated); OWNER_BUSINESS.customOrders = updated; setShowCustomOrderDetail(false); } else if (cancelTarget === 'delivery') { const updated = deliveryOrders.map(o => o.id === selectedDeliveryOrder.id ? {...o, status: 'cancelled', cancelReason: cancelReason.trim()} : o); setDeliveryOrders(updated); OWNER_BUSINESS.deliveryOrders = updated; setShowDeliveryOrderDetail(false); } setShowCancelReason(false); setCancelReason(''); setCancelTarget(null); setActionType(null);
+              <TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor: cancelReason.trim() ? '#D32F2F' : '#ddd', alignItems:'center'}} disabled={!cancelReason.trim()} onPress={() => { if (!cancelReason.trim()) return; if (cancelTarget === 'order') { const newStatus = actionType === 'reject' ? 'rejected' : 'cancelled'; const reasonKey = actionType === 'reject' ? 'rejectReason' : 'cancelReason'; const updated = customOrders.map(o => o.id === selectedCustomOrder.id ? {...o, status: newStatus, [reasonKey]: cancelReason.trim()} : o); setCustomOrders(updated); OWNER_BUSINESS.customOrders = updated; setShowCustomOrderDetail(false); } else if (cancelTarget === 'delivery') { const updated = deliveryOrders.map(o => o.id === selectedDeliveryOrder.id ? {...o, status: 'cancelled', cancelReason: cancelReason.trim()} : o); setDeliveryOrders(updated); OWNER_BUSINESS.deliveryOrders = updated; setShowDeliveryOrderDetail(false); } else if (cancelTarget === 'roomBooking' && selectedRoomBooking) { const newStatus = actionType === 'reject' ? 'rejected' : 'cancelled'; const updated = roomBookings.map(b => b.id === selectedRoomBooking.id ? {...b, status: newStatus, cancelReason: cancelReason.trim()} : b); setRoomBookings(updated); } setShowCancelReason(false); setCancelReason(''); setCancelTarget(null); setActionType(null);
                 setTimeout(() => {
                   if (cancelTarget === 'order') {
                     setShowCustomOrderDetail(true);
                   } else if (cancelTarget === 'delivery') {
                     setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
                   }
                 }, 50);
               }}>
@@ -4118,6 +4995,201 @@ export function OwnerModule({
       {/* ── CONFIGURAÇÕES DO NEGÓCIO MODAL ────────────────────────────── */}
 {/* ── CONFIGURAÇÕES MODAL — Image 1 design ─────────────────────── */}
 
+      {/* ── SERVIÇOS OFERECIDOS EDITOR ────────────────────────────────────── */}
+      {showServicesOfferedEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowServicesOfferedEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Serviços Oferecidos</Text>
+            <TouchableOpacity onPress={() => {
+              updateOwnerBiz({ servicesOffered: ownerServicesOffered });
+              setShowServicesOfferedEditor(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Selecione os serviços que o seu negócio oferece. Eles aparecerão no seu perfil público.
+              </Text>
+              
+              {['Corte de Cabelo', 'Manicure', 'Pedicure', 'Massagem', 'Depilação', 'Maquilhagem', 'Tratamento Facial', 'Coloração'].map(service => (
+                <TouchableOpacity
+                  key={service}
+                  style={[bizS.amenityRow, ownerServicesOffered.includes(service) && bizS.amenityRowActive]}
+                  onPress={() => {
+                    setOwnerServicesOffered(prev => 
+                      prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[bizS.amenityLabel, ownerServicesOffered.includes(service) && bizS.amenityLabelActive]}>
+                    {service}
+                  </Text>
+                  {ownerServicesOffered.includes(service) && (
+                    <Icon name="checkCircle" size={20} color={COLORS.red} strokeWidth={2} fill={COLORS.red} />
+                  )}
+                </TouchableOpacity>
+              ))}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── PORTFÓLIO EDITOR ────────────────────────────────────────────── */}
+      {showPortfolioEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowPortfolioEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Portfólio</Text>
+            <TouchableOpacity onPress={() => Alert.alert('Upload', 'Funcionalidade de upload disponível em breve.')}>
+              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Adicione fotos dos seus trabalhos para mostrar aos clientes.
+              </Text>
+              {ownerPortfolio.length === 0 ? (
+                <View style={{alignItems:'center', paddingVertical:60}}>
+                  <Icon name="camera" size={48} color={COLORS.grayText} strokeWidth={1.5} />
+                  <Text style={{fontSize:15, color:COLORS.grayText, marginTop:16}}>Nenhuma foto no portfólio</Text>
+                  <TouchableOpacity
+                    style={{marginTop:20, paddingHorizontal:24, paddingVertical:12, backgroundColor:COLORS.red, borderRadius:10}}
+                    onPress={() => Alert.alert('Upload', 'Funcionalidade disponível em breve.')}
+                  >
+                    <Text style={{color:COLORS.white, fontWeight:'700'}}>+ Adicionar Foto</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{flexDirection:'row', flexWrap:'wrap', gap:8}}>
+                  {ownerPortfolio.map((img, idx) => (
+                    <View key={idx} style={{width:'31%', aspectRatio:1, borderRadius:8, backgroundColor:COLORS.grayBg}}>
+                      <Image source={{uri:img}} style={{width:'100%', height:'100%', borderRadius:8}} />
+                    </View>
+                  ))}
+                </View>
+              )}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── DISPONIBILIDADE EDITOR ─────────────────────────────────────── */}
+      {showAvailabilityEditor && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowAvailabilityEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Disponibilidade</Text>
+            <TouchableOpacity onPress={() => {
+              updateOwnerBiz({ availability: ownerAvailability });
+              setShowAvailabilityEditor(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{padding:16}}>
+              <Text style={bizS.amenitiesHint}>
+                Defina os horários em que aceita marcações. Os clientes só poderão agendar dentro destes períodos.
+              </Text>
+              
+              {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => {
+                const dayNames = {mon:'Segunda', tue:'Terça', wed:'Quarta', thu:'Quinta', fri:'Sexta', sat:'Sábado', sun:'Domingo'};
+                const slots = ownerAvailability[day] || [];
+                return (
+                  <View key={day} style={{backgroundColor:COLORS.white, borderRadius:12, padding:16, marginBottom:12, borderWidth:1, borderColor:COLORS.grayLine}}>
+                    <Text style={{fontSize:15, fontWeight:'700', color:COLORS.darkText, marginBottom:8}}>{dayNames[day]}</Text>
+                    {slots.length === 0 ? (
+                      <Text style={{fontSize:13, color:COLORS.grayText}}>Fechado</Text>
+                    ) : (
+                      slots.map((slot, idx) => (
+                        <Text key={idx} style={{fontSize:14, color:COLORS.darkText}}>{slot.start} - {slot.end}</Text>
+                      ))
+                    )}
+                    <TouchableOpacity
+                      style={{marginTop:8, paddingVertical:6, borderRadius:8, backgroundColor:COLORS.redLight, alignItems:'center'}}
+                      onPress={() => Alert.alert('Editar Horário', 'Funcionalidade disponível em breve.')}
+                    >
+                      <Text style={{fontSize:12, fontWeight:'700', color:COLORS.red}}>
+                        {slots.length === 0 ? 'Adicionar Horário' : 'Editar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              <View style={{height:40}} />
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── PRATOS EM DESTAQUE EDITOR ─────────────────────────────────── */}
+      {showPopularDishesEditor && (
+        <Modal visible={showPopularDishesEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPopularDishesEditor(false)}>
+          <View style={{flex:1, backgroundColor:COLORS.white}}>
+            <View style={[profS.overlayHeader, {paddingTop:16}]}>
+              <TouchableOpacity style={profS.backBtn} onPress={() => setShowPopularDishesEditor(false)}>
+                <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+              </TouchableOpacity>
+              <Text style={profS.overlayTitle}>Pratos em Destaque</Text>
+              <View style={{width:32}} />
+            </View>
+            <ScrollView style={{flex:1}} contentContainerStyle={{padding:16}}>
+              <Text style={{fontSize:13, color:COLORS.grayText, marginBottom:16}}>Escolhe até 5 pratos para destacar no perfil público</Text>
+              {ownerPopularDishes.map((d, i) => (
+                <View key={i} style={[bizS.couponCard, {marginBottom:10}]}>
+                  <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                    <Text style={{fontWeight:'700', color:COLORS.darkText, fontSize:13}}>#{i+1}</Text>
+                    <TouchableOpacity onPress={() => setOwnerPopularDishes(ownerPopularDishes.filter((_,idx)=>idx!==i))}>
+                      <Icon name="x" size={16} color={COLORS.red} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={d.name||''} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],name:t}; setOwnerPopularDishes(u); }} placeholder="Nome do prato" placeholderTextColor={COLORS.grayText} />
+                  <TextInput style={[bizS.promoFormInput, {marginBottom:8}]} value={d.price||''} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],price:t}; setOwnerPopularDishes(u); }} placeholder="Preço (ex: 3.500 Kz)" placeholderTextColor={COLORS.grayText} />
+                  <TextInput style={[bizS.promoFormInput, {minHeight:0}]} value={String(d.orders||'')} onChangeText={t => { const u=[...ownerPopularDishes]; u[i]={...u[i],orders:parseInt(t)||0}; setOwnerPopularDishes(u); }} placeholder="Nº de pedidos" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+                </View>
+              ))}
+              {ownerPopularDishes.length < 5 && (
+                <TouchableOpacity
+                  style={[bizS.highlightAddBtn, {marginTop:4}]}
+                  onPress={() => setOwnerPopularDishes([...ownerPopularDishes, {name:'',price:'',orders:0}])}
+                >
+                  <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
+                  <Text style={bizS.highlightAddText}>Adicionar prato</Text>
+                </TouchableOpacity>
+              )}
+              <View style={{height:24}} />
+            </ScrollView>
+            <View style={{padding:16}}>
+              <TouchableOpacity
+                style={{backgroundColor:COLORS.red, borderRadius:12, paddingVertical:14, alignItems:'center'}}
+                onPress={() => {
+                  const clean = ownerPopularDishes.filter(d => d.name?.trim());
+                  setOwnerPopularDishes(clean);
+                  updateOwnerBiz({ popularDishes: clean });
+                  setShowPopularDishesEditor(false);
+                  Alert.alert('Guardado!', 'Pratos em destaque actualizados.');
+                }}
+              >
+                <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar Destaques</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* ── CALENDAR PICKER GLOBAL ────────────────────────────────────────── */}
       <CalendarPicker
         visible={calVisible}
@@ -4128,166 +5200,665 @@ export function OwnerModule({
         onCancel={() => setCalVisible(false)}
       />
 
-      {showConfigModal && (
+      {/* ── SETTINGS MODAL COMPLETO ─────────────────────────────────────────── */}
+      {showSettings && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>
-            <TouchableOpacity style={profS.backBtn} onPress={() => setShowConfigModal(false)}>
-              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            <TouchableOpacity style={profS.backBtn} onPress={() => {
+              if (settingsSection) setSettingsSection(null);
+              else setShowSettings(false);
+            }}>
+              <Icon name={settingsSection ? 'back' : 'x'} size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
-            <Text style={profS.headerTitle}>Configurações</Text>
-            <View style={{ width: 36 }} />
+            <Text style={profS.headerTitle}>
+              {!settingsSection && 'Configurações'}
+              {settingsSection === 'info' && 'Informações Básicas'}
+              {settingsSection === 'profile' && 'Destaques & Perfil'}
+              {settingsSection === 'hours' && 'Horário de Funcionamento'}
+              {settingsSection === 'notifs' && 'Notificações'}
+              {settingsSection === 'operations' && 'Operações'}
+              {settingsSection === 'visibility' && 'Visibilidade'}
+              {settingsSection === 'account' && 'Conta'}
+            </Text>
+            {settingsSection && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => {
+                if (settingsSection === 'info') {
+                  OWNER_BUSINESS.name = settingsInfo.name;
+                  OWNER_BUSINESS.address = settingsInfo.address;
+                  OWNER_BUSINESS.neighborhood = settingsInfo.neighborhood;
+                  OWNER_BUSINESS.phone = settingsInfo.phone;
+                  updateOwnerBiz({
+                    name: settingsInfo.name,
+                    category: settingsInfo.category,
+                    subcategory: settingsInfo.subcategory,
+                    primaryCategoryId: settingsInfo.primaryCategoryId,
+                    subCategoryIds: settingsInfo.subCategoryIds || [],
+                    address: settingsInfo.address,
+                    neighborhood: settingsInfo.neighborhood,
+                    phone: settingsInfo.phone,
+                    website: settingsInfo.website,
+                    description: settingsInfo.description,
+                    price: settingsInfo.price,
+                    businessType: settingsInfo.businessType,
+                    businessTypeCustom: settingsInfo.businessTypeCustom.trim(),
+                    latitude: settingsInfo.latitude,
+                    longitude: settingsInfo.longitude,
+                  });
+                }
+                if (settingsSection === 'profile') {
+                  const cleanHighlights = ownerHighlights.filter(h => h.replace(/"/g,'').trim());
+                  setOwnerHighlights(cleanHighlights);
+                  updateOwnerBiz({ highlights: cleanHighlights });
+                }
+                if (settingsSection === 'hours') {
+                  const days = Object.entries(settingsHours);
+                  const hoursStr = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)}: ${v.open}-${v.close}`).join(', ');
+                  const hoursList = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)} ${v.open} - ${v.close}`);
+                  OWNER_BUSINESS.hours = hoursStr;
+                  updateOwnerBiz({ hours: hoursStr, hoursList });
+                }
+                if (settingsSection === 'operations') {
+                  OWNER_BUSINESS.isOpen = settingsOperations.isOpen && !settingsOperations.temporarilyClosed;
+                  updateOwnerBiz({
+                    isOpen: settingsOperations.isOpen && !settingsOperations.temporarilyClosed,
+                    payment: settingsOperations.payment,
+                  });
+                }
+                Alert.alert('Guardado!', 'Alterações guardadas com sucesso.');
+                setSettingsSection(null);
+              }}>
+                <Text style={{fontSize:15, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+              </TouchableOpacity>
+            )}
+            {!settingsSection && <View style={{width:32}} />}
           </View>
-          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
-            <View style={{ paddingVertical: 8 }}>
 
-              {/* ── Informações Básicas ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  setActiveBusinessTab('mybusiness');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="briefcase" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Informações Básicas</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.name} · {OWNER_BUSINESS.phone}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+          <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <View style={{padding:16}}>
 
-              {/* ── Destaques & Perfil ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  Alert.alert('Destaques & Perfil', 'Gira frases de destaque, subcategorias e tipo de negócio na secção "Meu Negócio".');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF8E1' }]}>
-                  <Icon name="star" size={20} color="#F59E0B" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Destaques & Perfil</Text>
-                  <Text style={configS.rowSub}>{(OWNER_BUSINESS.highlights || []).length} destaque{(OWNER_BUSINESS.highlights || []).length !== 1 ? 's' : ''} · {OWNER_BUSINESS.subcategory || '—'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+              {/* ── MENU PRINCIPAL ── */}
+              {!settingsSection && (
+                <>
+                  {[
+                    { id:'info',       icon:'briefcase', label:'Informações Básicas',      desc:`${settingsInfo.name} · ${settingsInfo.phone}` },
+                    { id:'profile',    icon:'star',      label:'Destaques & Perfil',        desc:`${ownerHighlights.length} destaque${ownerHighlights.length!==1?'s':''} · ${settingsInfo.price||'··'}` },
+                    { id:'hours',      icon:'clock',     label:'Horário de Funcionamento',  desc:Object.values(settingsHours).filter(h=>h.active).length + ' dias ativos' },
+                    { id:'notifs',     icon:'bell',      label:'Notificações',              desc:Object.values(settingsNotifs).filter(Boolean).length + ' tipos ativos' },
+                    { id:'operations', icon:'settings',  label:'Operações',                 desc:settingsOperations.temporarilyClosed ? 'Fechado temporariamente' : 'Aberto' },
+                    { id:'visibility', icon:'globe',     label:'Visibilidade',              desc:settingsVisibility.isPublic ? 'Perfil público' : 'Perfil oculto' },
+                    { id:'account',    icon:'user',      label:'Conta',                     desc:settingsAccount.email },
+                  ].map(item => (
+                    <TouchableOpacity key={item.id} style={bizS.actionCard} activeOpacity={0.8} onPress={() => setSettingsSection(item.id)}>
+                      <View style={bizS.actionIcon}>
+                        <Icon name={item.icon} size={22} color={COLORS.red} strokeWidth={2} />
+                      </View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>{item.label}</Text>
+                        <Text style={bizS.actionDesc} numberOfLines={1}>{item.desc}</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
 
-              {/* ── Horário de Funcionamento ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  Alert.alert('Horário', 'Edite o horário de funcionamento na secção "Meu Negócio".');
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F0F7FF' }]}>
-                  <Icon name="clock" size={20} color="#2196F3" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Horário de Funcionamento</Text>
-                  <Text style={configS.rowSub}>{Object.keys(OWNER_BUSINESS.schedule || {}).length || 7} dias ativos</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+              {/* ── INFORMAÇÕES BÁSICAS ── */}
+              {settingsSection === 'info' && (
+                <>
+                  {[
+                    { label:'Nome do Negócio *', key:'name', placeholder:'Ex: Pizzaria Bela Vista' },
+                    { label:'Telefone', key:'phone', placeholder:'Ex: +244 923 456 789', keyboard:'phone-pad' },
+                    { label:'Website', key:'website', placeholder:'https://', keyboard:'url' },
+                  ].map(f => (
+                    <View key={f.key} style={bizS.promoFormGroup}>
+                      <Text style={bizS.promoFormLabel}>{f.label}</Text>
+                      <TextInput
+                        style={bizS.promoFormInput}
+                        value={settingsInfo[f.key]}
+                        onChangeText={t => setSettingsInfo(s => ({...s, [f.key]: t}))}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={COLORS.grayText}
+                        keyboardType={f.keyboard || 'default'}
+                      />
+                    </View>
+                  ))}
 
-              {/* ── Notificações ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Notificações', 'Gerir tipos de alertas: reservas, mensagens, avaliações, promoções e check-ins.')}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F3F0FF' }]}>
-                  <Icon name="bell" size={20} color="#7C3AED" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Notificações</Text>
-                  <Text style={configS.rowSub}>5 tipos ativos</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Categoria Principal */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Categoria Principal *</Text>
+                    <TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerCategoryPicker(true)}
+                    >
+                      {settingsInfo.primaryCategoryId ? (() => {
+                        return <Text style={{fontSize:14, color:COLORS.darkText, fontWeight:'600'}}>{ALL_CAT_LABEL[settingsInfo.primaryCategoryId] || settingsInfo.primaryCategoryId}</Text>;
+                      })() : (
+                        <Text style={{fontSize:14, color:COLORS.grayText}}>Selecionar categoria...</Text>
+                      )}
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  </View>
 
-              {/* ── Operações ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setShowConfigModal(false);
-                  setShowModulesModal(true);
-                }}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F0FFF4' }]}>
-                  <Icon name="settings" size={20} color="#10B981" strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Operações</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.isOpen ? 'Aberto' : 'Fechado'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Subcategorias */}
+                  <View style={bizS.promoFormGroup}>
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                      <Text style={bizS.promoFormLabel}>
+                        Subcategorias <Text style={{color:COLORS.grayText, fontWeight:'400'}}>(até 5)</Text>
+                      </Text>
+                      <Text style={{fontSize:11, color: (settingsInfo.subCategoryIds||[]).length >= 5 ? COLORS.red : COLORS.grayText, fontWeight:'600'}}>
+                        {(settingsInfo.subCategoryIds||[]).length}/5
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerSubCategoryPicker(true)}
+                    >
+                      <Text style={{fontSize:14, color: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.darkText : COLORS.grayText}}>
+                        {(settingsInfo.subCategoryIds||[]).length > 0
+                          ? `${(settingsInfo.subCategoryIds||[]).length} subcategoria${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''} seleccionada${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''}`
+                          : 'Adicionar subcategorias...'}
+                      </Text>
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                    {(settingsInfo.subCategoryIds||[]).length > 0 && (
+                      <View style={{flexDirection:'row', flexWrap:'wrap', gap:6, marginTop:10}}>
+                        {(settingsInfo.subCategoryIds||[]).map(id => {
+                          return (
+                            <View key={id} style={{flexDirection:'row', alignItems:'center', gap:4, paddingVertical:5, paddingHorizontal:10, borderRadius:20, backgroundColor:COLORS.red+'15', borderWidth:1.5, borderColor:COLORS.red+'40'}}>
+                              <Icon name={ALL_CAT_ICON[id] || 'tag'} size={11} color={COLORS.red} strokeWidth={2} />
+                              <Text style={{fontSize:12, color:COLORS.red, fontWeight:'700'}}>{ALL_CAT_LABEL[id] || id}</Text>
+                              <TouchableOpacity
+                                hitSlop={{top:6,bottom:6,left:6,right:6}}
+                                onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:(s.subCategoryIds||[]).filter(x=>x!==id)}))}>
+                                <Text style={{fontSize:15, color:COLORS.red, lineHeight:17, marginLeft:2}}>×</Text>
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                        <TouchableOpacity
+                          style={{paddingVertical:5, paddingHorizontal:10, borderRadius:20, borderWidth:1.5, borderColor:COLORS.grayLine}}
+                          onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:[]}))}>
+                          <Text style={{fontSize:11, color:COLORS.grayText}}>Limpar tudo</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
 
-              {/* ── Visibilidade ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Visibilidade', OWNER_BUSINESS.isPublic ? 'O seu negócio está visível para todos os clientes.' : 'O seu negócio está oculto.')}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="globe" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Visibilidade</Text>
-                  <Text style={configS.rowSub}>{OWNER_BUSINESS.isPublic !== false ? 'Perfil público' : 'Perfil oculto'}</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Nível de Preço */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Nível de Preço</Text>
+                    <View style={{flexDirection:'row', gap:10, marginTop:4}}>
+                      {[
+                        {val:'·',    label:'Económico'},
+                        {val:'··',   label:'Moderado'},
+                        {val:'···',  label:'Caro'},
+                        {val:'····', label:'Luxo'},
+                      ].map(({val:p, label:pl}) => (
+                        <TouchableOpacity
+                          key={p}
+                          style={[bizS.priceChip, settingsInfo.price === p && bizS.priceChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, price: p}))}
+                        >
+                          <Text style={[bizS.priceChipText, settingsInfo.price === p && bizS.priceChipTextActive]}>{p}</Text>
+                          <Text style={[{fontSize:10, color: settingsInfo.price === p ? COLORS.red : COLORS.grayText, marginTop:2}]}>{pl}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
-              {/* ── Conta ── */}
-              <TouchableOpacity
-                style={configS.row}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Conta', `Email: dono@${OWNER_BUSINESS.name?.toLowerCase().replace(/\s/g,'')}.ao`)}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#F9FAFB' }]}>
-                  <Icon name="users" size={20} color={COLORS.grayText} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={configS.rowTitle}>Conta</Text>
-                  <Text style={configS.rowSub}>dono@{OWNER_BUSINESS.name?.toLowerCase().replace(/\s/g,'')}.ao</Text>
-                </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
+                  {/* Descrição */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Descrição</Text>
+                    <TextInput
+                      style={[bizS.promoFormInput, {minHeight:80}]}
+                      value={settingsInfo.description}
+                      onChangeText={t => setSettingsInfo(s => ({...s, description: t}))}
+                      placeholder="Descreva o seu negócio para os clientes"
+                      placeholderTextColor={COLORS.grayText}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
 
-              <View style={{ height: 8 }} />
+                  {/* Morada */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Morada</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsInfo.address}
+                      onChangeText={t => setSettingsInfo(s => ({...s, address: t}))}
+                      placeholder="Ex: Rua Comandante Valodia, 123, Talatona"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                    <TouchableOpacity
+                      style={bizS.settingsLocationBtn}
+                      activeOpacity={0.8}
+                      onPress={captarLocalizacao}
+                      disabled={locationLoading}
+                    >
+                      <Icon name="location" size={16} color={COLORS.white} strokeWidth={2} />
+                      <Text style={bizS.settingsLocationBtnText}>
+                        {locationLoading ? 'A captar...' : 'Usar localização atual'}
+                      </Text>
+                    </TouchableOpacity>
+                    {settingsInfo.latitude && (
+                      <Text style={{fontSize:11, color:COLORS.grayText, marginTop:4}}>
+                        📍 {settingsInfo.latitude.toFixed(5)}, {settingsInfo.longitude.toFixed(5)}
+                      </Text>
+                    )}
+                  </View>
 
-              {/* Sair */}
-              <TouchableOpacity
-                style={[configS.row, { marginTop: 8, borderTopWidth: 1, borderTopColor: COLORS.grayLine }]}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Sair', 'Sair do modo dono?', [
-                  { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Sair', style: 'destructive', onPress: () => { setShowConfigModal(false); onExitOwnerMode(); } },
-                ])}
-              >
-                <View style={[configS.iconWrap, { backgroundColor: '#FFF0F0' }]}>
-                  <Icon name="logOut" size={20} color={COLORS.red} strokeWidth={2} />
-                </View>
-                <View style={configS.rowBody}>
-                  <Text style={[configS.rowTitle, { color: COLORS.red }]}>Sair do Modo Dono</Text>
-                </View>
-              </TouchableOpacity>
+                  {/* Bairro */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Bairro / Cidade</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsInfo.neighborhood}
+                      onChangeText={t => setSettingsInfo(s => ({...s, neighborhood: t}))}
+                      placeholder="Ex: Talatona, Luanda"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                  </View>
 
-              <View style={{ height: 40 }} />
+                  {/* Tipo de Negócio */}
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Tipo de Negócio</Text>
+                    <View style={bizS.typeGrid}>
+                      {Object.entries(BUSINESS_TYPE_BADGES).map(([key, val]) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[bizS.typeChip, settingsInfo.businessType === key && bizS.typeChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, businessType: key}))}
+                        >
+                          <Text style={[bizS.typeChipLabel, settingsInfo.businessType === key && bizS.typeChipLabelActive]}>{val.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {settingsInfo.businessType === 'other' && (
+                      <TextInput
+                        style={[bizS.promoFormInput, {marginTop:8}]}
+                        value={settingsInfo.businessTypeCustom}
+                        onChangeText={t => setSettingsInfo(s => ({...s, businessTypeCustom: t}))}
+                        placeholder="Descreva o tipo de negócio"
+                        placeholderTextColor={COLORS.grayText}
+                      />
+                    )}
+                  </View>
+                </>
+              )}
+
+              {/* ── DESTAQUES & PERFIL ── */}
+              {settingsSection === 'profile' && (
+                <>
+                  <Text style={bizS.promoFormLabel}>Frases de Destaque</Text>
+                  <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:12}}>Frases curtas e impactantes que aparecem no teu perfil público (máx. 5)</Text>
+                  {ownerHighlights.map((h, i) => (
+                    <View key={i} style={bizS.highlightRow}>
+                      <TextInput
+                        style={[bizS.promoFormInput, {flex:1}]}
+                        value={h.replace(/"/g,'')}
+                        onChangeText={t => {
+                          const updated = [...ownerHighlights];
+                          updated[i] = `"${t}"`;
+                          setOwnerHighlights(updated);
+                        }}
+                        placeholder={`Destaque ${i+1} — ex: "Vista para o mar"`}
+                        placeholderTextColor={COLORS.grayText}
+                        maxLength={40}
+                      />
+                      <TouchableOpacity
+                        style={bizS.highlightRemoveBtn}
+                        onPress={() => setOwnerHighlights(ownerHighlights.filter((_,idx)=>idx!==i))}
+                      >
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {ownerHighlights.length < 5 && (
+                    <TouchableOpacity
+                      style={bizS.highlightAddBtn}
+                      onPress={() => setOwnerHighlights([...ownerHighlights, '""'])}
+                    >
+                      <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
+                      <Text style={bizS.highlightAddText}>Adicionar destaque</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {/* ── HORÁRIO ── */}
+              {settingsSection === 'hours' && (
+                <>
+                  {Object.entries(settingsHours).map(([day, val]) => (
+                    <View key={day} style={bizS.hoursRow}>
+                      <TouchableOpacity
+                        style={[bizS.hoursToggle, val.active && bizS.hoursToggleActive]}
+                        onPress={() => setSettingsHours(h => ({...h, [day]: {...h[day], active: !h[day].active}}))}
+                      >
+                        <View style={[bizS.hoursToggleKnob, val.active && bizS.hoursToggleKnobActive]} />
+                      </TouchableOpacity>
+                      <Text style={[bizS.hoursDay, !val.active && {color:COLORS.grayText}]}>
+                        {day.charAt(0).toUpperCase()+day.slice(1)}
+                      </Text>
+                      {val.active ? (
+                        <View style={bizS.hoursInputsRow}>
+                          <TextInput
+                            style={bizS.hoursInput}
+                            value={val.open}
+                            onChangeText={t => setSettingsHours(h => ({...h, [day]: {...h[day], open: t}}))}
+                            placeholder="00:00"
+                            placeholderTextColor={COLORS.grayText}
+                          />
+                          <Text style={{color:COLORS.grayText, fontSize:13}}>–</Text>
+                          <TextInput
+                            style={bizS.hoursInput}
+                            value={val.close}
+                            onChangeText={t => setSettingsHours(h => ({...h, [day]: {...h[day], close: t}}))}
+                            placeholder="00:00"
+                            placeholderTextColor={COLORS.grayText}
+                          />
+                        </View>
+                      ) : (
+                        <Text style={bizS.hoursClosed}>Fechado</Text>
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── NOTIFICAÇÕES ── */}
+              {settingsSection === 'notifs' && (
+                <>
+                  {[
+                    { key:'reservations', label:'Reservas',   desc:'Novas reservas e cancelamentos' },
+                    { key:'reviews',      label:'Avaliações', desc:'Novas avaliações de clientes' },
+                    { key:'checkins',     label:'Check-ins',  desc:'Quando clientes fazem check-in' },
+                    { key:'promotions',   label:'Promoções',  desc:'Uso de códigos e promoções' },
+                    { key:'messages',     label:'Mensagens',  desc:'Mensagens diretas de clientes' },
+                    { key:'milestones',   label:'Conquistas', desc:'Metas e marcos do negócio' },
+                  ].map(n => (
+                    <View key={n.key} style={bizS.settingsToggleRow}>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.settingsToggleLabel}>{n.label}</Text>
+                        <Text style={bizS.settingsToggleDesc}>{n.desc}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[bizS.promoToggle, settingsNotifs[n.key] && bizS.promoToggleActive]}
+                        onPress={() => setSettingsNotifs(s => ({...s, [n.key]: !s[n.key]}))}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsNotifs[n.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── OPERAÇÕES ── */}
+              {settingsSection === 'operations' && (
+                <>
+                  <View style={bizS.settingsToggleRow}>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.settingsToggleLabel}>Negócio Aberto</Text>
+                      <Text style={bizS.settingsToggleDesc}>Visível como aberto para clientes</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.isOpen && bizS.promoToggleActive]}
+                      onPress={() => setBusinessOpen(!settingsOperations.isOpen)}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.isOpen && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={bizS.settingsToggleRow}>
+                    <View style={{flex:1}}>
+                      <Text style={bizS.settingsToggleLabel}>Fechado Temporariamente</Text>
+                      <Text style={bizS.settingsToggleDesc}>Suspende temporariamente o perfil</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.temporarilyClosed && bizS.promoToggleActive]}
+                      onPress={() => {
+                        const newVal = !settingsOperations.temporarilyClosed;
+                        setSettingsOperations(s => ({...s, temporarilyClosed: newVal}));
+                        setBusinessOpen(!newVal);
+                      }}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.temporarilyClosed && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {settingsOperations.temporarilyClosed && (
+                    <View style={bizS.promoFormGroup}>
+                      <Text style={bizS.promoFormLabel}>Mensagem aos Clientes</Text>
+                      <TextInput
+                        style={[bizS.promoFormInput, {minHeight:60}]}
+                        value={settingsOperations.closedMessage}
+                        onChangeText={t => setSettingsOperations(s => ({...s, closedMessage: t}))}
+                        multiline
+                        textAlignVertical="top"
+                        placeholderTextColor={COLORS.grayText}
+                      />
+                    </View>
+                  )}
+
+                  <Text style={[bizS.sectionTitle, {marginTop:20, marginBottom:12}]}>Métodos de Pagamento</Text>
+                  {['Multicaixa Express','TPA','Dinheiro','Cartão de Crédito','Transferência Bancária'].map(method => {
+                    const active = settingsOperations.payment.includes(method);
+                    return (
+                      <TouchableOpacity
+                        key={method}
+                        style={[bizS.settingsToggleRow, {paddingVertical:10}]}
+                        onPress={() => setSettingsOperations(s => ({
+                          ...s,
+                          payment: active
+                            ? s.payment.filter(p => p !== method)
+                            : [...s.payment, method]
+                        }))}
+                      >
+                        <Text style={bizS.settingsToggleLabel}>{method}</Text>
+                        <View style={[bizS.settingsCheckbox, active && bizS.settingsCheckboxActive]}>
+                          {active && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* ── VISIBILIDADE ── */}
+              {settingsSection === 'visibility' && (
+                <>
+                  {[
+                    { key:'isPublic',    label:'Perfil Público',   desc:'O seu negócio aparece nas pesquisas' },
+                    { key:'showAddress', label:'Mostrar Morada',   desc:'Morada visível no perfil público' },
+                    { key:'showPhone',   label:'Mostrar Telefone', desc:'Telefone visível no perfil público' },
+                  ].map(v => (
+                    <View key={v.key} style={bizS.settingsToggleRow}>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.settingsToggleLabel}>{v.label}</Text>
+                        <Text style={bizS.settingsToggleDesc}>{v.desc}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[bizS.promoToggle, settingsVisibility[v.key] && bizS.promoToggleActive]}
+                        onPress={() => {
+                          const newVal = !settingsVisibility[v.key];
+                          setSettingsVisibility(s => ({...s, [v.key]: newVal}));
+                          updateOwnerBiz({[v.key]: newVal});
+                        }}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsVisibility[v.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* ── CONTA ── */}
+              {settingsSection === 'account' && (
+                <>
+                  <View style={bizS.promoFormGroup}>
+                    <Text style={bizS.promoFormLabel}>Email</Text>
+                    <TextInput
+                      style={bizS.promoFormInput}
+                      value={settingsAccount.email}
+                      onChangeText={t => setSettingsAccount(s => ({...s, email: t}))}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      placeholderTextColor={COLORS.grayText}
+                    />
+                  </View>
+
+                  <Text style={[bizS.sectionTitle, {marginTop:20, marginBottom:12}]}>Idioma</Text>
+                  {[{id:'pt',label:'Português'},{id:'en',label:'English'}].map(lang => (
+                    <TouchableOpacity
+                      key={lang.id}
+                      style={[bizS.settingsToggleRow, {paddingVertical:12}]}
+                      onPress={() => setSettingsAccount(s => ({...s, language: lang.id}))}
+                    >
+                      <Text style={bizS.settingsToggleLabel}>{lang.label}</Text>
+                      <View style={[bizS.settingsCheckbox, settingsAccount.language === lang.id && bizS.settingsCheckboxActive]}>
+                        {settingsAccount.language === lang.id && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+
+                  <TouchableOpacity
+                    style={[bizS.promoActionBtnGhost, {marginTop:32, alignSelf:'stretch'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Alterar Password', 'Um email de redefinição será enviado para ' + settingsAccount.email, [{text:'Cancelar',style:'cancel'},{text:'Enviar',style:'default'}])}
+                  >
+                    <Text style={bizS.promoActionBtnGhostText}>Alterar Password</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[bizS.promoActionBtnPrimary, {marginTop:12, alignSelf:'stretch', backgroundColor:'#E53935'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Sair do Modo Dono', 'Tem a certeza?', [{text:'Cancelar',style:'cancel'},{text:'Sair',style:'destructive', onPress:()=>{ setShowSettings(false); onExitOwnerMode(); }}])}
+                  >
+                    <Text style={bizS.promoActionBtnPrimaryText}>Sair da Conta</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <View style={{height:40}} />
             </View>
           </ScrollView>
         </View>
       )}
+
+      {/* ── CATEGORY PICKER MODAL ───────────────────────────────────────────── */}
+      <Modal visible={showOwnerCategoryPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowOwnerCategoryPicker(false)}>
+        <SafeAreaView style={{flex:1, backgroundColor:COLORS.white}}>
+          <View style={[profS.overlayHeader, {paddingTop: Platform.OS === 'android' ? insets.top + 12 : 16}]}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowOwnerCategoryPicker(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.overlayTitle}>Categoria Principal</Text>
+            <View style={{width:32}} />
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {ALL_CATEGORIES.map((section, si) => (
+              <View key={si} style={{marginBottom:8}}>
+                <Text style={{fontSize:11, fontWeight:'700', color:COLORS.grayText, letterSpacing:0.8, paddingHorizontal:16, paddingVertical:8, backgroundColor:COLORS.grayBg}}>
+                  {section.section.toUpperCase()}
+                </Text>
+                {section.items.map(item => {
+                  const isSelected = settingsInfo.primaryCategoryId === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={{flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingVertical:13, borderBottomWidth:1, borderBottomColor:COLORS.grayLine, backgroundColor: isSelected ? COLORS.red+'08' : COLORS.white}}
+                      onPress={() => {
+                        setSettingsInfo(s => ({...s, primaryCategoryId: item.id}));
+                        setShowOwnerCategoryPicker(false);
+                      }}
+                    >
+                      <View style={{width:36, height:36, borderRadius:10, backgroundColor: isSelected ? COLORS.red+'20' : COLORS.grayBg, alignItems:'center', justifyContent:'center', marginRight:12}}>
+                        <Icon name={item.icon} size={18} color={isSelected ? COLORS.red : COLORS.darkText} strokeWidth={1.5} />
+                      </View>
+                      <Text style={{flex:1, fontSize:14, color: isSelected ? COLORS.red : COLORS.darkText, fontWeight: isSelected ? '700' : '400'}}>{item.label}</Text>
+                      {isSelected && <Icon name="check" size={18} color={COLORS.red} strokeWidth={2.5} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{height:30}} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── SUBCATEGORY PICKER MODAL (multi-select até 5) ───────────────────── */}
+      <Modal visible={showOwnerSubCategoryPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowOwnerSubCategoryPicker(false)}>
+        <SafeAreaView style={{flex:1, backgroundColor:COLORS.white}}>
+          <View style={[profS.overlayHeader, {paddingTop: Platform.OS === 'android' ? insets.top + 12 : 16}]}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => setShowOwnerSubCategoryPicker(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.overlayTitle}>Subcategorias</Text>
+            <TouchableOpacity onPress={() => setShowOwnerSubCategoryPicker(false)} style={{paddingHorizontal:4}}>
+              <View style={{backgroundColor: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.red : COLORS.grayBg, borderRadius:16, paddingHorizontal:12, paddingVertical:5}}>
+                <Text style={{fontSize:12, fontWeight:'700', color: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.white : COLORS.grayText}}>
+                  {(settingsInfo.subCategoryIds||[]).length}/5 OK
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          {(settingsInfo.subCategoryIds||[]).length >= 5 && (
+            <View style={{marginHorizontal:16, marginBottom:4, padding:10, backgroundColor:'#FEF9C3', borderRadius:10, flexDirection:'row', alignItems:'center', gap:8}}>
+              <Text style={{fontSize:13}}>⚠️</Text>
+              <Text style={{fontSize:12, color:'#92400E', fontWeight:'600'}}>Máximo atingido. Remove uma para adicionar outra.</Text>
+            </View>
+          )}
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {ALL_CATEGORIES.map((section, si) => (
+              <View key={si} style={{marginBottom:4}}>
+                <Text style={{fontSize:11, fontWeight:'700', color:COLORS.grayText, letterSpacing:0.8, paddingHorizontal:16, paddingVertical:8, backgroundColor:COLORS.grayBg}}>
+                  {section.section.toUpperCase()}
+                </Text>
+                {section.items.map(item => {
+                  const isSelected = (settingsInfo.subCategoryIds||[]).includes(item.id);
+                  const isPrimary  = settingsInfo.primaryCategoryId === item.id;
+                  const isDisabled = !isSelected && (settingsInfo.subCategoryIds||[]).length >= 5;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      disabled={isDisabled}
+                      style={{flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingVertical:13, borderBottomWidth:1, borderBottomColor:COLORS.grayLine,
+                        backgroundColor: isSelected ? COLORS.red+'08' : COLORS.white,
+                        opacity: isDisabled ? 0.4 : 1}}
+                      onPress={() => {
+                        const cur = settingsInfo.subCategoryIds || [];
+                        if (isSelected) {
+                          setSettingsInfo(s => ({...s, subCategoryIds: cur.filter(x => x !== item.id)}));
+                        } else {
+                          setSettingsInfo(s => ({...s, subCategoryIds: [...cur, item.id]}));
+                        }
+                      }}
+                    >
+                      <View style={{width:36, height:36, borderRadius:10, backgroundColor: isSelected ? COLORS.red+'20' : COLORS.grayBg, alignItems:'center', justifyContent:'center', marginRight:12}}>
+                        <Icon name={item.icon} size={18} color={isSelected ? COLORS.red : COLORS.darkText} strokeWidth={1.5} />
+                      </View>
+                      <View style={{flex:1}}>
+                        <Text style={{fontSize:14, color: isSelected ? COLORS.red : COLORS.darkText, fontWeight: isSelected ? '700' : '400'}}>{item.label}</Text>
+                        {isPrimary && (
+                          <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:1}}>Categoria principal</Text>
+                        )}
+                      </View>
+                      <View style={{width:22, height:22, borderRadius:6, borderWidth:2,
+                        borderColor: isSelected ? COLORS.red : COLORS.grayLine,
+                        backgroundColor: isSelected ? COLORS.red : 'transparent',
+                        alignItems:'center', justifyContent:'center'}}>
+                        {isSelected && <Text style={{color:COLORS.white, fontSize:13, lineHeight:15, fontWeight:'800'}}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{height:30}} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
 
     </View>

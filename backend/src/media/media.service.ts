@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,11 +11,11 @@ import { UploadBase64Dto } from './dto/upload-base64.dto';
 @Injectable()
 export class MediaService {
   private readonly bucket = process.env.SUPABASE_STORAGE_BUCKET ?? 'achaqui-public';
-
-  private readonly supabase = createClient(
-    process.env.SUPABASE_URL ?? '',
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-  );
+  private readonly supabaseUrl = process.env.SUPABASE_URL ?? '';
+  private readonly supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  private readonly supabase = this.supabaseUrl && this.supabaseServiceRoleKey
+    ? createClient(this.supabaseUrl, this.supabaseServiceRoleKey)
+    : null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -66,6 +67,12 @@ export class MediaService {
   }
 
   private async upload(filePath: string, dto: UploadBase64Dto) {
+    if (!this.supabase) {
+      throw new ServiceUnavailableException(
+        'Media service não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
     const fileBuffer = Buffer.from(dto.base64, 'base64');
 
     const { error } = await this.supabase.storage

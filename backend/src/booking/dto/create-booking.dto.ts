@@ -6,6 +6,11 @@ import {
   IsUUID,
 } from 'class-validator';
 
+export enum BookingTypeDto {
+  TABLE = 'TABLE',
+  ROOM = 'ROOM',
+}
+
 export class CreateBookingDto {
   @IsDateString()
   startDate: string;
@@ -19,4 +24,8 @@ export class CreateBookingDto {
   @IsOptional()
   @IsEnum(BookingStatus)
   status?: BookingStatus;
+
+  @IsOptional()
+  @IsEnum(BookingTypeDto)
+  bookingType?: BookingTypeDto;
 }

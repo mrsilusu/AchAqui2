@@ -1,6 +1,12 @@
+const CODESPACES_PUBLIC_URL =
+  process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+    ? `https://${process.env.CODESPACE_NAME}-3000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`
+    : '';
+
 export const BACKEND_URL = (
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   process.env.BACKEND_URL ||
+  CODESPACES_PUBLIC_URL ||
   'http://localhost:3000'
 ).replace(/\/$/, '');
 

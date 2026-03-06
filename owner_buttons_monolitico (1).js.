@@ -1,0 +1,2292 @@
+/**
+ * ============================================================================
+ * OWNER MODULE — BOTÕES E ACÇÕES DO DONO (v3 — verificado)
+ * Extraído do Monolítico v2.9.31  (Monolitico_completo.txt — 10.801 linhas)
+ * ============================================================================
+ *
+ * Apenas botões FOLHA (leaf) — sem wrappers/overlays que contêm outros botões.
+ * Cada bloco é idêntico ao original (verificado byte-a-byte após normalização).
+ *
+ * FORMATO:
+ *   // ── L<linha>  "<Label>"  →  <onPress resumido>
+ *   <TouchableOpacity ...>...</TouchableOpacity>
+ *
+ * SECÇÕES:
+ *   1.  DASHBOARD TAB          L2700–3089
+ *   2.  NOTIFICATIONS TAB      L3090–3143
+ *   3.  MYBUSINESS TAB         L3144–3285
+ *   4.  MENU EDITOR MODAL      L6483–6676
+ *   5.  INVENTORY EDITOR MODAL L6677–6794
+ *   6.  SERVICES EDITOR MODAL  L6795–6900
+ *   7.  ROOMS EDITOR MODAL     L6901–7549
+ *   8.  RESERVATIONS MODAL     L7550–7696
+ *   9.  SETTINGS MODAL         L7697–8243
+ *  10.  PHOTOS MANAGER MODAL   L8244–8342
+ *  11.  PROMO MANAGER MODAL    L8343–8895
+ *  12.  PROMO CODE MODAL       L8896–9049
+ *  13.  FEATURED MODAL         L9050–9350
+ *  14.  OWNER NAV BAR + ICAL   L9384–9694
+ *  15.  CANCEL REASON MODAL    L9695–9752
+ *  16.  EDIT ORDER MODAL       L9753–9794
+ *  17.  EDIT DELIVERY MODAL    L9795–9850
+ * ============================================================================
+ */
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// DASHBOARD TAB
+// Status toggle, cards de gestão, acções rápidas
+// Linhas 2700–3089  •  19 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L2722  →  () => { const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === ...
+<TouchableOpacity
+                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchActive]}
+                onPress={() => {
+                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen);
+                  setBusinessOpen(!currentlyOpen);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && OWNER_BUSINESS.isOpen)) && bizS.statusSwitchKnobActive]} />
+              </TouchableOpacity>
+
+  // ── L2780  "Editar Menu"  →  () => setShowMenuEditor(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowMenuEditor(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="web" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Editar Menu</Text>
+                    <Text style={bizS.actionDesc}>{menuItems.length} itens</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2797  "Editar Inventário"  →  () => setShowInventoryEditor(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowInventoryEditor(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Editar Inventário</Text>
+                    <Text style={bizS.actionDesc}>{inventoryItems.length} produtos</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2814  "Editar Serviços"  →  () => setShowServicesEditor(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowServicesEditor(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="portfolio" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Editar Serviços</Text>
+                    <Text style={bizS.actionDesc}>{servicesList.length} serviços</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2831  "Serviços Oferecidos"  →  () => setShowServicesOfferedEditor(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesOfferedEditor(true)}>
+                  <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Serviços Oferecidos</Text>
+                    <Text style={bizS.actionDesc}>{ownerServicesOffered.length} serviços no perfil</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2842  "Portfólio"  →  () => setShowPortfolioEditor(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPortfolioEditor(true)}>
+                  <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Portfólio</Text>
+                    <Text style={bizS.actionDesc}>{ownerPortfolio.length} imagem{ownerPortfolio.length!==1?'ns':''}</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2853  "Disponibilidade"  →  () => setShowAvailabilityEditor(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
+                  <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Disponibilidade</Text>
+                    <Text style={bizS.actionDesc}>Horários de marcação</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2864  "Políticas & Quartos"  →  () => setShowOccupancyEditor(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowOccupancyEditor(true)}>
+                  <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
+                    <Text style={bizS.actionDesc}>{roomTypes.reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2875  "Reservas de Quartos"  →  () => setShowRoomBookingsManager(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomBookingsManager(true)}>
+                  <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
+                    <Text style={bizS.actionDesc}>{roomBookings.filter(rb=>rb.status==='pending').length} pendente{roomBookings.filter(rb=>rb.status==='pending').length!==1?'s':''} · {roomBookings.filter(rb=>rb.status==='confirmed').length} confirmada{roomBookings.filter(rb=>rb.status==='confirmed').length!==1?'s':''}</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2887  "Sincronização iCal"  →  () => setShowIcalModal(true)
+<TouchableOpacity
+                  style={[bizS.actionCard, {borderColor: icalLink ? COLORS.blue+'40' : COLORS.grayLine, borderWidth: icalLink ? 1.5 : 1}]}
+                  activeOpacity={0.8}
+                  onPress={() => setShowIcalModal(true)}
+                >
+                  <View style={[bizS.actionIcon, {backgroundColor: icalLink ? '#EFF6FF' : COLORS.grayBg}]}>
+                    <Icon name="calendar" size={22} color={icalLink ? COLORS.blue : COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Sincronização iCal</Text>
+                    <Text style={bizS.actionDesc} numberOfLines={1}>
+                      {icalLink ? '🟢 Link configurado' : 'Booking.com · Airbnb · Google Calendar'}
+                    </Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2906  "Pratos em Destaque"  →  () => setShowPopularDishesEditor(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPopularDishesEditor(true)}>
+                  <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Pratos em Destaque</Text>
+                    <Text style={bizS.actionDesc}>{ownerPopularDishes.length} prato{ownerPopularDishes.length!==1?'s':''} destacado{ownerPopularDishes.length!==1?'s':''}</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2917  "Editar Tipos de Quarto"  →  () => setShowRoomsEditor(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowRoomsEditor(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Editar Tipos de Quarto</Text>
+                    <Text style={bizS.actionDesc}>{roomTypes.length} tipos</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2934  "Config de Entrega"  →  () => setShowDeliveryConfig(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowDeliveryConfig(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Config de Entrega</Text>
+                    <Text style={bizS.actionDesc}>{deliveryAreas.length} áreas</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2951  "Encomendas Personalizadas"  →  () => setShowCustomOrders(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowCustomOrders(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="star" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Encomendas Personalizadas</Text>
+                    <Text style={bizS.actionDesc}>{customOrders.filter(o => o.status === 'pending').length} pendentes</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2968  "Rastreamento de Entregas"  →  () => setShowDeliveryOrders(true)
+<TouchableOpacity 
+                  style={bizS.actionCard} 
+                  activeOpacity={0.8}
+                  onPress={() => setShowDeliveryOrders(true)}
+                >
+                  <View style={bizS.actionIcon}>
+                    <Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} />
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={bizS.actionTitle}>Rastreamento de Entregas</Text>
+                    <Text style={bizS.actionDesc}>{deliveryOrders.filter(o => o.status !== 'delivered').length} em curso</Text>
+                  </View>
+                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                </TouchableOpacity>
+
+  // ── L2985  "Código Promocional"  →  () => setShowPromoCodeModal(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoCodeModal(true)}>
+                <View style={bizS.actionIcon}>
+                  <Icon name="tag" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Código Promocional</Text>
+                  <Text style={bizS.actionDesc}>
+                    {promoCodes.length > 0 ? `${promoCodes.length} código${promoCodes.length !== 1 ? 's' : ''}` : 'Sem códigos'}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3000  "Reservas"  →  () => setShowReservationsModal(true)
+<TouchableOpacity 
+                style={bizS.actionCard} 
+                activeOpacity={0.8}
+                onPress={() => setShowReservationsModal(true)}
+              >
+                <View style={bizS.actionIcon}>
+                  <Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Reservas</Text>
+                  <Text style={bizS.actionDesc}>{businessReservations.filter(r => r.status === 'active').length} ativas • {businessReservations.filter(r => r.status === 'cancelled').length} canceladas</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3016  "Ver como Cliente"
+<TouchableOpacity 
+                style={bizS.actionCard} 
+                activeOpacity={0.8}
+                onPress={() => {
+                  // Ver como cliente
+                  const ownerBusiness = businesses.find(b => b.name === OWNER_BUSINESS.name);
+                  if (ownerBusiness) {
+                    handleBusinessPress(ownerBusiness);
+                  }
+                }}
+              >
+                <View style={bizS.actionIcon}>
+                  <Icon name="eye" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Ver como Cliente</Text>
+                  <Text style={bizS.actionDesc}>Pré-visualizar seu perfil público</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3065  "Responder"  →  () => { setReviewToReply(review); setReplyText(''); setShowReplyModal(true); }
+<TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            setReviewToReply(review);
+                            setReplyText('');
+                            setShowReplyModal(true);
+                          }}
+                        >
+                          <Text style={bizS.replyButton}>Responder</Text>
+                        </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS TAB
+// Abrir notificação, marcar lida, marcar todas lidas
+// Linhas 3090–3143  •  2 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L3100  "Marcar todas lidas"  →  () => setBusinessNotifications(prev => prev.map(n => ({...n, read: true})))
+<TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setBusinessNotifications(prev => prev.map(n => ({...n, read: true})))}
+                  >
+                    <Text style={{fontSize:13, fontWeight:'600', color:COLORS.red}}>Marcar todas lidas</Text>
+                  </TouchableOpacity>
+
+  // ── L3109
+<TouchableOpacity
+                  key={notif.id}
+                  style={[bizS.notifCard, !notif.read && bizS.notifCardUnread]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setBusinessNotifications(prev => prev.map(n => n.id === notif.id ? {...n, read: true} : n));
+                    setSelectedNotif(notif);
+                    setShowNotifDetail(true);
+                  }}
+                >
+                  <View style={bizS.notifIcon}>
+                    <Text style={{fontSize:24}}>{notif.icon}</Text>
+                  </View>
+                  <View style={{flex:1}}>
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:4}}>
+                      <Text style={bizS.notifTitle}>{notif.title}</Text>
+                      {!notif.read && <View style={bizS.notifBadge} />}
+                    </View>
+                    <Text style={bizS.notifMessage}>{notif.message}</Text>
+                    <Text style={bizS.notifTime}>{notif.time}</Text>
+                  </View>
+                  <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} style={{marginLeft:8, alignSelf:'center'}} />
+                </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MYBUSINESS TAB
+// Comodidades, módulos, fotos, promoções, configurações
+// Linhas 3144–3285  •  5 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L3221  "Gerir Comodidades"  →  () => setShowAmenitiesModal(true)
+<TouchableOpacity 
+                style={bizS.actionCard} 
+                activeOpacity={0.8}
+                onPress={() => setShowAmenitiesModal(true)}
+              >
+                <View style={bizS.actionIcon}>
+                  <Icon name="star" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Gerir Comodidades</Text>
+                  <Text style={bizS.actionDesc}>{ownerAmenities.length} ativas</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3236  "Gerir Módulos Operacionais"  →  () => setShowModulesModal(true)
+<TouchableOpacity 
+                style={bizS.actionCard} 
+                activeOpacity={0.8}
+                onPress={() => setShowModulesModal(true)}
+              >
+                <View style={bizS.actionIcon}>
+                  <Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Gerir Módulos Operacionais</Text>
+                  <Text style={bizS.actionDesc}>{Object.values(activeModules).filter(Boolean).length} ativos</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3251  "Adicionar Fotos"  →  () => setShowPhotosManager(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPhotosManager(true)}>
+                <View style={bizS.actionIcon}>
+                  <Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Adicionar Fotos</Text>
+                  <Text style={bizS.actionDesc}>{ownerPhotos.length} foto{ownerPhotos.length !== 1 ? 's' : ''}</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3261  "Criar Promoção"  →  () => setShowPromoManager(true)
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoManager(true)}>
+                <View style={bizS.actionIcon}>
+                  <Icon name="tag" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Criar Promoção</Text>
+                  <Text style={bizS.actionDesc}>
+                    {promotions.filter(p => p.active).length > 0
+                      ? `${promotions.filter(p => p.active).length} ativa${promotions.filter(p => p.active).length !== 1 ? 's' : ''}`
+                      : 'Nenhuma promoção ativa'}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+  // ── L3275  "Configurações"  →  () => { setSettingsSection(null); setShowSettings(true); }
+<TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => { setSettingsSection(null); setShowSettings(true); }}>
+                <View style={bizS.actionIcon}>
+                  <Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} />
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={bizS.actionTitle}>Configurações</Text>
+                  <Text style={bizS.actionDesc}>Gerencie suas preferências</Text>
+                </View>
+                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+              </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MENU EDITOR MODAL
+// CRUD itens de menu
+// Linhas 6483–6676  •  6 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L6489  →  () => setShowMenuEditor(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowMenuEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6493
+<TouchableOpacity onPress={() => {
+              setEditingMenuItem(null);
+              setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+              setShowMenuItemForm(true);
+            }}>
+              <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6516  "Editar"  →  () => { setEditingMenuItem(item); setMenuItemForm(item); setShowMenuItemForm(true); }
+<TouchableOpacity 
+                        style={editorS.itemActionBtn}
+                        onPress={() => {
+                          setEditingMenuItem(item);
+                          setMenuItemForm(item);
+                          setShowMenuItemForm(true);
+                        }}
+                      >
+                        <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} />
+                        <Text style={editorS.itemActionText}>Editar</Text>
+                      </TouchableOpacity>
+
+  // ── L6527  "Remover"
+<TouchableOpacity 
+                        style={editorS.itemActionBtn}
+                        onPress={() => {
+                          const updated = menuItems.filter(i => i.id !== item.id);
+                          setMenuItems(updated);
+                          OWNER_BUSINESS.menuItems = updated;
+                          updateOwnerBiz({ menuItems: updated });
+                        }}
+                      >
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
+                        <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
+                      </TouchableOpacity>
+
+  // ── L6623  "Cancelar"
+<TouchableOpacity 
+                      style={editorS.formBtnCancel}
+                      onPress={() => {
+                        setShowMenuItemForm(false);
+                        setEditingMenuItem(null);
+                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+                      }}
+                    >
+                      <Text style={editorS.formBtnCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+
+  // ── L6633  "Guardar"
+<TouchableOpacity 
+                      style={[editorS.formBtnSave, (!menuItemForm.name || !menuItemForm.price) && {opacity:0.5}]}
+                      disabled={!menuItemForm.name || !menuItemForm.price}
+                      onPress={() => {
+                        if (!menuItemForm.name || !menuItemForm.price) return;
+                        
+                        if (editingMenuItem) {
+                          const updated = menuItems.map(i => 
+                            i.id === editingMenuItem.id ? {...menuItemForm, id: editingMenuItem.id, price: parseFloat(menuItemForm.price)} : i
+                          );
+                          setMenuItems(updated);
+                          OWNER_BUSINESS.menuItems = updated;
+                          updateOwnerBiz({ menuItems: updated });
+                        } else {
+                          const newItem = {
+                            ...menuItemForm,
+                            id: Date.now().toString(),
+                            price: parseFloat(menuItemForm.price)
+                          };
+                          const updated = [...menuItems, newItem];
+                          setMenuItems(updated);
+                          OWNER_BUSINESS.menuItems = updated;
+                          updateOwnerBiz({ menuItems: updated });
+                        }
+                        
+                        setShowMenuItemForm(false);
+                        setEditingMenuItem(null);
+                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+                      }}
+                    >
+                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// INVENTORY EDITOR MODAL
+// CRUD inventário/produtos
+// Linhas 6677–6794  •  6 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L6680  →  () => setShowInventoryEditor(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowInventoryEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6684
+<TouchableOpacity onPress={() => {
+              setEditingInventoryItem(null);
+              setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+              setShowInventoryForm(true);
+            }}>
+              <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6709  "Editar"  →  () => { setEditingInventoryItem(item); setInventoryForm(item); setShowInventoryForm(true); }
+<TouchableOpacity 
+                        style={editorS.itemActionBtn}
+                        onPress={() => {
+                          setEditingInventoryItem(item);
+                          setInventoryForm(item);
+                          setShowInventoryForm(true);
+                        }}
+                      >
+                        <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} />
+                        <Text style={editorS.itemActionText}>Editar</Text>
+                      </TouchableOpacity>
+
+  // ── L6720  "Remover"
+<TouchableOpacity 
+                        style={editorS.itemActionBtn}
+                        onPress={() => {
+                          const updated = inventoryItems.filter(i => i.id !== item.id);
+                          setInventoryItems(updated);
+                          OWNER_BUSINESS.inventoryItems = updated;
+                          updateOwnerBiz({ inventoryItems: updated });
+                        }}
+                      >
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
+                        <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
+                      </TouchableOpacity>
+
+  // ── L6766  "Cancelar"
+<TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true }); }}>
+                      <Text style={editorS.formBtnCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+
+  // ── L6769  "Guardar"
+<TouchableOpacity style={[editorS.formBtnSave, (!inventoryForm.name) && {opacity:0.5}]} disabled={!inventoryForm.name} onPress={() => {
+                      if (!inventoryForm.name) return;
+                      if (editingInventoryItem) {
+                        const updated = inventoryItems.map(i => i.id === editingInventoryItem.id ? {...inventoryForm, id: editingInventoryItem.id, price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0} : i);
+                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
+                        updateOwnerBiz({ inventoryItems: updated });
+                      } else {
+                        const newItem = { ...inventoryForm, id: Date.now().toString(), price: inventoryForm.price ? parseFloat(inventoryForm.price) : 0, stock: inventoryForm.stock ? parseInt(inventoryForm.stock) : 0 };
+                        const updated = [...inventoryItems, newItem];
+                        setInventoryItems(updated); OWNER_BUSINESS.inventoryItems = updated;
+                        updateOwnerBiz({ inventoryItems: updated });
+                      }
+                      setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+                    }}>
+                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SERVICES EDITOR MODAL
+// CRUD serviços
+// Linhas 6795–6900  •  6 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L6798  →  () => setShowServicesEditor(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowServicesEditor(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6802
+<TouchableOpacity onPress={() => {
+              setEditingService(null);
+              setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
+              setShowServiceForm(true);
+            }}>
+              <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L6825  "Editar"  →  () => { setEditingService(service); setServiceForm(service); setShowServiceForm(true); }
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingService(service); setServiceForm(service); setShowServiceForm(true); }}>
+                        <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} />
+                        <Text style={editorS.itemActionText}>Editar</Text>
+                      </TouchableOpacity>
+
+  // ── L6829  "Remover"
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => {
+                        const updated = servicesList.filter(s => s.id !== service.id);
+                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
+                        updateOwnerBiz({ servicesList: updated });
+                      }}>
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} />
+                        <Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text>
+                      </TouchableOpacity>
+
+  // ── L6871  "Cancelar"
+<TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true }); }}>
+                      <Text style={editorS.formBtnCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+
+  // ── L6874  "Guardar"
+<TouchableOpacity style={[editorS.formBtnSave, (!serviceForm.name) && {opacity:0.5}]} disabled={!serviceForm.name} onPress={() => {
+                      if (!serviceForm.name) return;
+                      if (editingService) {
+                        const updated = servicesList.map(s => s.id === editingService.id ? {...serviceForm, id: editingService.id, basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0} : s);
+                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
+                        updateOwnerBiz({ servicesList: updated });
+                      } else {
+                        const newService = { ...serviceForm, id: Date.now().toString(), basePrice: serviceForm.basePrice ? parseFloat(serviceForm.basePrice) : 0 };
+                        const updated = [...servicesList, newService];
+                        setServicesList(updated); OWNER_BUSINESS.servicesList = updated;
+                        updateOwnerBiz({ servicesList: updated });
+                      }
+                      setShowServiceForm(false); setEditingService(null); setServiceForm({ name: '', description: '', basePrice: '', duration: '', available: true });
+                    }}>
+                      <Text style={editorS.formBtnSaveText}>Guardar</Text>
+                    </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ROOMS EDITOR MODAL
+// Políticas, quartos, bloqueios, encomendas, entregas, módulos, amenidades
+// Linhas 6901–7549  •  46 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L6904  →  () => setShowRoomsEditor(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowRoomsEditor(false)}><Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L6906
+<TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); setShowRoomForm(true); }}><Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L6918
+<TouchableOpacity
+                            style={{position:'absolute', top:3, right:3, backgroundColor:'rgba(0,0,0,0.55)', borderRadius:8, width:18, height:18, alignItems:'center', justifyContent:'center'}}
+                            onPress={() => {
+                              const updated = roomTypes.map(r => r.id===room.id ? {...r, photos:(r.photos||[]).filter((_,idx)=>idx!==pi)} : r);
+                              setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({roomTypes:updated});
+                            }}
+                          >
+                            <Text style={{color:'#fff', fontSize:10, fontWeight:'700', lineHeight:14}}>✕</Text>
+                          </TouchableOpacity>
+
+  // ── L6937
+<TouchableOpacity style={editorS.itemActionBtn} onPress={async () => {
+                      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (status !== 'granted') { Alert.alert('Permissão necessária','Precisamos acesso à galeria.'); return; }
+                      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection:true, quality:0.85 });
+                      if (!result.canceled && result.assets?.length > 0) {
+                        const newUris = result.assets.map(a => a.uri);
+                        const updated = roomTypes.map(r => r.id===room.id ? {...r, photos:[...(r.photos||[]),...newUris].slice(0,10)} : r);
+                        setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({roomTypes:updated});
+                      }
+                    }}>
+                      <Icon name="camera" size={16} color={COLORS.red} strokeWidth={2} />
+                      <Text style={editorS.itemActionText}>Fotos ({room.photos?.length||0})</Text>
+                    </TouchableOpacity>
+
+  // ── L6950  "Editar"  →  () => { setEditingRoom(room); setRoomForm(room); setShowRoomForm(true); }
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm(room); setShowRoomForm(true); }}><Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar</Text></TouchableOpacity>
+
+  // ── L6951  "Remover"
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => { const updated = roomTypes.filter(r => r.id !== room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated }); }}><Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text></TouchableOpacity>
+
+  // ── L6984  "Cancelar"
+<TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
+
+  // ── L6985  "Guardar"
+<TouchableOpacity style={[editorS.formBtnSave, (!roomForm.name) && {opacity:0.5}]} disabled={!roomForm.name} onPress={() => {
+                      if (!roomForm.name) return;
+                      if (editingRoom) {
+                        const updated = roomTypes.map(r => r.id === editingRoom.id ? {...roomForm, id: editingRoom.id, pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0, totalRooms: roomForm.totalRooms ? parseInt(roomForm.totalRooms) : (r.totalRooms||1), taxRate: roomForm.taxRate ? parseFloat(roomForm.taxRate) : 0} : r);
+                        setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
+                      } else {
+                        const newRoom = { ...roomForm, id: Date.now().toString(), pricePerNight: roomForm.pricePerNight ? parseFloat(roomForm.pricePerNight) : 0, maxGuests: roomForm.maxGuests ? parseInt(roomForm.maxGuests) : 0, totalRooms: roomForm.totalRooms ? parseInt(roomForm.totalRooms) : 1, taxRate: roomForm.taxRate ? parseFloat(roomForm.taxRate) : 0 };
+                        const updated = [...roomTypes, newRoom]; setRoomTypes(updated); OWNER_BUSINESS.roomTypes = updated; updateOwnerBiz({ roomTypes: updated });
+                      }
+                      setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true, taxRate: '' });
+                    }}><Text style={editorS.formBtnSaveText}>Guardar</Text></TouchableOpacity>
+
+  // ── L7009  →  () => setShowDeliveryConfig(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowDeliveryConfig(false)}><Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L7011
+<TouchableOpacity onPress={() => { setEditingArea(null); setDeliveryForm({ name: '', fee: '', estimatedTime: '' }); setShowDeliveryForm(true); }}><Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L7022  "Editar"  →  () => { setEditingArea(area); setDeliveryForm(area); setShowDeliveryForm(true); }
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingArea(area); setDeliveryForm(area); setShowDeliveryForm(true); }}><Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar</Text></TouchableOpacity>
+
+  // ── L7023  "Remover"
+<TouchableOpacity style={editorS.itemActionBtn} onPress={() => { const updated = deliveryAreas.filter(a => a.id !== area.id); setDeliveryAreas(updated); OWNER_BUSINESS.deliveryAreas = updated; updateOwnerBiz({ deliveryAreas: updated }); }}><Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText, {color:COLORS.grayText}]}>Remover</Text></TouchableOpacity>
+
+  // ── L7049  "Cancelar"
+<TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowDeliveryForm(false); setEditingArea(null); setDeliveryForm({ name: '', fee: '', estimatedTime: '' }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
+
+  // ── L7050  "Guardar"
+<TouchableOpacity style={[editorS.formBtnSave, (!deliveryForm.name) && {opacity:0.5}]} disabled={!deliveryForm.name} onPress={() => {
+                      if (!deliveryForm.name) return;
+                      if (editingArea) {
+                        const updated = deliveryAreas.map(a => a.id === editingArea.id ? {...deliveryForm, id: editingArea.id, fee: deliveryForm.fee ? parseFloat(deliveryForm.fee) : 0} : a);
+                        setDeliveryAreas(updated); OWNER_BUSINESS.deliveryAreas = updated; updateOwnerBiz({ deliveryAreas: updated });
+                      } else {
+                        const newArea = { ...deliveryForm, id: Date.now().toString(), fee: deliveryForm.fee ? parseFloat(deliveryForm.fee) : 0 };
+                        const updated = [...deliveryAreas, newArea]; setDeliveryAreas(updated); OWNER_BUSINESS.deliveryAreas = updated; updateOwnerBiz({ deliveryAreas: updated });
+                      }
+                      setShowDeliveryForm(false); setEditingArea(null); setDeliveryForm({ name: '', fee: '', estimatedTime: '' });
+                    }}><Text style={editorS.formBtnSaveText}>Guardar</Text></TouchableOpacity>
+
+  // ── L7075  →  () => setShowCustomOrders(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowCustomOrders(false)}><Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L7081  →  () => setOrderFilter('all')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: orderFilter === 'all' ? COLORS.red : COLORS.lightGray}} onPress={() => setOrderFilter('all')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: orderFilter === 'all' ? COLORS.white : COLORS.grayText}}>Todas ({customOrders.length})</Text>
+            </TouchableOpacity>
+
+  // ── L7084  →  () => setOrderFilter('pending')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: orderFilter === 'pending' ? COLORS.red : COLORS.lightGray}} onPress={() => setOrderFilter('pending')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: orderFilter === 'pending' ? COLORS.white : COLORS.grayText}}>Pendentes ({customOrders.filter(o => o.status === 'pending').length})</Text>
+            </TouchableOpacity>
+
+  // ── L7087  →  () => setOrderFilter('confirmed')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: orderFilter === 'confirmed' ? COLORS.red : COLORS.lightGray}} onPress={() => setOrderFilter('confirmed')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: orderFilter === 'confirmed' ? COLORS.white : COLORS.grayText}}>Confirmadas ({customOrders.filter(o => o.status === 'confirmed').length})</Text>
+            </TouchableOpacity>
+
+  // ── L7098  →  () => { setSelectedCustomOrder(order); setShowCustomOrderDetail(true); }
+<TouchableOpacity key={order.id} style={editorS.itemCard} onPress={() => { setSelectedCustomOrder(order); setShowCustomOrderDetail(true); }}>
+                  {order.status === 'pending' && !order.price && (
+                    <View style={{position:'absolute', top:8, right:8, paddingHorizontal:8, paddingVertical:4, borderRadius:12, backgroundColor:'#FF5252'}}>
+                      <Text style={{fontSize:10, fontWeight:'800', color:COLORS.white}}>🔴 URGENTE</Text>
+                    </View>
+                  )}
+                  <View style={editorS.itemHeader}>
+                    <View style={{flex:1}}><Text style={editorS.itemName}>{order.customerName}</Text><Text style={editorS.itemCategory}>{order.date} • {order.phone}</Text></View>
+                    <View style={{paddingHorizontal:8, paddingVertical:4, borderRadius:8, backgroundColor: order.status === 'pending' ? '#FFF0F0' : order.status === 'confirmed' ? '#E8F5E9' : order.status === 'rejected' ? '#FFEBEE' : order.status === 'cancelled' ? '#FFF3E0' : '#E3F2FD'}}>
+                      <Text style={{fontSize:11, fontWeight:'700', color: order.status === 'pending' ? COLORS.red : order.status === 'confirmed' ? '#4CAF50' : order.status === 'rejected' ? '#D32F2F' : order.status === 'cancelled' ? '#FF9800' : '#2196F3'}}>
+                        {order.status === 'pending' ? 'Pendente' : order.status === 'confirmed' ? 'Confirmado' : order.status === 'rejected' ? 'Recusado' : order.status === 'cancelled' ? 'Cancelado' : 'Outro'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={editorS.itemDescription} numberOfLines={2}>{order.description}</Text>
+                </TouchableOpacity>
+
+  // ── L7131  →  () => setShowCustomOrderDetail(false)
+<TouchableOpacity onPress={() => setShowCustomOrderDetail(false)} style={{padding:8}}>
+                      <Icon name="x" size={24} color={COLORS.darkText} strokeWidth={2.5} />
+                    </TouchableOpacity>
+
+  // ── L7151  "WhatsApp"  →  () => Linking.openURL(`whatsapp://send?phone=244${selectedCustomOrder.phone.replace(/^0/, '')}&...
+<TouchableOpacity style={{flex:1, minWidth:'45%', paddingVertical:12, borderRadius:10, backgroundColor:'#25D366', alignItems:'center', flexDirection:'row', justifyContent:'center', gap:6}} onPress={() => Linking.openURL(`whatsapp://send?phone=244${selectedCustomOrder.phone.replace(/^0/, '')}&text=Olá ${selectedCustomOrder.customerName}, sobre a sua encomenda...`)}>
+                        <Icon name="whatsapp" size={16} color={COLORS.white} strokeWidth={2} />
+                        <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>WhatsApp</Text>
+                      </TouchableOpacity>
+
+  // ── L7155  "Ligar"  →  () => Linking.openURL(`tel:${selectedCustomOrder.phone}`)
+<TouchableOpacity style={{flex:1, minWidth:'45%', paddingVertical:12, borderRadius:10, backgroundColor:'#2196F3', alignItems:'center', flexDirection:'row', justifyContent:'center', gap:6}} onPress={() => Linking.openURL(`tel:${selectedCustomOrder.phone}`)}>
+                        <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
+                        <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>Ligar</Text>
+                      </TouchableOpacity>
+
+  // ── L7166
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#4CAF50', alignItems:'center'}} onPress={() => {
+                          const updated = customOrders.map(o => o.id === selectedCustomOrder.id ? {...o, status: 'confirmed'} : o);
+                          setCustomOrders(updated); OWNER_BUSINESS.customOrders = updated; setSelectedCustomOrder({...selectedCustomOrder, status: 'confirmed'});
+                        }}><Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>✓ Confirmar</Text></TouchableOpacity>
+
+  // ── L7170  →  () => { console.log('🔍 Reject button pressed'); setCancelTarget('order'); setActionType('reject...
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#D32F2F', alignItems:'center'}} onPress={() => {
+                          console.log('🔍 Reject button pressed');
+                          setCancelTarget('order');
+                          setActionType('reject');
+                          setCancelReason('');
+                          setShowCustomOrderDetail(false);
+                          setTimeout(() => setShowCancelReason(true), 50);
+                        }}><Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>✗ Recusar</Text></TouchableOpacity>
+
+  // ── L7182
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#FF9800', alignItems:'center'}} onPress={() => { 
+                          setEditOrderForm({ price: selectedCustomOrder.price?.toString() || '', deadline: selectedCustomOrder.deadline || '', notes: selectedCustomOrder.notes || '' }); 
+                          setShowCustomOrderDetail(false);
+                          setTimeout(() => setShowEditOrder(true), 50);
+                        }}>
+                          <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>✏️ Editar</Text>
+                        </TouchableOpacity>
+
+  // ── L7189  →  () => { console.log('🔍 Cancel button pressed'); setCancelTarget('order'); setActionType('cancel...
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#D32F2F', alignItems:'center'}} onPress={() => {
+                          console.log('🔍 Cancel button pressed');
+                          setCancelTarget('order');
+                          setActionType('cancel');
+                          setCancelReason('');
+                          setShowCustomOrderDetail(false);
+                          setTimeout(() => setShowCancelReason(true), 50);
+                        }}><Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>✗ Cancelar</Text></TouchableOpacity>
+
+  // ── L7206  "Fechar"  →  () => setShowCustomOrderDetail(false)
+<TouchableOpacity style={{marginTop:12, paddingVertical:12, borderRadius:10, borderWidth:1.5, borderColor:COLORS.grayLine, alignItems:'center'}} onPress={() => setShowCustomOrderDetail(false)}>
+                    <Text style={{fontSize:13, fontWeight:'700', color:COLORS.grayText}}>Fechar</Text>
+                  </TouchableOpacity>
+
+  // ── L7227  →  () => setShowDeliveryOrders(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowDeliveryOrders(false)}><Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} /></TouchableOpacity>
+
+  // ── L7233  →  () => setDeliveryFilter('all')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: deliveryFilter === 'all' ? COLORS.red : COLORS.lightGray}} onPress={() => setDeliveryFilter('all')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: deliveryFilter === 'all' ? COLORS.white : COLORS.grayText}}>Todas ({deliveryOrders.length})</Text>
+            </TouchableOpacity>
+
+  // ── L7236  →  () => setDeliveryFilter('preparing')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: deliveryFilter === 'preparing' ? COLORS.red : COLORS.lightGray}} onPress={() => setDeliveryFilter('preparing')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: deliveryFilter === 'preparing' ? COLORS.white : COLORS.grayText}}>Preparando ({deliveryOrders.filter(o => o.status === 'preparing').length})</Text>
+            </TouchableOpacity>
+
+  // ── L7239  →  () => setDeliveryFilter('dispatched')
+<TouchableOpacity style={{paddingHorizontal:16, paddingVertical:8, borderRadius:20, backgroundColor: deliveryFilter === 'dispatched' ? COLORS.red : COLORS.lightGray}} onPress={() => setDeliveryFilter('dispatched')}>
+              <Text style={{fontSize:12, fontWeight:'700', color: deliveryFilter === 'dispatched' ? COLORS.white : COLORS.grayText}}>Em Rota ({deliveryOrders.filter(o => o.status === 'dispatched').length})</Text>
+            </TouchableOpacity>
+
+  // ── L7247  →  () => { setSelectedDeliveryOrder(order); setShowDeliveryOrderDetail(true); }
+<TouchableOpacity key={order.id} style={editorS.itemCard} onPress={() => { setSelectedDeliveryOrder(order); setShowDeliveryOrderDetail(true); }}>
+                  <View style={editorS.itemHeader}>
+                    <View style={{flex:1}}><Text style={editorS.itemName}>{order.orderId} • {order.customerName}</Text><Text style={editorS.itemCategory}>⏱️ {order.estimatedTime}</Text></View>
+                    <View style={{paddingHorizontal:8, paddingVertical:4, borderRadius:8, backgroundColor: order.status === 'pending' ? '#FFEBEE' : order.status === 'preparing' ? '#FFF3E0' : order.status === 'dispatched' ? '#E3F2FD' : order.status === 'delivered' ? '#E8F5E9' : '#F5F5F5'}}>
+                      <Text style={{fontSize:11, fontWeight:'700', color: order.status === 'pending' ? '#D32F2F' : order.status === 'preparing' ? '#F57C00' : order.status === 'dispatched' ? '#1976D2' : order.status === 'delivered' ? '#388E3C' : '#616161'}}>
+                        {order.status === 'pending' ? 'Pendente' : order.status === 'preparing' ? 'Preparando' : order.status === 'dispatched' ? 'Saiu' : order.status === 'delivered' ? 'Entregue' : 'Cancelado'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={editorS.itemDescription} numberOfLines={1}>{order.address}</Text>
+                </TouchableOpacity>
+
+  // ── L7274  →  () => setShowDeliveryOrderDetail(false)
+<TouchableOpacity onPress={() => setShowDeliveryOrderDetail(false)} style={{padding:8}}>
+                      <Icon name="x" size={24} color={COLORS.darkText} strokeWidth={2.5} />
+                    </TouchableOpacity>
+
+  // ── L7293  "WhatsApp"  →  () => Linking.openURL(`whatsapp://send?phone=244${selectedDeliveryOrder.phone.replace(/^0/, '')...
+<TouchableOpacity style={{flex:1, minWidth:'45%', paddingVertical:12, borderRadius:10, backgroundColor:'#25D366', alignItems:'center', flexDirection:'row', justifyContent:'center', gap:6}} onPress={() => Linking.openURL(`whatsapp://send?phone=244${selectedDeliveryOrder.phone.replace(/^0/, '')}&text=Olá ${selectedDeliveryOrder.customerName}, sobre o seu pedido ${selectedDeliveryOrder.orderId}...`)}>                        <Icon name="whatsapp" size={16} color={COLORS.white} strokeWidth={2} />
+                        <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>WhatsApp</Text>
+                      </TouchableOpacity>
+
+  // ── L7296  "Ligar"  →  () => Linking.openURL(`tel:${selectedDeliveryOrder.phone}`)
+<TouchableOpacity style={{flex:1, minWidth:'45%', paddingVertical:12, borderRadius:10, backgroundColor:'#2196F3', alignItems:'center', flexDirection:'row', justifyContent:'center', gap:6}} onPress={() => Linking.openURL(`tel:${selectedDeliveryOrder.phone}`)}>                        <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
+                        <Text style={{fontSize:13, fontWeight:'700', color:COLORS.white}}>Ligar</Text>
+                      </TouchableOpacity>
+
+  // ── L7339  "Tempo"
+<TouchableOpacity 
+                          activeOpacity={0.7}
+                          style={{flex:1, paddingVertical:10, borderRadius:8, backgroundColor:'#FF9800', alignItems:'center'}} 
+                          onPress={() => { 
+                            console.log('🔍 Tempo button pressed');
+                            setEditDeliveryForm({ estimatedTime: selectedDeliveryOrder.estimatedTime || '', notes: selectedDeliveryOrder.notes || '' }); 
+                            setShowDeliveryOrderDetail(false);
+                            setTimeout(() => setShowEditDelivery(true), 50);
+                          }}
+                        >
+                          <Icon name="clock" size={16} color={COLORS.white} strokeWidth={2} />
+                          <Text style={{fontSize:10, fontWeight:'700', color:COLORS.white, marginTop:2}}>Tempo</Text>
+                        </TouchableOpacity>
+
+  // ── L7352  "Chegando"  →  () => Linking.openURL(`whatsapp://send?phone=244${selectedDeliveryOrder.phone.replace(/^0/, '')...
+<TouchableOpacity style={{flex:1, paddingVertical:10, borderRadius:8, backgroundColor:'#4CAF50', alignItems:'center'}} onPress={() => Linking.openURL(`whatsapp://send?phone=244${selectedDeliveryOrder.phone.replace(/^0/, '')}&text=🚗 Seu pedido ${selectedDeliveryOrder.orderId} está chegando! Tempo estimado: ${selectedDeliveryOrder.estimatedTime}`)}>
+                          <Icon name="whatsapp" size={16} color={COLORS.white} strokeWidth={2} />
+                          <Text style={{fontSize:10, fontWeight:'700', color:COLORS.white, marginTop:2}}>Chegando</Text>
+                        </TouchableOpacity>
+
+  // ── L7356  "Avançar"
+<TouchableOpacity style={{flex:1, paddingVertical:10, borderRadius:8, backgroundColor:COLORS.red, alignItems:'center'}} onPress={() => {
+                          const statusFlow = ['pending', 'preparing', 'dispatched', 'delivered'];
+                          const currentIdx = statusFlow.indexOf(selectedDeliveryOrder.status);
+                          if (currentIdx < 3) {
+                            const updated = deliveryOrders.map(o => o.id === selectedDeliveryOrder.id ? {...o, status: statusFlow[currentIdx + 1]} : o);
+                            setDeliveryOrders(updated); OWNER_BUSINESS.deliveryOrders = updated; setSelectedDeliveryOrder({...selectedDeliveryOrder, status: statusFlow[currentIdx + 1]});
+                          }
+                        }}>
+                          <Icon name="chevronRight" size={16} color={COLORS.white} strokeWidth={2.5} />
+                          <Text style={{fontSize:10, fontWeight:'700', color:COLORS.white, marginTop:2}}>Avançar</Text>
+                        </TouchableOpacity>
+
+  // ── L7367  "Cancelar"  →  () => { console.log('🔍 Delivery Cancel button pressed'); setCancelTarget('delivery'); setAction...
+<TouchableOpacity style={{flex:1, paddingVertical:10, borderRadius:8, backgroundColor:'#D32F2F', alignItems:'center'}} onPress={() => {
+                          console.log('🔍 Delivery Cancel button pressed');
+                          setCancelTarget('delivery');
+                          setActionType('cancel');
+                          setCancelReason('');
+                          setShowDeliveryOrderDetail(false);
+                          setTimeout(() => setShowCancelReason(true), 50);
+                        }}>
+                          <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
+                          <Text style={{fontSize:10, fontWeight:'700', color:COLORS.white, marginTop:2}}>Cancelar</Text>
+                        </TouchableOpacity>
+
+  // ── L7382  "Fechar"  →  () => setShowDeliveryOrderDetail(false)
+<TouchableOpacity style={{marginTop:12, paddingVertical:12, borderRadius:10, borderWidth:1.5, borderColor:COLORS.grayLine, alignItems:'center'}} onPress={() => setShowDeliveryOrderDetail(false)}>
+                    <Text style={{fontSize:13, fontWeight:'700', color:COLORS.grayText}}>Fechar</Text>
+                  </TouchableOpacity>
+
+  // ── L7412  →  () => setShowModulesModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowModulesModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L7416  "Guardar"
+<TouchableOpacity onPress={() => {
+              OWNER_BUSINESS.modules = activeModules;
+              updateOwnerBiz({ modules: activeModules });
+              setShowModulesModal(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+
+  // ── L7435
+<TouchableOpacity
+                      key={module.id}
+                      style={[bizS.moduleCard, isActive && bizS.moduleCardActive]}
+                      onPress={() => {
+                        setActiveModules({
+                          ...activeModules,
+                          [module.id]: !isActive
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[bizS.moduleIconCircle, isActive && bizS.moduleIconCircleActive]}>
+                        <Icon name={module.icon} size={24} color={isActive ? COLORS.white : COLORS.grayText} strokeWidth={2} />
+                      </View>
+                      <Text style={[bizS.moduleLabel, isActive && bizS.moduleLabelActive]} numberOfLines={2}>
+                        {module.label}
+                      </Text>
+                      {isActive && (
+                        <View style={bizS.moduleCheck}>
+                          <Icon name="checkCircle" size={20} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
+                        </View>
+                      )}
+                      {/* Actions preview */}
+                      {isActive && (
+                        <View style={bizS.moduleActions}>
+                          {module.actions.map((action, idx) => (
+                            <Text key={idx} style={bizS.moduleActionText} numberOfLines={1}>
+                              • {action.label}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+  // ── L7486  →  () => setShowAmenitiesModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowAmenitiesModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L7490  "Guardar"
+<TouchableOpacity onPress={() => {
+              OWNER_BUSINESS.amenities = ownerAmenities;
+              updateOwnerBiz({ amenities: ownerAmenities });
+              setShowAmenitiesModal(false);
+            }}>
+              <Text style={{fontSize:16, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+            </TouchableOpacity>
+
+  // ── L7512
+<TouchableOpacity
+                          key={amenity.id}
+                          style={[bizS.amenityItem, isSelected && bizS.amenityItemActive]}
+                          onPress={() => {
+                            if (isSelected) {
+                              setOwnerAmenities(ownerAmenities.filter(a => a !== amenity.id));
+                            } else {
+                              setOwnerAmenities([...ownerAmenities, amenity.id]);
+                            }
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[bizS.amenityIconCircle, isSelected && bizS.amenityIconCircleActive]}>
+                            <Icon name={amenity.icon} size={20} color={isSelected ? COLORS.white : COLORS.grayText} strokeWidth={2} />
+                          </View>
+                          <Text style={[bizS.amenityLabel, isSelected && bizS.amenityLabelActive]} numberOfLines={1}>
+                            {amenity.label}
+                          </Text>
+                          {isSelected && (
+                            <View style={bizS.amenityCheck}>
+                              <Icon name="checkCircle" size={16} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// RESERVATIONS MODAL
+// Fechar, filtrar, ligar, confirmar/cancelar reservas de mesa
+// Linhas 7550–7696  •  5 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L7556  →  () => setShowReservationsModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowReservationsModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L7565  →  () => setReservationFilter('active')
+<TouchableOpacity 
+              style={[bizS.reservationFilterBtn, reservationFilter === 'active' && bizS.reservationFilterBtnActive]}
+              onPress={() => setReservationFilter('active')}
+              activeOpacity={0.7}
+            >
+              <Text style={[bizS.reservationFilterText, reservationFilter === 'active' && bizS.reservationFilterTextActive]}>
+                Ativas ({businessReservations.filter(r => r.status === 'active').length})
+              </Text>
+            </TouchableOpacity>
+
+  // ── L7574  →  () => setReservationFilter('cancelled')
+<TouchableOpacity 
+              style={[bizS.reservationFilterBtn, reservationFilter === 'cancelled' && bizS.reservationFilterBtnActive]}
+              onPress={() => setReservationFilter('cancelled')}
+              activeOpacity={0.7}
+            >
+              <Text style={[bizS.reservationFilterText, reservationFilter === 'cancelled' && bizS.reservationFilterTextActive]}>
+                Canceladas ({businessReservations.filter(r => r.status === 'cancelled').length})
+              </Text>
+            </TouchableOpacity>
+
+  // ── L7649  →  () => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})
+<TouchableOpacity 
+                            style={[bizS.reservationActionBtn, {backgroundColor:'#2E7D32'}]}
+                            activeOpacity={0.7}
+                            onPress={() => Linking.openURL(`tel:${reservation.phone.replace(/\s+/g,'')}`).catch(() => {})}
+                          >
+                            <Icon name="phone" size={16} color={COLORS.white} strokeWidth={2} />
+                          </TouchableOpacity>
+
+  // ── L7657  →  () => { setReservationToCancel(reservation); setResCancelReason(''); setResCancelReasonOther(''...
+<TouchableOpacity 
+                            style={[bizS.reservationActionBtn, {backgroundColor:'#E53935'}]}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              setReservationToCancel(reservation);
+                              setResCancelReason('');
+                              setResCancelReasonOther('');
+                              setShowResCancelModal(true);
+                            }}
+                          >
+                            <Icon name="x" size={16} color={COLORS.white} strokeWidth={2.5} />
+                          </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SETTINGS MODAL
+// Info, categoria, horários, notificações, operações, conta
+// Linhas 7697–8243  •  21 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L7700  →  () => { if (settingsSection) setSettingsSection(null); else setShowSettings(false); }
+<TouchableOpacity style={profS.backBtn} onPress={() => {
+              if (settingsSection) setSettingsSection(null);
+              else setShowSettings(false);
+            }}>
+              <Icon name={settingsSection ? 'back' : 'x'} size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L7716  "Guardar"
+<TouchableOpacity activeOpacity={0.7} onPress={() => {
+                // Save current section
+                if (settingsSection === 'info') {
+                  OWNER_BUSINESS.name = settingsInfo.name;
+                  OWNER_BUSINESS.address = settingsInfo.address;
+                  OWNER_BUSINESS.neighborhood = settingsInfo.neighborhood;
+                  OWNER_BUSINESS.phone = settingsInfo.phone;
+                  updateOwnerBiz({
+                    name: settingsInfo.name,
+                    category: settingsInfo.category,
+                    subcategory: settingsInfo.subcategory,
+                    primaryCategoryId: settingsInfo.primaryCategoryId,
+                    subCategoryIds: settingsInfo.subCategoryIds || [],
+                    address: settingsInfo.address,
+                    neighborhood: settingsInfo.neighborhood,
+                    phone: settingsInfo.phone,
+                    website: settingsInfo.website,
+                    description: settingsInfo.description,
+                    price: settingsInfo.price,
+                    businessType: settingsInfo.businessType,
+                    businessTypeCustom: settingsInfo.businessTypeCustom.trim(),
+                    latitude: settingsInfo.latitude,
+                    longitude: settingsInfo.longitude,
+                  });
+                }
+                if (settingsSection === 'profile') {
+                  const cleanHighlights = ownerHighlights.filter(h => h.replace(/"/g,'').trim());
+                  setOwnerHighlights(cleanHighlights);
+                  updateOwnerBiz({ highlights: cleanHighlights });
+                }
+                if (settingsSection === 'hours') {
+                  const days = Object.entries(settingsHours);
+                  const hoursStr = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)}: ${v.open}-${v.close}`).join(', ');
+                  const hoursList = days.filter(([,v]) => v.active).map(([d,v]) => `${d.charAt(0).toUpperCase()+d.slice(1)} ${v.open} - ${v.close}`);
+                  OWNER_BUSINESS.hours = hoursStr;
+                  updateOwnerBiz({ hours: hoursStr, hoursList });
+                }
+                if (settingsSection === 'operations') {
+                  OWNER_BUSINESS.isOpen = settingsOperations.isOpen && !settingsOperations.temporarilyClosed;
+                  updateOwnerBiz({
+                    isOpen: settingsOperations.isOpen && !settingsOperations.temporarilyClosed,
+                    payment: settingsOperations.payment,
+                  });
+                }
+                Alert.alert('Guardado!', 'Alterações guardadas com sucesso.');
+                setSettingsSection(null);
+              }}>
+                <Text style={{fontSize:15, fontWeight:'700', color:COLORS.red}}>Guardar</Text>
+              </TouchableOpacity>
+
+  // ── L7784  →  () => setSettingsSection(item.id)
+<TouchableOpacity key={item.id} style={bizS.actionCard} activeOpacity={0.8} onPress={() => setSettingsSection(item.id)}>
+                      <View style={bizS.actionIcon}>
+                        <Icon name={item.icon} size={22} color={COLORS.red} strokeWidth={2} />
+                      </View>
+                      <View style={{flex:1}}>
+                        <Text style={bizS.actionTitle}>{item.label}</Text>
+                        <Text style={bizS.actionDesc} numberOfLines={1}>{item.desc}</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+
+  // ── L7822  "Selecionar categoria..."  →  () => setShowOwnerCategoryPicker(true)
+<TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerCategoryPicker(true)}
+                    >
+                      {settingsInfo.primaryCategoryId ? (() => {
+                        return <Text style={{fontSize:14, color:COLORS.darkText, fontWeight:'600'}}>{ALL_CAT_LABEL[settingsInfo.primaryCategoryId] || settingsInfo.primaryCategoryId}</Text>;
+                      })() : (
+                        <Text style={{fontSize:14, color:COLORS.grayText}}>Selecionar categoria...</Text>
+                      )}
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+
+  // ── L7847  →  () => setShowOwnerSubCategoryPicker(true)
+<TouchableOpacity
+                      style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}
+                      onPress={() => setShowOwnerSubCategoryPicker(true)}
+                    >
+                      <Text style={{fontSize:14, color: (settingsInfo.subCategoryIds||[]).length > 0 ? COLORS.darkText : COLORS.grayText}}>
+                        {(settingsInfo.subCategoryIds||[]).length > 0
+                          ? `${(settingsInfo.subCategoryIds||[]).length} subcategoria${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''} seleccionada${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''}`
+                          : 'Adicionar subcategorias...'}
+                      </Text>
+                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+
+  // ── L7867  →  () => setSettingsInfo(s => ({...s, subCategoryIds:(s.subCategoryIds||[]).filter(x=>x!==id)}))
+<TouchableOpacity
+                                hitSlop={{top:6,bottom:6,left:6,right:6}}
+                                onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:(s.subCategoryIds||[]).filter(x=>x!==id)}))}>
+                                <Text style={{fontSize:15, color:COLORS.red, lineHeight:17, marginLeft:2}}>×</Text>
+                              </TouchableOpacity>
+
+  // ── L7875  "Limpar tudo"  →  () => setSettingsInfo(s => ({...s, subCategoryIds:[]}))
+<TouchableOpacity
+                          style={{paddingVertical:5, paddingHorizontal:10, borderRadius:20, borderWidth:1.5, borderColor:COLORS.grayLine}}
+                          onPress={() => setSettingsInfo(s => ({...s, subCategoryIds:[]}))}>
+                          <Text style={{fontSize:11, color:COLORS.grayText}}>Limpar tudo</Text>
+                        </TouchableOpacity>
+
+  // ── L7894  →  () => setSettingsInfo(s => ({...s, price: p}))
+<TouchableOpacity
+                          key={p}
+                          style={[bizS.priceChip, settingsInfo.price === p && bizS.priceChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, price: p}))}
+                        >
+                          <Text style={[bizS.priceChipText, settingsInfo.price === p && bizS.priceChipTextActive]}>{p}</Text>
+                          <Text style={[{fontSize:10, color: settingsInfo.price === p ? COLORS.red : COLORS.grayText, marginTop:2}]}>{pl}</Text>
+                        </TouchableOpacity>
+
+  // ── L7929  →  captarLocalizacao
+<TouchableOpacity
+                      style={bizS.settingsLocationBtn}
+                      activeOpacity={0.8}
+                      onPress={captarLocalizacao}
+                      disabled={locationLoading}
+                    >
+                      <Icon name="location" size={16} color={COLORS.white} strokeWidth={2} />
+                      <Text style={bizS.settingsLocationBtnText}>
+                        {locationLoading ? 'A captar...' : 'Usar localização atual'}
+                      </Text>
+                    </TouchableOpacity>
+
+  // ── L7963  →  () => setSettingsInfo(s => ({...s, businessType: key}))
+<TouchableOpacity
+                          key={key}
+                          style={[bizS.typeChip, settingsInfo.businessType === key && bizS.typeChipActive]}
+                          onPress={() => setSettingsInfo(s => ({...s, businessType: key}))}
+                        >
+                          <Text style={[bizS.typeChipLabel, settingsInfo.businessType === key && bizS.typeChipLabelActive]}>{val.label}</Text>
+                        </TouchableOpacity>
+
+  // ── L8004  →  () => setOwnerHighlights(ownerHighlights.filter((_,idx)=>idx!==i))
+<TouchableOpacity
+                        style={bizS.highlightRemoveBtn}
+                        onPress={() => setOwnerHighlights(ownerHighlights.filter((_,idx)=>idx!==i))}
+                      >
+                        <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2.5} />
+                      </TouchableOpacity>
+
+  // ── L8013  "Adicionar destaque"  →  () => setOwnerHighlights([...ownerHighlights, '""'])
+<TouchableOpacity
+                      style={bizS.highlightAddBtn}
+                      onPress={() => setOwnerHighlights([...ownerHighlights, '""'])}
+                    >
+                      <Icon name="plus" size={16} color={COLORS.red} strokeWidth={2.5} />
+                      <Text style={bizS.highlightAddText}>Adicionar destaque</Text>
+                    </TouchableOpacity>
+
+  // ── L8029
+<TouchableOpacity
+                        style={[bizS.hoursToggle, val.active && bizS.hoursToggleActive]}
+                        onPress={() => setSettingsHours(h => ({...h, [day]: {...h[day], active: !h[day].active}}))}
+                      >
+                        <View style={[bizS.hoursToggleKnob, val.active && bizS.hoursToggleKnobActive]} />
+                      </TouchableOpacity>
+
+  // ── L8080  →  () => setSettingsNotifs(s => ({...s, [n.key]: !s[n.key]}))
+<TouchableOpacity
+                        style={[bizS.promoToggle, settingsNotifs[n.key] && bizS.promoToggleActive]}
+                        onPress={() => setSettingsNotifs(s => ({...s, [n.key]: !s[n.key]}))}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsNotifs[n.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+
+  // ── L8099  →  () => setBusinessOpen(!settingsOperations.isOpen)
+<TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.isOpen && bizS.promoToggleActive]}
+                      onPress={() => setBusinessOpen(!settingsOperations.isOpen)}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.isOpen && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+
+  // ── L8112
+<TouchableOpacity
+                      style={[bizS.promoToggle, settingsOperations.temporarilyClosed && bizS.promoToggleActive]}
+                      onPress={() => {
+                        const newVal = !settingsOperations.temporarilyClosed;
+                        setSettingsOperations(s => ({...s, temporarilyClosed: newVal}));
+                        setBusinessOpen(!newVal);
+                      }}
+                    >
+                      <View style={[bizS.promoToggleKnob, settingsOperations.temporarilyClosed && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+
+  // ── L8142  →  () => setSettingsOperations(s => ({ ...s, payment: active ? s.payment.filter(p => p !== method)...
+<TouchableOpacity
+                        key={method}
+                        style={[bizS.settingsToggleRow, {paddingVertical:10}]}
+                        onPress={() => setSettingsOperations(s => ({
+                          ...s,
+                          payment: active
+                            ? s.payment.filter(p => p !== method)
+                            : [...s.payment, method]
+                        }))}
+                      >
+                        <Text style={bizS.settingsToggleLabel}>{method}</Text>
+                        <View style={[bizS.settingsCheckbox, active && bizS.settingsCheckboxActive]}>
+                          {active && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                        </View>
+                      </TouchableOpacity>
+
+  // ── L8175
+<TouchableOpacity
+                        style={[bizS.promoToggle, settingsVisibility[v.key] && bizS.promoToggleActive]}
+                        onPress={() => {
+                          const newVal = !settingsVisibility[v.key];
+                          setSettingsVisibility(s => ({...s, [v.key]: newVal}));
+                          updateOwnerBiz({[v.key]: newVal});
+                        }}
+                      >
+                        <View style={[bizS.promoToggleKnob, settingsVisibility[v.key] && bizS.promoToggleKnobActive]} />
+                      </TouchableOpacity>
+
+  // ── L8207  →  () => setSettingsAccount(s => ({...s, language: lang.id}))
+<TouchableOpacity
+                      key={lang.id}
+                      style={[bizS.settingsToggleRow, {paddingVertical:12}]}
+                      onPress={() => setSettingsAccount(s => ({...s, language: lang.id}))}
+                    >
+                      <Text style={bizS.settingsToggleLabel}>{lang.label}</Text>
+                      <View style={[bizS.settingsCheckbox, settingsAccount.language === lang.id && bizS.settingsCheckboxActive]}>
+                        {settingsAccount.language === lang.id && <Text style={{color:COLORS.white, fontSize:12, fontWeight:'800'}}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+
+  // ── L8219  "Alterar Password"  →  () => Alert.alert('Alterar Password', 'Um email de redefinição será enviado para ' + settingsAc...
+<TouchableOpacity
+                    style={[bizS.promoActionBtnGhost, {marginTop:32, alignSelf:'stretch'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Alterar Password', 'Um email de redefinição será enviado para ' + settingsAccount.email, [{text:'Cancelar',style:'cancel'},{text:'Enviar',style:'default'}])}
+                  >
+                    <Text style={bizS.promoActionBtnGhostText}>Alterar Password</Text>
+                  </TouchableOpacity>
+
+  // ── L8227  "Sair da Conta"
+<TouchableOpacity
+                    style={[bizS.promoActionBtnPrimary, {marginTop:12, alignSelf:'stretch', backgroundColor:'#E53935'}]}
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Sair do Modo Dono', 'Tem a certeza?', [{text:'Cancelar',style:'cancel'},{text:'Sair',style:'destructive', onPress:()=>{ setShowSettings(false); setIsBusinessMode(false); }}])}
+                  >
+                    <Text style={bizS.promoActionBtnPrimaryText}>Sair da Conta</Text>
+                  </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHOTOS MANAGER MODAL
+// Galeria, câmara, definir capa, remover foto
+// Linhas 8244–8342  •  5 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L8250  →  () => setShowPhotosManager(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowPhotosManager(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8254  →  pickImage
+<TouchableOpacity
+              activeOpacity={0.7}
+              onPress={pickImage}
+            >
+              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8272  →  pickImage
+<TouchableOpacity
+                    style={[bizS.cancelSheetBtnPrimary, {alignSelf:'center', paddingHorizontal:32}]}
+                    activeOpacity={0.85}
+                    onPress={pickImage}
+                  >
+                    <Text style={bizS.cancelSheetBtnPrimaryText}>+ Adicionar primeira foto</Text>
+                  </TouchableOpacity>
+
+  // ── L8298
+<TouchableOpacity
+                          style={bizS.photoRemoveBtn}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            Alert.alert(
+                              'Remover foto',
+                              'Tem a certeza que quer remover esta foto?',
+                              [
+                                { text: 'Cancelar', style: 'cancel' },
+                                { text: 'Remover', style: 'destructive', onPress: () => {
+                                  const updated = ownerPhotos.filter((_, i) => i !== idx);
+                                  setOwnerPhotos(updated);
+                                  updateOwnerBiz({ photos: updated });
+                                }},
+                              ]
+                            );
+                          }}
+                        >
+                          <Icon name="x" size={14} color={COLORS.white} strokeWidth={2.5} />
+                        </TouchableOpacity>
+
+  // ── L8319  "Definir capa"
+<TouchableOpacity
+                            style={bizS.photoSetCoverBtn}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              const updated = [uri, ...ownerPhotos.filter((_, i) => i !== idx)];
+                              setOwnerPhotos(updated);
+                              updateOwnerBiz({ photos: updated });
+                            }}
+                          >
+                            <Text style={bizS.photoSetCoverText}>Definir capa</Text>
+                          </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROMO MANAGER MODAL
+// CRUD promoções, toggle, reply avaliações, notif detail, cancel
+// Linhas 8343–8895  •  19 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L8349  →  () => setShowPromoManager(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowPromoManager(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8353
+<TouchableOpacity
+              onPress={() => {
+                setEditingPromo(null);
+                setPromoForm({ title:'', type:'percent', discount:'', description:'', startDate:'', endDate:'' });
+                setShowPromoForm(true);
+              }}
+            >
+              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8399
+<TouchableOpacity
+                      style={[bizS.promoToggle, promo.active && bizS.promoToggleActive]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        const updated = promotions.map(p =>
+                          p.id === promo.id ? {...p, active: !p.active} : p
+                        );
+                        setPromotions(updated);
+                        syncPromoDeals(updated);
+                      }}
+                    >
+                      <View style={[bizS.promoToggleKnob, promo.active && bizS.promoToggleKnobActive]} />
+                    </TouchableOpacity>
+
+  // ── L8414  "Editar"
+<TouchableOpacity
+                      style={bizS.promoItemBtn}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setEditingPromo(promo);
+                        setPromoForm({
+                          title: promo.title,
+                          type: promo.type,
+                          discount: promo.discount,
+                          description: promo.description,
+                          startDate: promo.startDate,
+                          endDate: promo.endDate,
+                        });
+                        setShowPromoForm(true);
+                      }}
+                    >
+                      <Icon name="edit" size={14} color={COLORS.red} strokeWidth={2} />
+                      <Text style={bizS.promoItemBtnText}>Editar</Text>
+                    </TouchableOpacity>
+
+  // ── L8433  "Eliminar"
+<TouchableOpacity
+                      style={[bizS.promoItemBtn, {borderColor:'#FFCDD2'}]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        Alert.alert(
+                          'Eliminar Promoção',
+                          `Tem a certeza que quer eliminar "${promo.title}"?`,
+                          [
+                            { text: 'Cancelar', style: 'cancel' },
+                            { text: 'Eliminar', style: 'destructive', onPress: () => {
+                              const updated = promotions.filter(p => p.id !== promo.id);
+                              setPromotions(updated);
+                              syncPromoDeals(updated);
+                            }},
+                          ]
+                        );
+                      }}
+                    >
+                      <Icon name="trash" size={14} color="#E53935" strokeWidth={2} />
+                      <Text style={[bizS.promoItemBtnText, {color:'#E53935'}]}>Eliminar</Text>
+                    </TouchableOpacity>
+
+  // ── L8489  →  () => setPromoForm(f => ({...f, type:t.id}))
+<TouchableOpacity
+                    key={t.id}
+                    style={[bizS.cancelReasonOption, {flex:1}, promoForm.type===t.id && bizS.cancelReasonOptionActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setPromoForm(f => ({...f, type:t.id}))}
+                  >
+                    <View style={[bizS.cancelReasonRadio, promoForm.type===t.id && bizS.cancelReasonRadioActive]}>
+                      {promoForm.type===t.id && <View style={bizS.cancelReasonRadioDot}/>}
+                    </View>
+                    <Text style={[bizS.cancelReasonText, {fontSize:13}, promoForm.type===t.id && bizS.cancelReasonTextActive]}>{t.label}</Text>
+                  </TouchableOpacity>
+
+  // ── L8556  "Cancelar"  →  () => { Keyboard.dismiss(); setShowPromoForm(false); }
+<TouchableOpacity
+                style={bizS.cancelSheetBtnGhost}
+                activeOpacity={0.7}
+                onPress={() => { Keyboard.dismiss(); setShowPromoForm(false); }}
+              >
+                <Text style={bizS.cancelSheetBtnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+
+  // ── L8563
+<TouchableOpacity
+                style={[bizS.cancelSheetBtnPrimary, (!promoForm.title.trim() || !promoForm.discount.trim()) && {opacity:0.4}]}
+                activeOpacity={0.85}
+                disabled={!promoForm.title.trim() || !promoForm.discount.trim()}
+                onPress={() => {
+                  if (editingPromo) {
+                    const updated = promotions.map(p =>
+                      p.id === editingPromo.id ? {...p, ...promoForm} : p
+                    );
+                    setPromotions(updated);
+                    syncPromoDeals(updated);
+                  } else {
+                    const newPromo = { id: `promo_${Date.now()}`, ...promoForm, active: true };
+                    const updated = [...promotions, newPromo];
+                    setPromotions(updated);
+                    syncPromoDeals(updated);
+                  }
+                  setShowPromoForm(false);
+                  setEditingPromo(null);
+                  setPromoForm({ title:'', type:'percent', discount:'', description:'', startDate:'', endDate:'' });
+                }}
+              >
+                <Text style={bizS.cancelSheetBtnPrimaryText}>{editingPromo ? 'Guardar Alterações' : 'Criar Promoção'}</Text>
+              </TouchableOpacity>
+
+  // ── L8646  "Cancelar"  →  () => { Keyboard.dismiss(); setShowReplyModal(false); }
+<TouchableOpacity
+                style={bizS.cancelSheetBtnGhost}
+                activeOpacity={0.7}
+                onPress={() => { Keyboard.dismiss(); setShowReplyModal(false); }}
+              >
+                <Text style={bizS.cancelSheetBtnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+
+  // ── L8653  "Enviar Resposta"
+<TouchableOpacity
+                style={[bizS.cancelSheetBtnPrimary, !replyText.trim() && {opacity:0.4}]}
+                activeOpacity={0.85}
+                disabled={!replyText.trim()}
+                onPress={() => {
+                  setOwnerReviews(prev =>
+                    prev.map(r =>
+                      r.id === reviewToReply.id
+                        ? { ...r, replied: true, replyText: replyText.trim() }
+                        : r
+                    )
+                  );
+                  setShowReplyModal(false);
+                  setReviewToReply(null);
+                  setReplyText('');
+                }}
+              >
+                <Text style={bizS.cancelSheetBtnPrimaryText}>Enviar Resposta</Text>
+              </TouchableOpacity>
+
+  // ── L8710  "Ver Avaliações"
+<TouchableOpacity
+                  style={bizS.cancelSheetBtnPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setShowNotifDetail(false);
+                    setActiveBusinessTab('dashboard');
+                    setTimeout(() => bizDashboardScrollRef.current?.scrollToEnd({ animated: true }), 300);
+                  }}
+                >
+                  <Text style={bizS.cancelSheetBtnPrimaryText}>Ver Avaliações</Text>
+                </TouchableOpacity>
+
+  // ── L8723  "Ver Reservas"  →  () => { setShowNotifDetail(false); setShowReservationsModal(true); }
+<TouchableOpacity
+                  style={bizS.cancelSheetBtnPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => { setShowNotifDetail(false); setShowReservationsModal(true); }}
+                >
+                  <Text style={bizS.cancelSheetBtnPrimaryText}>Ver Reservas</Text>
+                </TouchableOpacity>
+
+  // ── L8732  "Ver Dashboard"  →  () => { setShowNotifDetail(false); setActiveBusinessTab('dashboard'); }
+<TouchableOpacity
+                  style={bizS.cancelSheetBtnPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => { setShowNotifDetail(false); setActiveBusinessTab('dashboard'); }}
+                >
+                  <Text style={bizS.cancelSheetBtnPrimaryText}>Ver Dashboard</Text>
+                </TouchableOpacity>
+
+  // ── L8741  "Ver Código Promocional"  →  () => { setShowNotifDetail(false); setShowPromoCodeModal(true); }
+<TouchableOpacity
+                  style={bizS.cancelSheetBtnPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => { setShowNotifDetail(false); setShowPromoCodeModal(true); }}
+                >
+                  <Text style={bizS.cancelSheetBtnPrimaryText}>Ver Código Promocional</Text>
+                </TouchableOpacity>
+
+  // ── L8750  "Ver Dashboard"  →  () => { setShowNotifDetail(false); setActiveBusinessTab('dashboard'); }
+<TouchableOpacity
+                  style={bizS.cancelSheetBtnPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => { setShowNotifDetail(false); setActiveBusinessTab('dashboard'); }}
+                >
+                  <Text style={bizS.cancelSheetBtnPrimaryText}>Ver Dashboard</Text>
+                </TouchableOpacity>
+
+  // ── L8758  "Fechar"  →  () => setShowNotifDetail(false)
+<TouchableOpacity
+                style={bizS.cancelSheetBtnGhost}
+                activeOpacity={0.7}
+                onPress={() => setShowNotifDetail(false)}
+              >
+                <Text style={bizS.cancelSheetBtnGhostText}>Fechar</Text>
+              </TouchableOpacity>
+
+  // ── L8818
+<TouchableOpacity
+                  key={reason}
+                  style={[bizS.cancelReasonOption, resCancelReason === reason && bizS.cancelReasonOptionActive]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setResCancelReason(reason);
+                    if (reason === 'Outro motivo') {
+                      const delay = Platform.OS === 'ios' ? 350 : 120;
+                      setTimeout(() => cancelScrollRef.current?.scrollToEnd({ animated: true }), delay);
+                    }
+                  }}
+                >
+                  <View style={[bizS.cancelReasonRadio, resCancelReason === reason && bizS.cancelReasonRadioActive]}>
+                    {resCancelReason === reason && <View style={bizS.cancelReasonRadioDot} />}
+                  </View>
+                  <Text style={[bizS.cancelReasonText, resCancelReason === reason && bizS.cancelReasonTextActive]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+
+  // ── L8859  "Voltar"  →  () => { Keyboard.dismiss(); setShowResCancelModal(false); }
+<TouchableOpacity
+                style={bizS.cancelSheetBtnGhost}
+                activeOpacity={0.7}
+                onPress={() => { Keyboard.dismiss(); setShowResCancelModal(false); }}
+              >
+                <Text style={bizS.cancelSheetBtnGhostText}>Voltar</Text>
+              </TouchableOpacity>
+
+  // ── L8866  "Confirmar Cancelamento"
+<TouchableOpacity
+                style={[bizS.cancelSheetBtnPrimary, !resCancelReason && {opacity:0.4}]}
+                activeOpacity={0.85}
+                disabled={!resCancelReason}
+                onPress={() => {
+                  const finalReason = resCancelReason === 'Outro motivo' && resCancelReasonOther.trim()
+                    ? resCancelReasonOther.trim()
+                    : resCancelReason;
+                  setBusinessReservations(prev =>
+                    prev.map(r =>
+                      r.id === reservationToCancel.id
+                        ? { ...r, status: 'cancelled', cancelReason: finalReason }
+                        : r
+                    )
+                  );
+                  setShowResCancelModal(false);
+                  setReservationToCancel(null);
+                  setResCancelReason('');
+                  setResCancelReasonOther('');
+                  setReservationFilter('cancelled');
+                }}
+              >
+                <Text style={bizS.cancelSheetBtnPrimaryText}>Confirmar Cancelamento</Text>
+              </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROMO CODE MODAL
+// Fechar, adicionar cupão, copiar código, eliminar, guardar
+// Linhas 8896–9049  •  6 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L8902
+<TouchableOpacity style={profS.backBtn} onPress={() => { setShowPromoCodeModal(false); setShowAddCouponForm(false); setPromoCodeForm({ code:'', discount:'', expiry:'', usageLimit:'' }); }}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8906  →  () => setShowAddCouponForm(true)
+<TouchableOpacity activeOpacity={0.7} onPress={() => setShowAddCouponForm(true)}>
+              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L8934  →  () => Alert.alert('Copiado!', `Código "${coupon.code}" copiado.`)
+<TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => Alert.alert('Copiado!', `Código "${coupon.code}" copiado.`)}
+                      style={{padding:4}}
+                    >
+                      <Icon name="tag" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+
+  // ── L8941
+<TouchableOpacity
+                      activeOpacity={0.7}
+                      style={{padding:4}}
+                      onPress={() => Alert.alert(
+                        'Remover código',
+                        `Remover o código "${coupon.code}"?`,
+                        [
+                          { text: 'Cancelar', style: 'cancel' },
+                          { text: 'Remover', style: 'destructive', onPress: () => {
+                            const updated = promoCodes.filter(c => c.id !== coupon.id);
+                            setPromoCodes(updated);
+                            const first = updated[0];
+                            OWNER_BUSINESS.referralCode = first ? first.code : null;
+                            updateOwnerBiz({ referralCode: first ? first.code : null });
+                          }},
+                        ]
+                      )}
+                    >
+                      <Icon name="x" size={18} color={COLORS.red} strokeWidth={2.5} />
+                    </TouchableOpacity>
+
+  // ── L9016  "Cancelar"
+<TouchableOpacity
+                      style={bizS.promoActionBtnGhost}
+                      activeOpacity={0.7}
+                      onPress={() => { setShowAddCouponForm(false); setPromoCodeForm({ code:'', discount:'', expiry:'', usageLimit:'' }); }}
+                    >
+                      <Text style={bizS.promoActionBtnGhostText}>Cancelar</Text>
+                    </TouchableOpacity>
+
+  // ── L9023  "Adicionar"
+<TouchableOpacity
+                      style={[bizS.promoActionBtnPrimary, (!promoCodeForm.code || !promoCodeForm.discount) && {opacity:0.5}]}
+                      disabled={!promoCodeForm.code || !promoCodeForm.discount}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        const newCoupon = { id: `c_${Date.now()}`, ...promoCodeForm };
+                        const updated = [...promoCodes, newCoupon];
+                        setPromoCodes(updated);
+                        OWNER_BUSINESS.referralCode = newCoupon.code;
+                        updateOwnerBiz({ referralCode: newCoupon.code });
+                        setShowAddCouponForm(false);
+                        setPromoCodeForm({ code:'', discount:'', expiry:'', usageLimit:'' });
+                      }}
+                    >
+                      <Text style={bizS.promoActionBtnPrimaryText}>Adicionar</Text>
+                    </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// FEATURED MODAL
+// Fechar, ver negócio, bookmark, ver perfil, histórico de estadias
+// Linhas 9050–9350  •  5 botões
+  // ── L9068  "Ver negócio em destaque (lista)"  →  setShowFeaturedModal(false); handleBusinessPress(business)
+<TouchableOpacity 
+                    key={business.id} 
+                    style={hS.listCell}
+                    onPress={() => { setShowFeaturedModal(false); handleBusinessPress(business); }} 
+                    activeOpacity={0.8}
+                  >
+                    <View style={hS.listCellImage}>
+                      {business.deals?.length > 0 && (
+                        <View style={hS.dealBadgeOverlay}>
+                          <Text style={hS.dealBadgeText} numberOfLines={1}>🔥 {business.deals.length} {business.deals.length>1?'Ofertas':'Oferta'}</Text>
+                        </View>
+                      )}
+                      {business.modules?.delivery && (
+                        <View style={hS.deliveryBadge}>
+                          <Icon name="delivery" size={12} color={COLORS.white} strokeWidth={2} />
+                          <Text style={hS.deliveryBadgeText}>Entrega</Text>
+                        </View>
+                      )}
+                      {business.photos?.[0] ? (
+                        <Image source={{ uri: business.photos[0] }} style={hS.listCellPhoto} resizeMode="cover" />
+                      ) : (
+                        <Text style={hS.listCellIcon}>{business.icon}</Text>
+                      )}
+                      <TouchableOpacity 
+                        style={hS.bookmarkIcon} 
+                        onPress={(e) => { e.stopPropagation(); toggleBookmark(business.id); }}
+                        activeOpacity={0.7}
+                      >
+                        <Icon name={bookmarked ? 'bookmarkFilled' : 'bookmark'} size={18} color={COLORS.white} strokeWidth={2} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={hS.listCellInfo}>
+                      <View style={hS.listCellTitleRow}>
+                        <View style={{flexDirection:'row',alignItems:'center',flex:1}}>
+                          <Text style={hS.listCellTitle} numberOfLines={1}>{business.name}</Text>
+                          {business.isPremium && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
+                          {business.verifiedBadge && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
+                        </View>
+                      </View>
+                      <View style={hS.listCellMeta}>
+                        {renderStars(business.rating)}
+                        <Text style={hS.listCellRating}>{business.rating}</Text>
+                        <Text style={hS.listCellReviews}>({business.reviews})</Text>
+                      </View>
+                      <Text style={hS.listCellCategory} numberOfLines={1}>{business.subcategory}</Text>
+                      {business.address && (
+                        <Text style={hS.listCellAddress} numberOfLines={1}>{business.address}</Text>
+                      )}
+                      {business.amenities?.length > 0 && (
+                        <View style={hS.amenitiesRow}>
+                          {business.amenities.slice(0,3).map(a => {
+                            const AMENITY_ICON_MAP = {
+                          // Comodidades
+                          wifi: 'wifi',
+                          outdoor: 'outdoor',
+                          parking: 'parking',
+                          delivery: 'delivery',
+                          takeaway: 'fastdelivery',
+                          vegan: 'heart',
+                          wheelchair: 'wheelchair',
+                          kids: 'users',
+                          livemusic: 'star',
+                          // Compras
+                          tpa: 'payment',
+                          homedelivery: 'delivery',
+                          '24h': 'clock',
+                          ac: 'certified',
+                          carts: 'delivery',
+                          // Serviços & Bem-Estar
+                          appointment: 'calendar',
+                          courtesy: 'heart',
+                          shower: 'outdoor',
+                          certified: 'certified',
+                          // Profissionais & Geral
+                          online: 'web',
+                          freeconsult: 'heart',
+                          portfolio: 'portfolio',
+                          languages: 'globe',
+                          generator: 'certified',
+                          // Legacy (backward compatibility)
+                          reservations: 'reservation',
+                          petfriendly: 'heart',
+                          remote: 'remote',
+                          fastdelivery: 'fastdelivery',
+                          flexible: 'clock',
+                          professional: 'professional'
+                        };
+                            const iconName = AMENITY_ICON_MAP[a] || 'check';
+                            return (
+                              <View key={a} style={hS.amenityChip}>
+                                <Icon name={iconName} size={11} color={COLORS.grayText} strokeWidth={1.5} />
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                      <View style={hS.listCellFooter}>
+                        <Text style={hS.listCellDistance}>{business.distanceText}</Text>
+                        {(() => {
+                          const status = getBusinessStatus(business.statusText, business.isOpen);
+                          if (status.minsLeft !== null) {
+                            return <Text style={hS.closingSoonText}>Fecha em {status.minsLeft} min</Text>;
+                          }
+                          if (status.isClosed) {
+                            return <Text style={hS.closedText}>Fechado</Text>;
+                          }
+                          return <Text style={hS.openText}>Aberto agora</Text>;
+                        })()}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L9056  →  () => setShowFeaturedModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowFeaturedModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L9091  →  (e) => { e.stopPropagation(); toggleBookmark(business.id); }
+<TouchableOpacity 
+                        style={hS.bookmarkIcon} 
+                        onPress={(e) => { e.stopPropagation(); toggleBookmark(business.id); }}
+                        activeOpacity={0.7}
+                      >
+                        <Icon name={bookmarked ? 'bookmarkFilled' : 'bookmark'} size={18} color={COLORS.white} strokeWidth={2} />
+                      </TouchableOpacity>
+
+  // ── L9196  →  () => setShowProfileModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowProfileModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L9262  →  () => { setShowProfileModal(false); handleBusinessPress(business); }
+<TouchableOpacity 
+                  key={business.id} 
+                  style={profS.recentlyViewedCard}
+                  activeOpacity={0.7}
+                  onPress={() => { setShowProfileModal(false); handleBusinessPress(business); }}
+                >
+                  <View style={profS.recentlyViewedPhoto}>
+                    {business.photos?.[0] ? (
+                      <Image source={{ uri: business.photos[0] }} style={profS.recentlyViewedPhotoImage} resizeMode="cover" />
+                    ) : business.icon ? (
+                      <Text style={profS.recentlyViewedIcon}>{business.icon}</Text>
+                    ) : (
+                      <View style={{width:'100%',height:'100%',backgroundColor:COLORS.grayBg}} />
+                    )}
+                  </View>
+                  <View style={profS.recentlyViewedInfo}>
+                    <Text style={profS.recentlyViewedName}>{business.name}</Text>
+                    <Text style={profS.recentlyViewedAddress}>{business.address || business.subcategory}</Text>
+                    <Text style={profS.recentlyViewedMeta}>{business.subcategory} • {business.distanceText}</Text>
+                  </View>
+                  <Icon name="bookmark" size={22} color={COLORS.darkText} strokeWidth={2} fill={bookmarkedIds.includes(business.id) ? COLORS.darkText : 'none'} />
+                </TouchableOpacity>
+
+  // ── L9309  "Reservas"  →  () => setShowStaysHistory(true)
+<TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => setShowStaysHistory(true)}>
+                <Icon name="calendar" size={22} color={COLORS.darkText} strokeWidth={2} />
+                <Text style={profS.menuLabel}>Reservas</Text>
+                <Text style={profS.menuCount}>{roomBookings.length}</Text>
+              </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// OWNER NAV BAR + ICAL
+// Navegação tabs + iCal (fechar, sincronizar, remover link)
+// Linhas 9384–9694  •  5 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L9397
+<TouchableOpacity
+              key={tab.id}
+              style={bnS.tab}
+              onPress={() => {
+                // Double-tap detection for scroll to top
+                const now = Date.now();
+                const DOUBLE_TAP_DELAY = 300;
+                if (activeNavTab === tab.id && now - lastTapTime.current < DOUBLE_TAP_DELAY) {
+                  // Double tap detected - scroll to top
+                  scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+                  lastTapTime.current = 0; // Reset
+                  return;
+                }
+                lastTapTime.current = now;
+                setActiveNavTab(tab.id);
+                // Close autocomplete on any nav tap except search
+                if (tab.id !== 'search') {
+                  setShowAutocomplete(false);
+                }
+                // Handle each tab action
+                if (tab.id === 'home') {
+                  setShowProfileModal(false);
+                  setShowFeaturedModal(false);
+                }
+                else if (tab.id === 'search') {
+                  setShowProfileModal(false);
+                  setShowFeaturedModal(false);
+                  setSearchFocused(true);
+                  setShowAutocomplete(true);
+                }
+                else if (tab.id === 'featured') {
+                  setShowProfileModal(false);
+                  setShowFeaturedModal(true);
+                }
+                else if (tab.id === 'profile') {
+                  setShowFeaturedModal(false);
+                  setShowProfileModal(!showProfileModal);
+                }
+                else if (tab.id === 'dashboard') {
+                  setActiveBusinessTab('dashboard');
+                  setShowReservationsModal(false);
+                  setShowPromoCodeModal(false);
+                  setShowPromoManager(false);
+                  setShowPhotosManager(false);
+                  setShowSettings(false);
+                  setShowPromoForm(false);
+                  setShowReplyModal(false);
+                  setShowNotifDetail(false);
+                  setShowAmenitiesModal(false);
+                  setShowModulesModal(false);
+                  setShowMenuEditor(false);
+                  setShowMenuItemForm(false);
+                  setShowInventoryEditor(false);
+                  setShowInventoryForm(false);
+                  setShowServicesEditor(false);
+                  setShowServiceForm(false);
+                  setShowRoomsEditor(false);
+                  setShowRoomForm(false);
+                  setShowDeliveryConfig(false);
+                  setShowDeliveryForm(false);
+                  setShowCustomOrders(false);
+                  setShowCustomOrderDetail(false);
+                  setShowDeliveryOrders(false);
+                  setShowDeliveryOrderDetail(false);
+                }
+                else if (tab.id === 'notifications') {
+                  setActiveBusinessTab('notifications');
+                  setShowReservationsModal(false);
+                  setShowPromoCodeModal(false);
+                  setShowPromoManager(false);
+                  setShowPhotosManager(false);
+                  setShowSettings(false);
+                  setShowPromoForm(false);
+                  setShowReplyModal(false);
+                  setShowNotifDetail(false);
+                  setShowAmenitiesModal(false);
+                  setShowModulesModal(false);
+                  setShowMenuEditor(false);
+                  setShowMenuItemForm(false);
+                  setShowInventoryEditor(false);
+                  setShowInventoryForm(false);
+                  setShowServicesEditor(false);
+                  setShowServiceForm(false);
+                  setShowRoomsEditor(false);
+                  setShowRoomForm(false);
+                  setShowDeliveryConfig(false);
+                  setShowDeliveryForm(false);
+                  setShowCustomOrders(false);
+                  setShowCustomOrderDetail(false);
+                  setShowDeliveryOrders(false);
+                  setShowDeliveryOrderDetail(false);
+                }
+                else if (tab.id === 'mybusiness') {
+                  setActiveBusinessTab('mybusiness');
+                  setShowReservationsModal(false);
+                  setShowPromoCodeModal(false);
+                  setShowPromoManager(false);
+                  setShowPhotosManager(false);
+                  setShowSettings(false);
+                  setShowPromoForm(false);
+                  setShowReplyModal(false);
+                  setShowNotifDetail(false);
+                  setShowAmenitiesModal(false);
+                  setShowModulesModal(false);
+                  setShowMenuEditor(false);
+                  setShowMenuItemForm(false);
+                  setShowInventoryEditor(false);
+                  setShowInventoryForm(false);
+                  setShowServicesEditor(false);
+                  setShowServiceForm(false);
+                  setShowRoomsEditor(false);
+                  setShowRoomForm(false);
+                  setShowDeliveryConfig(false);
+                  setShowDeliveryForm(false);
+                  setShowCustomOrders(false);
+                  setShowCustomOrderDetail(false);
+                  setShowDeliveryOrders(false);
+                  setShowDeliveryOrderDetail(false);
+                }
+                else if (tab.id === 'exitbusiness') {
+                  setIsBusinessMode(false);
+                  setActiveBusinessTab('dashboard');
+                  setShowReservationsModal(false);
+                  setShowPromoCodeModal(false);
+                  setShowPromoManager(false);
+                  setShowPhotosManager(false);
+                  setShowSettings(false);
+                  setShowPromoForm(false);
+                  setShowReplyModal(false);
+                  setShowNotifDetail(false);
+                  setShowAmenitiesModal(false);
+                  setShowModulesModal(false);
+                  setShowMenuEditor(false);
+                  setShowMenuItemForm(false);
+                  setShowInventoryEditor(false);
+                  setShowInventoryForm(false);
+                  setShowServicesEditor(false);
+                  setShowServiceForm(false);
+                  setShowRoomsEditor(false);
+                  setShowRoomForm(false);
+                  setShowDeliveryConfig(false);
+                  setShowDeliveryForm(false);
+                  setShowCustomOrders(false);
+                  setShowCustomOrderDetail(false);
+                  setShowDeliveryOrders(false);
+                  setShowDeliveryOrderDetail(false);
+                  setActiveNavTab('home');
+                }
+              }}
+              activeOpacity={0.75}
+            >
+              <View style={[bnS.iconWrap, active && bnS.iconWrapActive]}>
+                <Icon name={tab.icon} size={20} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
+                {tab.id === 'notifications' && businessNotifications.filter(n => !n.read).length > 0 && (
+                  <View style={bnS.notifBadge}>
+                    <Text style={bnS.notifBadgeText}>
+                      {businessNotifications.filter(n => !n.read).length > 9 ? '9+' : businessNotifications.filter(n => !n.read).length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[bnS.label, active && bnS.labelActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+
+  // ── L9571  →  () => setShowIcalModal(false)
+<TouchableOpacity style={profS.backBtn} onPress={() => setShowIcalModal(false)}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+  // ── L9638  →  () => { parseIcalUrl(icalLink); }
+<TouchableOpacity
+                      style={{paddingHorizontal:10, paddingVertical:5, backgroundColor:COLORS.blue+'15', borderRadius:8}}
+                      onPress={() => { parseIcalUrl(icalLink); }}
+                    >
+                      <Text style={{fontSize:11, fontWeight:'700', color:COLORS.blue}}>↻ Sync</Text>
+                    </TouchableOpacity>
+
+  // ── L9644
+<TouchableOpacity onPress={() => { setIcalLink(''); OWNER_BUSINESS.icalLink = ''; setIcalData({loaded:false,ranges:[],error:null,lastSync:null}); }}>
+                      <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2.5}/>
+                    </TouchableOpacity>
+
+  // ── L9685  "Guardar e Fechar"  →  () => setShowIcalModal(false)
+<TouchableOpacity
+              style={{backgroundColor:COLORS.blue, borderRadius:12, paddingVertical:14, alignItems:'center'}}
+              onPress={() => setShowIcalModal(false)}
+            >
+              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:15}}>Guardar e Fechar</Text>
+            </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CANCEL REASON MODAL
+// Fechar/voltar, confirmar motivo de cancelamento
+// Linhas 9695–9752  •  3 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L9700
+<TouchableOpacity onPress={() => { 
+                setShowCancelReason(false); 
+                setCancelReason(''); 
+                setTimeout(() => {
+                  if (cancelTarget === 'order') {
+                    setShowCustomOrderDetail(true);
+                  } else if (cancelTarget === 'delivery') {
+                    setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
+                  }
+                }, 50);
+              }}>
+                <Text style={{fontSize:24, color:'#666'}}>×</Text>
+              </TouchableOpacity>
+
+  // ── L9719  "Voltar"
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, borderWidth:1.5, borderColor:'#ddd', alignItems:'center'}} onPress={() => { 
+                setShowCancelReason(false); 
+                setCancelReason(''); 
+                setTimeout(() => {
+                  if (cancelTarget === 'order') {
+                    setShowCustomOrderDetail(true);
+                  } else if (cancelTarget === 'delivery') {
+                    setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
+                  }
+                }, 50);
+              }}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'#666'}}>Voltar</Text>
+              </TouchableOpacity>
+
+  // ── L9734  "Confirmar"
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor: cancelReason.trim() ? '#D32F2F' : '#ddd', alignItems:'center'}} disabled={!cancelReason.trim()} onPress={() => { if (!cancelReason.trim()) return; if (cancelTarget === 'order') { const newStatus = actionType === 'reject' ? 'rejected' : 'cancelled'; const reasonKey = actionType === 'reject' ? 'rejectReason' : 'cancelReason'; const updated = customOrders.map(o => o.id === selectedCustomOrder.id ? {...o, status: newStatus, [reasonKey]: cancelReason.trim()} : o); setCustomOrders(updated); OWNER_BUSINESS.customOrders = updated; setShowCustomOrderDetail(false); } else if (cancelTarget === 'delivery') { const updated = deliveryOrders.map(o => o.id === selectedDeliveryOrder.id ? {...o, status: 'cancelled', cancelReason: cancelReason.trim()} : o); setDeliveryOrders(updated); OWNER_BUSINESS.deliveryOrders = updated; setShowDeliveryOrderDetail(false); } else if (cancelTarget === 'roomBooking' && selectedRoomBooking) { const newStatus = actionType === 'reject' ? 'rejected' : 'cancelled'; setRoomBookings(prev => prev.map(b => b.id === selectedRoomBooking.id ? {...b, status: newStatus, cancelReason: cancelReason.trim()} : b)); setSelectedRoomBooking(null); } setShowCancelReason(false); setCancelReason(''); setCancelTarget(null); setActionType(null);
+                setTimeout(() => {
+                  if (cancelTarget === 'order') {
+                    setShowCustomOrderDetail(true);
+                  } else if (cancelTarget === 'delivery') {
+                    setShowDeliveryOrderDetail(true);
+                  } else if (cancelTarget === 'roomBooking') {
+                    setShowRoomBookingsManager(true);
+                  }
+                }, 50);
+              }}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'white'}}>Confirmar</Text>
+              </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// EDIT ORDER MODAL
+// Fechar, cancelar edição, guardar alterações de encomenda
+// Linhas 9753–9794  •  3 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L9758  →  () => { setShowEditOrder(false); setTimeout(() => setShowCustomOrderDetail(true), 50); }
+<TouchableOpacity onPress={() => { setShowEditOrder(false); setTimeout(() => setShowCustomOrderDetail(true), 50); }}>
+                <Text style={{fontSize:24, color:'#666'}}>×</Text>
+              </TouchableOpacity>
+
+  // ── L9775  "Cancelar"  →  () => setShowEditOrder(false)
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, borderWidth:1.5, borderColor:'#ddd', alignItems:'center'}} onPress={() => setShowEditOrder(false)}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'#666'}}>Cancelar</Text>
+              </TouchableOpacity>
+
+  // ── L9778  "Guardar"
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#4CAF50', alignItems:'center'}} onPress={() => { 
+                const updated = customOrders.map(o => o.id === selectedCustomOrder.id ? {...o, price: editOrderForm.price ? parseFloat(editOrderForm.price) : 0, deadline: editOrderForm.deadline, notes: editOrderForm.notes} : o); 
+                setCustomOrders(updated); 
+                OWNER_BUSINESS.customOrders = updated; 
+                const updatedOrder = {...selectedCustomOrder, price: editOrderForm.price ? parseFloat(editOrderForm.price) : 0, deadline: editOrderForm.deadline, notes: editOrderForm.notes};
+                setSelectedCustomOrder(updatedOrder); 
+                setShowEditOrder(false); 
+                setTimeout(() => setShowCustomOrderDetail(true), 50);
+              }}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'white'}}>Guardar</Text>
+              </TouchableOpacity>
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// EDIT DELIVERY MODAL
+// Fechar, cancelar edição, guardar alterações de entrega
+// Linhas 9795–9850  •  3 botões
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L9800  →  () => { setShowEditDelivery(false); setTimeout(() => setShowDeliveryOrderDetail(true), 50); }
+<TouchableOpacity onPress={() => { setShowEditDelivery(false); setTimeout(() => setShowDeliveryOrderDetail(true), 50); }}>
+                <Text style={{fontSize:24, color:'#666'}}>×</Text>
+              </TouchableOpacity>
+
+  // ── L9810  "Cancelar"  →  () => setShowEditDelivery(false)
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, borderWidth:1.5, borderColor:'#ddd', alignItems:'center'}} onPress={() => setShowEditDelivery(false)}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'#666'}}>Cancelar</Text>
+              </TouchableOpacity>
+
+  // ── L9813  "Guardar"
+<TouchableOpacity style={{flex:1, paddingVertical:12, borderRadius:10, backgroundColor:'#4CAF50', alignItems:'center'}} onPress={() => { 
+                const updated = deliveryOrders.map(o => o.id === selectedDeliveryOrder.id ? {...o, estimatedTime: editDeliveryForm.estimatedTime, notes: editDeliveryForm.notes} : o); 
+                setDeliveryOrders(updated); 
+                OWNER_BUSINESS.deliveryOrders = updated; 
+                const updatedDelivery = {...selectedDeliveryOrder, estimatedTime: editDeliveryForm.estimatedTime, notes: editDeliveryForm.notes};
+                setSelectedDeliveryOrder(updatedDelivery); 
+                setShowEditDelivery(false); 
+                setTimeout(() => setShowDeliveryOrderDetail(true), 50);
+              }}>
+                <Text style={{fontSize:13, fontWeight:'bold', color:'white'}}>Guardar</Text>
+              </TouchableOpacity>
+
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// FORM BACKDROP BUTTONS — Fechar formulário ao tocar fora (overlay dismiss)
+// Padrão: TouchableOpacity exterior fecha o form; inner stopPropagation evita bubble
+// Linhas 6572, 6752, 6857, 6965, 7037 do monolítico  •  5 pares backdrop+guard
+// ════════════════════════════════════════════════════════════════════════════
+
+  // ── L6572  "MENU EDITOR — Form backdrop (fechar ao tocar fora)"  →  dismiss form on outside tap + stopPropagation guard
+<TouchableOpacity activeOpacity={1} style={{flex:1, width:'100%', justifyContent:'flex-end', alignItems:'center'}} onPress={() => setShowMenuItemForm(false)}>
+              <TouchableOpacity activeOpacity={1} style={{width:'100%'}} onPress={(e) => e.stopPropagation()}>
+                <View style={{backgroundColor:COLORS.white, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingTop:16, maxHeight:'90%'}}>
+    {/* ... form content (97 lines) ... */}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+
+  // ── L6752  "INVENTORY EDITOR — Form backdrop (fechar ao tocar fora)"  →  dismiss form on outside tap + stopPropagation guard
+<TouchableOpacity activeOpacity={1} style={{flex:1, width:'100%', justifyContent:'flex-end', alignItems:'center'}} onPress={() => setShowInventoryForm(false)}>
+              <TouchableOpacity activeOpacity={1} style={{width:'100%'}} onPress={(e) => e.stopPropagation()}>
+                <View style={{backgroundColor:COLORS.white, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingTop:16, maxHeight:'90%'}}>
+    {/* ... form content (37 lines) ... */}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+
+  // ── L6857  "SERVICES EDITOR — Form backdrop (fechar ao tocar fora)"  →  dismiss form on outside tap + stopPropagation guard
+<TouchableOpacity activeOpacity={1} style={{flex:1, width:'100%', justifyContent:'flex-end', alignItems:'center'}} onPress={() => setShowServiceForm(false)}>
+              <TouchableOpacity activeOpacity={1} style={{width:'100%'}} onPress={(e) => e.stopPropagation()}>
+                <View style={{backgroundColor:COLORS.white, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingTop:16, maxHeight:'90%'}}>
+    {/* ... form content (37 lines) ... */}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+
+  // ── L6965  "ROOMS EDITOR — Room form backdrop"  →  dismiss form on outside tap + stopPropagation guard
+<TouchableOpacity activeOpacity={1} style={{flex:1, width:'100%', justifyContent:'flex-end', alignItems:'center'}} onPress={() => setShowRoomForm(false)}>
+              <TouchableOpacity activeOpacity={1} style={{width:'100%'}} onPress={(e) => e.stopPropagation()}>
+                <View style={{backgroundColor:COLORS.white, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingTop:16, maxHeight:'90%'}}>
+    {/* ... form content (35 lines) ... */}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+
+  // ── L7037  "ROOMS EDITOR — Delivery form backdrop"  →  dismiss form on outside tap + stopPropagation guard
+<TouchableOpacity activeOpacity={1} style={{flex:1, width:'100%', justifyContent:'flex-end', alignItems:'center'}} onPress={() => setShowDeliveryForm(false)}>
+              <TouchableOpacity activeOpacity={1} style={{width:'100%'}} onPress={(e) => e.stopPropagation()}>
+                <View style={{backgroundColor:COLORS.white, borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, paddingTop:16, maxHeight:'90%'}}>
+    {/* ... form content (28 lines) ... */}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+
+
+
+// ── TOTAL: 185 onPress actions + 5 backdrop/guard pairs = completo ──

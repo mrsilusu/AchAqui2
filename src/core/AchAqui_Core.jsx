@@ -355,8 +355,8 @@ export const DISTANCE_FILTERS = [
 // }
 // ─────────────────────────────────────────────────────────────────────────────
 export const OWNER_BUSINESS = {
-  id: 'biz_owner_1',
-  name: 'Pizzaria Bela Vista',
+  id: '5d5f1a56-0b74-4e40-b4d7-fdb2c438efaa',
+  name: 'AchAqui Real',
   category: 'Restaurante Italiano',
   businessType: 'accommodation',
   primaryCategoryId: 'hotelsTravel',
