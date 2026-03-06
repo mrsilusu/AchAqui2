@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { backendApi } from '../lib/backendApi';
 import { getSupabaseClient } from '../lib/supabaseClient';
 
-const BOOKING_TABLES = ['Booking', 'bookings'];
+const BOOKING_TABLES = ['Booking', 'bookings', 'table_bookings', 'room_bookings'];
 const NOTIFICATION_TABLES = ['Notification', 'notifications'];
 
 export function useLiveSync({ user, accessToken }) {

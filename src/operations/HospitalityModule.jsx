@@ -912,18 +912,23 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
     if (typeof onCreateBooking === 'function') {
       try {
-        // Converter datas DD/MM/YYYY → ISO para a API
+        // Converter datas DD/MM/YYYY -> ISO 8601 UTC para evitar drift de timezone.
         const toISO = (str) => {
           if (!str) return null;
           if (str.includes('/')) {
             const [d, m, y] = str.split('/').map(Number);
-            return new Date(y, m - 1, d).toISOString();
+            return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            const [y, m, d] = str.split('-').map(Number);
+            return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
           }
           return new Date(str).toISOString();
         };
 
         await onCreateBooking({
           businessId: business.id,
+          bookingType: 'ROOM',
           startDate: toISO(booking.checkIn),
           endDate: toISO(booking.checkOut),
         });
