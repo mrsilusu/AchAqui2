@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -13,6 +13,10 @@ export class BusinessService {
       ? (value as Record<string, unknown>)
       : {};
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // READ
+  // ─────────────────────────────────────────────────────────────────────────
 
   async searchNearby(params: {
     latitude: string;
@@ -45,6 +49,8 @@ export class BusinessService {
         description: string;
         latitude: number;
         longitude: number;
+        isClaimed: boolean;
+        source: string;
         distance_meters: number;
       }>
     >(
@@ -56,6 +62,8 @@ export class BusinessService {
           b."description",
           b."latitude",
           b."longitude",
+          b."isClaimed",
+          b."source",
           ST_DistanceSphere(
             ST_MakePoint(b."longitude", b."latitude"),
             ST_MakePoint(${longitude}, ${latitude})
@@ -107,6 +115,10 @@ export class BusinessService {
     return business;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CREATE — dono cria negócio manual (isClaimed: true desde o início)
+  // ─────────────────────────────────────────────────────────────────────────
+
   create(ownerId: string, createBusinessDto: CreateBusinessDto) {
     const { metadata, ...baseData } = createBusinessDto;
 
@@ -117,16 +129,21 @@ export class BusinessService {
           ? { metadata: metadata as Prisma.InputJsonValue }
           : {}),
         ownerId,
+        isClaimed: true,     // criado pelo dono = já reclamado
+        claimedAt: new Date(),
+        source: 'MANUAL',
       },
     });
   }
 
-  async update(id: string, ownerId: string, updateBusinessDto: UpdateBusinessDto) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // UPDATE — apenas o dono do negócio pode actualizar
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private async requireOwnership(id: string, ownerId: string) {
     const business = await this.prisma.business.findFirst({
-      where: {
-        id,
-        ownerId,
-      },
+      where: { id, ownerId },
+      select: { id: true, metadata: true },
     });
 
     if (!business) {
@@ -134,6 +151,12 @@ export class BusinessService {
         'Estabelecimento não encontrado para este proprietário.',
       );
     }
+
+    return business;
+  }
+
+  async update(id: string, ownerId: string, updateBusinessDto: UpdateBusinessDto) {
+    await this.requireOwnership(id, ownerId);
 
     const { metadata, ...baseData } = updateBusinessDto;
 
@@ -149,27 +172,9 @@ export class BusinessService {
   }
 
   async updateStatus(id: string, ownerId: string, isOpen: boolean) {
-    const business = await this.prisma.business.findFirst({
-      where: {
-        id,
-        ownerId,
-      },
-      select: {
-        id: true,
-        metadata: true,
-      },
-    });
+    const business = await this.requireOwnership(id, ownerId);
 
-    if (!business) {
-      throw new NotFoundException(
-        'Estabelecimento não encontrado para este proprietário.',
-      );
-    }
-
-    const currentMetadata =
-      business.metadata && typeof business.metadata === 'object'
-        ? (business.metadata as Record<string, unknown>)
-        : {};
+    const currentMetadata = this.asMetadataObject(business.metadata);
 
     const metadata: Prisma.InputJsonValue = {
       ...currentMetadata,
@@ -184,16 +189,7 @@ export class BusinessService {
   }
 
   async updateInfo(id: string, ownerId: string, updateBusinessInfoDto: any) {
-    const business = await this.prisma.business.findFirst({
-      where: { id, ownerId },
-      select: { id: true, metadata: true },
-    });
-
-    if (!business) {
-      throw new NotFoundException(
-        'Estabelecimento não encontrado para este proprietário.',
-      );
-    }
+    const business = await this.requireOwnership(id, ownerId);
 
     const dataToUpdate: any = {};
     if (updateBusinessInfoDto.name) dataToUpdate.name = updateBusinessInfoDto.name;
@@ -201,14 +197,18 @@ export class BusinessService {
     if (updateBusinessInfoDto.latitude !== undefined) dataToUpdate.latitude = updateBusinessInfoDto.latitude;
     if (updateBusinessInfoDto.longitude !== undefined) dataToUpdate.longitude = updateBusinessInfoDto.longitude;
 
-    // Store contact info in metadata
     const currentMetadata = this.asMetadataObject(business.metadata);
 
-    if (updateBusinessInfoDto.phone || updateBusinessInfoDto.email || updateBusinessInfoDto.website || updateBusinessInfoDto.address) {
+    if (
+      updateBusinessInfoDto.phone ||
+      updateBusinessInfoDto.email ||
+      updateBusinessInfoDto.website ||
+      updateBusinessInfoDto.address
+    ) {
       const metadata: Prisma.InputJsonValue = {
         ...currentMetadata,
-        ...(updateBusinessInfoDto.phone && { phone: updateBusinessInfoDto.phone }),
-        ...(updateBusinessInfoDto.email && { email: updateBusinessInfoDto.email }),
+        ...(updateBusinessInfoDto.phone   && { phone:   updateBusinessInfoDto.phone }),
+        ...(updateBusinessInfoDto.email   && { email:   updateBusinessInfoDto.email }),
         ...(updateBusinessInfoDto.website && { website: updateBusinessInfoDto.website }),
         ...(updateBusinessInfoDto.address && { address: updateBusinessInfoDto.address }),
       };
@@ -222,28 +222,15 @@ export class BusinessService {
   }
 
   async remove(id: string, ownerId: string) {
-    const business = await this.prisma.business.findFirst({
-      where: {
-        id,
-        ownerId,
-      },
-    });
+    await this.requireOwnership(id, ownerId);
 
-    if (!business) {
-      throw new NotFoundException(
-        'Estabelecimento não encontrado para este proprietário.',
-      );
-    }
-
-    await this.prisma.business.delete({
-      where: { id },
-    });
+    await this.prisma.business.delete({ where: { id } });
 
     return { message: 'Estabelecimento removido com sucesso.' };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PROMOTIONS METHODS (Secção 11 — Promo Manager)
+  // PROMOTIONS
   // ─────────────────────────────────────────────────────────────────────────
 
   async getPromosByBusiness(businessId: string) {
@@ -251,7 +238,6 @@ export class BusinessService {
       throw new BadRequestException('businessId é obrigatório.');
     }
 
-    // Store promos in business metadata for simplicity
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
       select: { metadata: true },
@@ -259,27 +245,14 @@ export class BusinessService {
 
     if (!business) throw new NotFoundException('Estabelecimento não encontrado.');
 
-    const metadata = business.metadata && typeof business.metadata === 'object'
-      ? (business.metadata as Record<string, unknown>)
-      : {};
-
+    const metadata = this.asMetadataObject(business.metadata);
     return (metadata.promos as any[]) || [];
   }
 
   async createPromo(businessId: string, ownerId: string, createPromoDto: any) {
-    const business = await this.prisma.business.findFirst({
-      where: { id: businessId, ownerId },
-      select: { metadata: true },
-    });
+    const business = await this.requireOwnership(businessId, ownerId);
 
-    if (!business) {
-      throw new NotFoundException('Estabelecimento não encontrado para este proprietário.');
-    }
-
-    const metadata = business.metadata && typeof business.metadata === 'object'
-      ? (business.metadata as Record<string, unknown>)
-      : {};
-
+    const metadata = this.asMetadataObject(business.metadata);
     const promos = (metadata.promos as any[]) || [];
     const newPromo = {
       id: `promo_${Date.now()}`,
@@ -291,19 +264,13 @@ export class BusinessService {
 
     await this.prisma.business.update({
       where: { id: businessId },
-      data: {
-        metadata: {
-          ...metadata,
-          promos,
-        },
-      },
+      data: { metadata: { ...metadata, promos } },
     });
 
     return newPromo;
   }
 
   async updatePromo(promoId: string, ownerId: string, updatePromoDto: any) {
-    // Find business and promo
     const businesses = await this.prisma.business.findMany({
       where: { ownerId },
       select: { id: true, metadata: true },
@@ -335,12 +302,7 @@ export class BusinessService {
 
     await this.prisma.business.update({
       where: { id: targetBusiness.id },
-      data: {
-        metadata: {
-          ...metadata,
-          promos,
-        },
-      },
+      data: { metadata: { ...metadata, promos } },
     });
 
     return promos.find(p => p.id === promoId);
@@ -376,12 +338,7 @@ export class BusinessService {
 
     await this.prisma.business.update({
       where: { id: targetBusiness.id },
-      data: {
-        metadata: {
-          ...metadata,
-          promos,
-        },
-      },
+      data: { metadata: { ...metadata, promos } },
     });
 
     return { message: 'Promoção removida com sucesso.' };

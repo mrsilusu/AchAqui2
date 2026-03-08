@@ -30,6 +30,19 @@ enum BookingStatus {
   CANCELLED
 }
 
+// ─── NOVO ────────────────────────────────────────────────────────────────────
+enum BusinessSource {
+  GOOGLE   // importado via Google Places API
+  MANUAL   // criado manualmente pelo dono
+}
+
+enum ClaimStatus {
+  PENDING   // pedido submetido, aguarda revisão do admin
+  APPROVED  // admin aprovou — dono passa a controlar
+  REJECTED  // admin rejeitou
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 model User {
   id            String          @id @default(uuid())
   email         String          @unique
@@ -38,7 +51,8 @@ model User {
   name          String
   bookings      Booking[]
   roomBookings  RoomBooking[]
-  businesses    Business[]
+  businesses    Business[]      // negócios onde é dono
+  claimRequests ClaimRequest[]  // pedidos de claim submetidos
   refreshTokens RefreshToken[]
   notifications Notification[]
   createdAt     DateTime        @default(now())
@@ -53,8 +67,17 @@ model Business {
   metadata       Json?
   latitude       Float
   longitude      Float
-  ownerId        String
-  owner          User             @relation(fields: [ownerId], references: [id])
+
+  // ─── Multi-tenant ──────────────────────────────────────────────────────────
+  ownerId        String?          // nullable — negócios não reclamados não têm dono
+  owner          User?            @relation(fields: [ownerId], references: [id])
+  isClaimed      Boolean          @default(false)
+  claimedAt      DateTime?
+  source         BusinessSource   @default(MANUAL)
+  googlePlaceId  String?          @unique  // ID único do Google Places
+  claimRequests  ClaimRequest[]
+  // ──────────────────────────────────────────────────────────────────────────
+
   bookings       Booking[]
   roomBookings   RoomBooking[]
   items          Item[]
@@ -62,6 +85,27 @@ model Business {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 }
+
+// ─── NOVO ────────────────────────────────────────────────────────────────────
+// Registo de pedidos de claim de negócio por parte de donos
+model ClaimRequest {
+  id           String      @id @default(uuid())
+  businessId   String
+  business     Business    @relation(fields: [businessId], references: [id])
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  status       ClaimStatus @default(PENDING)
+  evidence     String?     // texto livre: justificação, URL de documento, etc.
+  adminNote    String?     // nota interna do admin ao aprovar/rejeitar
+  reviewedAt   DateTime?
+  reviewedBy   String?     // userId do admin que reviu
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([businessId, userId]) // um user só pode ter um pedido activo por negócio
+  @@map("claim_requests")
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Booking {
   id         String        @id @default(uuid())
