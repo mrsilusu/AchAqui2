@@ -1,6 +1,4 @@
-import { BusinessCategory } from '@prisma/client';
 import {
-  IsEnum,
   IsNumber,
   IsObject,
   IsOptional,
@@ -13,8 +11,8 @@ export class CreateBusinessDto {
   @MinLength(2)
   name: string;
 
-  @IsEnum(BusinessCategory)
-  category: BusinessCategory;
+  @IsString()
+  category: string;
 
   @IsString()
   @MinLength(5)

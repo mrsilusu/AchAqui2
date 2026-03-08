@@ -1,68 +1,84 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { ReviewClaimDto } from './dto/review-claim.dto';
-import { ImportGooglePlacesDto } from './dto/import-google-places.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('admin')
-@Roles(UserRole.ADMIN) // todos os endpoints deste controller exigem role ADMIN
+@Roles(UserRole.ADMIN)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  // ─── Stats ───────────────────────────────────────────────────────────────
+  // ─── Stats ─────────────────────────────────────────────────────────────────
 
-  /**
-   * GET /admin/stats
-   * Visão geral do SaaS: utilizadores, negócios, claims.
-   */
   @Get('stats')
   getStats() {
     return this.adminService.getStats();
   }
 
-  // ─── Claims ──────────────────────────────────────────────────────────────
+  // ─── Claims ────────────────────────────────────────────────────────────────
 
-  /**
-   * GET /admin/claims
-   * Lista todos os pedidos de claim. Filtrável por ?status=PENDING|APPROVED|REJECTED
-   */
   @Get('claims')
-  findAllClaims(@Query('status') status?: string) {
-    return this.adminService.findAllClaims(status);
+  getAllClaims(@Query('status') status?: string) {
+    return this.adminService.getAllClaims(status);
   }
 
-  /**
-   * GET /admin/claims/pending
-   * Lista apenas os pedidos pendentes (shortcut útil para o painel admin).
-   */
   @Get('claims/pending')
-  findPendingClaims() {
-    return this.adminService.findPendingClaims();
+  getPendingClaims() {
+    return this.adminService.getPendingClaims();
   }
 
-  /**
-   * PATCH /admin/claims/:id/review
-   * Admin aprova ou rejeita um pedido de claim.
-   */
   @Patch('claims/:id/review')
   reviewClaim(
-    @Req() req: { user: { userId: string } },
-    @Param('id') claimId: string,
-    @Body() body: ReviewClaimDto,
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() body: { decision: 'APPROVED' | 'REJECTED'; adminNote?: string },
   ) {
-    return this.adminService.reviewClaim(claimId, req.user.userId, body);
+    return this.adminService.reviewClaim(id, req.user.sub, body.decision, body.adminNote);
   }
 
-  // ─── Google Places Import ────────────────────────────────────────────────
+  // ─── Businesses ────────────────────────────────────────────────────────────
 
-  /**
-   * POST /admin/import/google-places
-   * Importa negócios do Google Places API para popular o app.
-   * Body: { city: "Luanda", category: "DINING", limit: 20, radiusMeters: 5000 }
-   */
+  @Get('businesses')
+  getAllBusinesses(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAllBusinesses(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      search,
+    );
+  }
+
+  // ─── Google Places Import ──────────────────────────────────────────────────
+
   @Post('import/google-places')
-  importFromGooglePlaces(@Body() body: ImportGooglePlacesDto) {
-    return this.adminService.importFromGooglePlaces(body);
+  importFromGooglePlaces(@Body() body: { query: string; location: string }) {
+    const apiKey = this.configService.get<string>('GOOGLE_PLACES_API_KEY');
+    return this.adminService.importFromGooglePlaces(body.query, body.location, apiKey);
+  }
+
+  // ─── Users ─────────────────────────────────────────────────────────────────
+
+  @Get('users')
+  getAllUsers(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.adminService.getAllUsers(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
   }
 }

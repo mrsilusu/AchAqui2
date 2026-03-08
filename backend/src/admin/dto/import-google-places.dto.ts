@@ -1,12 +1,11 @@
 import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { BusinessCategory } from '@prisma/client';
 
 export class ImportGooglePlacesDto {
   @IsString()
   city: string;
 
-  @IsEnum(BusinessCategory)
-  category: BusinessCategory;
+  @IsString()
+  category: string;
 
   @IsOptional()
   @IsNumber()

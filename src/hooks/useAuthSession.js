@@ -74,6 +74,7 @@ export function useAuthSession() {
     accessToken: session?.accessToken || null,
     refreshToken: session?.refreshToken || null,
     isOwner: user?.role === 'OWNER',
+    isAdmin: user?.role === 'ADMIN',
     isClient: user?.role === 'CLIENT',
     loading,
     saveSession,

@@ -34,6 +34,7 @@ import { BusinessDetailModal }  from './modules/Detail/BusinessDetailModal';
 import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
+import { AdminModule }          from './modules/Admin/AdminModule';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { useBusinessFilters }   from './hooks/useBusinessFilters';
@@ -530,8 +531,17 @@ function AppContent() {
       <Animated.View style={meta.homeAnimatedStyle}>
         <View style={{ flex: 1, backgroundColor: '#F7F7F8' }}>
 
+          {/* Admin */}
+          {authSession.isAdmin && (
+            <AdminModule
+              accessToken={authSession.accessToken}
+              onExit={() => {}}
+              insets={insets}
+            />
+          )}
+
           {/* Cliente: todas as tabs via HomeModuleFull */}
-          {!isBusinessMode && (
+          {!isBusinessMode && !authSession.isAdmin && (
             <HomeModuleFull
               {...filters}
               activeNavTab={activeNavTab}
@@ -556,7 +566,7 @@ function AppContent() {
           )}
 
           {/* Dono */}
-          {isBusinessMode && (
+          {isBusinessMode && !authSession.isAdmin && (
             <OwnerModule
               businesses={businesses}
               activeBusinessTab={activeBusinessTab}
@@ -580,7 +590,7 @@ function AppContent() {
             />
           )}
 
-          <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />
+          {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
 
@@ -691,6 +701,11 @@ function AppContent() {
             onToggleBookmark={toggleBookmark}
             swipeProgress={meta.swipeProgress}
             layer={layer}
+            authSession={{
+              accessToken: authSession.accessToken,
+              userId: authSession.user?.id,
+              role: authSession.user?.role,
+            }}
             onClose={() => {
               // Fecha também a layer operacional se estiver activa
               if (layer.activeLayer) layer.closeImmediate();

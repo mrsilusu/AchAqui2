@@ -17,31 +17,29 @@ enum UserRole {
   CLIENT
 }
 
-enum BusinessCategory {
-  HOSPITALITY
-  DINING
-  BEAUTY
-  PROFESSIONAL
-}
-
 enum BookingStatus {
   PENDING
   CONFIRMED
   CANCELLED
 }
 
-// ─── NOVO ────────────────────────────────────────────────────────────────────
 enum BusinessSource {
-  GOOGLE   // importado via Google Places API
-  MANUAL   // criado manualmente pelo dono
+  MANUAL
+  GOOGLE
 }
 
 enum ClaimStatus {
-  PENDING   // pedido submetido, aguarda revisão do admin
-  APPROVED  // admin aprovou — dono passa a controlar
-  REJECTED  // admin rejeitou
+  PENDING
+  APPROVED
+  REJECTED
 }
-// ─────────────────────────────────────────────────────────────────────────────
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
 
 model User {
   id            String          @id @default(uuid())
@@ -51,10 +49,10 @@ model User {
   name          String
   bookings      Booking[]
   roomBookings  RoomBooking[]
-  businesses    Business[]      // negócios onde é dono
-  claimRequests ClaimRequest[]  // pedidos de claim submetidos
+  businesses    Business[]
   refreshTokens RefreshToken[]
   notifications Notification[]
+  claimRequests ClaimRequest[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -62,50 +60,28 @@ model User {
 model Business {
   id             String           @id @default(uuid())
   name           String
-  category       BusinessCategory
+  category       String
   description    String
   metadata       Json?
   latitude       Float
   longitude      Float
-
-  // ─── Multi-tenant ──────────────────────────────────────────────────────────
-  ownerId        String?          // nullable — negócios não reclamados não têm dono
+  municipality   String?
+  isActive       Boolean          @default(true)
+  ownerId        String?
   owner          User?            @relation(fields: [ownerId], references: [id])
   isClaimed      Boolean          @default(false)
   claimedAt      DateTime?
   source         BusinessSource   @default(MANUAL)
-  googlePlaceId  String?          @unique  // ID único do Google Places
-  claimRequests  ClaimRequest[]
-  // ──────────────────────────────────────────────────────────────────────────
-
+  googlePlaceId  String?          @unique
   bookings       Booking[]
   roomBookings   RoomBooking[]
   items          Item[]
   operatingHours OperatingHour[]
+  claimRequests  ClaimRequest[]
+  suggestions    DataUpdateSuggestion[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 }
-
-// ─── NOVO ────────────────────────────────────────────────────────────────────
-// Registo de pedidos de claim de negócio por parte de donos
-model ClaimRequest {
-  id           String      @id @default(uuid())
-  businessId   String
-  business     Business    @relation(fields: [businessId], references: [id])
-  userId       String
-  user         User        @relation(fields: [userId], references: [id])
-  status       ClaimStatus @default(PENDING)
-  evidence     String?     // texto livre: justificação, URL de documento, etc.
-  adminNote    String?     // nota interna do admin ao aprovar/rejeitar
-  reviewedAt   DateTime?
-  reviewedBy   String?     // userId do admin que reviu
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@unique([businessId, userId]) // um user só pode ter um pedido activo por negócio
-  @@map("claim_requests")
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 model Booking {
   id         String        @id @default(uuid())
@@ -185,4 +161,38 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ClaimRequest {
+  id           String      @id @default(uuid())
+  businessId   String
+  userId       String
+  status       ClaimStatus @default(PENDING)
+  evidence     String
+  adminNote    String?
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  business     Business    @relation(fields: [businessId], references: [id])
+  user         User        @relation(fields: [userId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([businessId, userId])
+  @@map("claim_requests")
+}
+
+model DataUpdateSuggestion {
+  id           String           @id @default(uuid())
+  businessId   String
+  business     Business         @relation(fields: [businessId], references: [id])
+  source       BusinessSource   // GOOGLE or OUTSCRAPER (via GOOGLE enum)
+  status       SuggestionStatus @default(PENDING)
+  suggestedData Json            // campos sugeridos: name, category, address, phone, etc.
+  currentData  Json             // snapshot dos dados actuais no momento da sugestão
+  reviewedAt   DateTime?
+  expiresAt    DateTime?        // auto-expira após 30 dias se não for respondida
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@map("data_update_suggestions")
 }

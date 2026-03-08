@@ -1,57 +1,69 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import { BusinessCategory, BusinessSource } from '@prisma/client';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReviewClaimDto, ReviewDecision } from './dto/review-claim.dto';
-import { ImportGooglePlacesDto } from './dto/import-google-places.dto';
-
-// Mapa de categorias AcheiAqui → tipo Google Places
-const CATEGORY_TO_GOOGLE_TYPE: Record<BusinessCategory, string> = {
-  HOSPITALITY: 'lodging',
-  DINING:      'restaurant',
-  BEAUTY:      'beauty_salon',
-  PROFESSIONAL: 'lawyer', // fallback genérico para serviços profissionais
-};
+import { ClaimStatus } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
-  private readonly logger = new Logger(AdminService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Claim Management ────────────────────────────────────────────────────
+  // ─── Stats ───────────────────────────────────────────────────────────────────
 
-  /**
-   * Admin lista todos os pedidos de claim pendentes.
-   */
-  findPendingClaims() {
-    return this.prisma.claimRequest.findMany({
-      where: { status: 'PENDING' },
-      include: {
-        business: {
-          select: { id: true, name: true, category: true, isClaimed: true, googlePlaceId: true },
-        },
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
+  async getStats() {
+    const [
+      totalUsers,
+      totalBusinesses,
+      claimedBusinesses,
+      pendingClaims,
+      approvedClaims,
+      rejectedClaims,
+      googleBusinesses,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.business.count(),
+      this.prisma.business.count({ where: { isClaimed: true } }),
+      this.prisma.claimRequest.count({ where: { status: 'PENDING' } }),
+      this.prisma.claimRequest.count({ where: { status: 'APPROVED' } }),
+      this.prisma.claimRequest.count({ where: { status: 'REJECTED' } }),
+      this.prisma.business.count({ where: { source: 'GOOGLE' } }),
+    ]);
+
+    return {
+      users: {
+        total: totalUsers,
       },
-      orderBy: { createdAt: 'asc' }, // mais antigo primeiro
-    });
+      businesses: {
+        total: totalBusinesses,
+        claimed: claimedBusinesses,
+        unclaimed: totalBusinesses - claimedBusinesses,
+        claimedPercent:
+          totalBusinesses > 0
+            ? Math.round((claimedBusinesses / totalBusinesses) * 100)
+            : 0,
+        fromGoogle: googleBusinesses,
+        manual: totalBusinesses - googleBusinesses,
+      },
+      claims: {
+        pending: pendingClaims,
+        approved: approvedClaims,
+        rejected: rejectedClaims,
+        total: pendingClaims + approvedClaims + rejectedClaims,
+      },
+    };
   }
 
-  /**
-   * Admin lista todos os pedidos (qualquer estado) — para histórico.
-   */
-  findAllClaims(status?: string) {
+  // ─── Claims Management ───────────────────────────────────────────────────────
+
+  async getAllClaims(status?: string) {
+    const where: any = {};
+    if (status && ['PENDING', 'APPROVED', 'REJECTED'].includes(status.toUpperCase())) {
+      where.status = status.toUpperCase() as ClaimStatus;
+    }
+
     return this.prisma.claimRequest.findMany({
-      where: status ? { status: status as any } : undefined,
+      where,
       include: {
         business: {
-          select: { id: true, name: true, category: true },
+          select: { id: true, name: true, category: true, description: true },
         },
         user: {
           select: { id: true, name: true, email: true },
@@ -61,275 +73,186 @@ export class AdminService {
     });
   }
 
-  /**
-   * Admin aprova ou rejeita um pedido de claim.
-   * Se aprovado:
-   *   - ClaimRequest.status = APPROVED
-   *   - Business.ownerId = userId do dono
-   *   - Business.isClaimed = true
-   *   - Business.claimedAt = now()
-   *   - Todos os outros pedidos PENDING para o mesmo negócio são rejeitados automaticamente
-   * Se rejeitado:
-   *   - ClaimRequest.status = REJECTED
-   *   - Business não é alterado
-   */
-  async reviewClaim(claimId: string, adminId: string, dto: ReviewClaimDto) {
+  async getPendingClaims() {
+    return this.getAllClaims('PENDING');
+  }
+
+  async reviewClaim(
+    claimId: string,
+    adminId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    adminNote?: string,
+  ) {
     const claim = await this.prisma.claimRequest.findUnique({
       where: { id: claimId },
-      include: {
-        business: { select: { id: true, name: true, isClaimed: true } },
-        user: { select: { id: true, name: true, email: true } },
-      },
+      include: { business: true },
     });
 
     if (!claim) {
       throw new NotFoundException('Pedido de claim não encontrado.');
     }
 
-    if (claim.status !== 'PENDING') {
-      throw new BadRequestException(
-        `Este pedido já foi ${claim.status === 'APPROVED' ? 'aprovado' : 'rejeitado'}.`,
-      );
+    if (claim.status !== ClaimStatus.PENDING) {
+      throw new BadRequestException('Este claim já foi revisto.');
     }
 
-    if (dto.decision === ReviewDecision.APPROVED) {
-      // Transacção: aprovar este + rejeitar outros pendentes + actualizar Business
-      await this.prisma.$transaction([
-        // Aprovar este pedido
-        this.prisma.claimRequest.update({
-          where: { id: claimId },
-          data: {
-            status: 'APPROVED',
-            adminNote: dto.adminNote ?? null,
-            reviewedAt: new Date(),
-            reviewedBy: adminId,
-          },
-        }),
-        // Rejeitar automaticamente outros pedidos pendentes para o mesmo negócio
-        this.prisma.claimRequest.updateMany({
-          where: {
-            businessId: claim.businessId,
-            id: { not: claimId },
-            status: 'PENDING',
-          },
-          data: {
-            status: 'REJECTED',
-            adminNote: 'Rejeitado automaticamente — outro pedido foi aprovado.',
-            reviewedAt: new Date(),
-            reviewedBy: adminId,
-          },
-        }),
-        // Transferir propriedade do negócio
-        this.prisma.business.update({
-          where: { id: claim.businessId },
-          data: {
-            ownerId: claim.userId,
-            isClaimed: true,
-            claimedAt: new Date(),
-          },
-        }),
-        // Notificar o dono aprovado
-        this.prisma.notification.create({
-          data: {
-            userId: claim.userId,
-            title: '✅ Claim Aprovado!',
-            message: `O teu pedido para gerir "${claim.business.name}" foi aprovado. Já podes aceder ao painel de gestão.`,
-            data: { claimId, businessId: claim.businessId, decision: 'APPROVED' },
-          },
-        }),
-      ]);
-
-      this.logger.log(
-        `Claim ${claimId} aprovado por admin ${adminId} → negócio ${claim.businessId} transferido para user ${claim.userId}`,
-      );
-    } else {
-      // Rejeitar
-      await this.prisma.$transaction([
-        this.prisma.claimRequest.update({
-          where: { id: claimId },
-          data: {
-            status: 'REJECTED',
-            adminNote: dto.adminNote ?? null,
-            reviewedAt: new Date(),
-            reviewedBy: adminId,
-          },
-        }),
-        // Notificar o dono sobre a rejeição
-        this.prisma.notification.create({
-          data: {
-            userId: claim.userId,
-            title: '❌ Claim Rejeitado',
-            message: dto.adminNote
-              ? `O teu pedido para "${claim.business.name}" foi rejeitado. Motivo: ${dto.adminNote}`
-              : `O teu pedido para "${claim.business.name}" foi rejeitado.`,
-            data: { claimId, businessId: claim.businessId, decision: 'REJECTED' },
-          },
-        }),
-      ]);
-
-      this.logger.log(
-        `Claim ${claimId} rejeitado por admin ${adminId}`,
-      );
-    }
-
-    return this.prisma.claimRequest.findUnique({
+    // Update claim
+    const updatedClaim = await this.prisma.claimRequest.update({
       where: { id: claimId },
+      data: {
+        status: decision,
+        adminNote: adminNote ?? null,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      },
       include: {
-        business: { select: { id: true, name: true, isClaimed: true, ownerId: true } },
+        business: { select: { id: true, name: true } },
         user: { select: { id: true, name: true, email: true } },
       },
     });
+
+    // If approved → assign business ownership
+    if (decision === 'APPROVED') {
+      await this.prisma.business.update({
+        where: { id: claim.businessId },
+        data: {
+          ownerId: claim.userId,
+          isClaimed: true,
+          claimedAt: new Date(),
+        },
+      });
+    }
+
+    return updatedClaim;
   }
 
-  // ─── Google Places Import ────────────────────────────────────────────────
+  // ─── Business Management ─────────────────────────────────────────────────────
 
-  /**
-   * Admin importa negócios do Google Places API para popular o app.
-   * Negócios já existentes (mesmo googlePlaceId) são ignorados (upsert).
-   *
-   * NOTA: Requer GOOGLE_PLACES_API_KEY no .env
-   */
-  async importFromGooglePlaces(dto: ImportGooglePlacesDto) {
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  async getAllBusinesses(page = 1, limit = 20, search?: string) {
+    const skip = (page - 1) * limit;
+    const where: any = search
+      ? { name: { contains: search, mode: 'insensitive' } }
+      : {};
 
+    const [businesses, total] = await Promise.all([
+      this.prisma.business.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          owner: { select: { id: true, name: true, email: true } },
+          _count: { select: { claimRequests: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.business.count({ where }),
+    ]);
+
+    return {
+      data: businesses,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  // ─── Google Places Import ─────────────────────────────────────────────────────
+
+  async importFromGooglePlaces(query: string, location: string, apiKey?: string) {
     if (!apiKey) {
       throw new BadRequestException(
         'GOOGLE_PLACES_API_KEY não configurada. Adiciona ao .env do backend.',
       );
     }
 
-    const googleType = CATEGORY_TO_GOOGLE_TYPE[dto.category];
-    const radius = dto.radiusMeters ?? 5000;
-    const limit = dto.limit ?? 20;
+    const endpoint = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query + ' ' + location)}&key=${apiKey}`;
 
-    // Passo 1: Geocodificar a cidade para obter coordenadas
-    const geocodeUrl =
-      `https://maps.googleapis.com/maps/api/geocode/json` +
-      `?address=${encodeURIComponent(dto.city)}&key=${apiKey}`;
+    const response = await fetch(endpoint);
+    const data = await response.json();
 
-    const geocodeRes = await fetch(geocodeUrl);
-    const geocodeData = (await geocodeRes.json()) as any;
-
-    if (geocodeData.status !== 'OK' || !geocodeData.results?.[0]) {
-      throw new BadRequestException(
-        `Não foi possível geocodificar a cidade "${dto.city}". Verifica o nome e a API key.`,
-      );
+    if (data.status !== 'OK') {
+      throw new BadRequestException(`Google Places API: ${data.status}`);
     }
 
-    const { lat, lng } = geocodeData.results[0].geometry.location;
+    const imported: any[] = [];
+    const skipped: any[] = [];
 
-    // Passo 2: Nearby Search
-    const placesUrl =
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
-      `?location=${lat},${lng}` +
-      `&radius=${radius}` +
-      `&type=${googleType}` +
-      `&key=${apiKey}`;
-
-    const placesRes = await fetch(placesUrl);
-    const placesData = (await placesRes.json()) as any;
-
-    if (placesData.status !== 'OK' && placesData.status !== 'ZERO_RESULTS') {
-      this.logger.error(`Google Places API error: ${placesData.status}`, placesData.error_message);
-      throw new BadRequestException(
-        `Google Places API retornou: ${placesData.status}. ${placesData.error_message ?? ''}`,
-      );
-    }
-
-    const results = (placesData.results ?? []).slice(0, limit);
-
-    if (results.length === 0) {
-      return { imported: 0, skipped: 0, total: 0, message: 'Nenhum negócio encontrado para esta pesquisa.' };
-    }
-
-    // Passo 3: Upsert no Prisma — ignorar duplicados via googlePlaceId
-    let imported = 0;
-    let skipped = 0;
-
-    for (const place of results) {
-      const googlePlaceId: string = place.place_id;
-      const placeLat: number = place.geometry?.location?.lat ?? lat;
-      const placeLng: number = place.geometry?.location?.lng ?? lng;
-
-      // Verificar se já existe
+    for (const place of data.results ?? []) {
       const existing = await this.prisma.business.findUnique({
-        where: { googlePlaceId },
-        select: { id: true },
+        where: { googlePlaceId: place.place_id },
       });
 
       if (existing) {
-        skipped++;
+        skipped.push({ placeId: place.place_id, name: place.name });
         continue;
       }
 
-      // Criar negócio "órfão" (sem dono) com dados do Google
-      await this.prisma.business.create({
+      const created = await this.prisma.business.create({
         data: {
-          name:         place.name ?? 'Sem nome',
-          category:     dto.category,
-          description:  place.vicinity ?? place.formatted_address ?? '',
-          latitude:     placeLat,
-          longitude:    placeLng,
-          googlePlaceId,
-          source:       BusinessSource.GOOGLE,
-          isClaimed:    false,
-          ownerId:      null, // sem dono até ser reclamado
+          name: place.name,
+          category: 'other',
+          description: place.formatted_address,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          source: 'GOOGLE',
+          googlePlaceId: place.place_id,
+          isClaimed: false,
           metadata: {
-            googleRating:      place.rating ?? null,
-            googleUserRatings: place.user_ratings_total ?? 0,
-            googlePhotoRef:    place.photos?.[0]?.photo_reference ?? null,
-            googleTypes:       place.types ?? [],
-            vicinity:          place.vicinity ?? '',
+            address: place.formatted_address,
+            rating: place.rating,
+            userRatingsTotal: place.user_ratings_total,
+            types: place.types,
           },
         },
       });
 
-      imported++;
+      imported.push({ id: created.id, name: created.name });
     }
 
-    this.logger.log(
-      `Import Google Places: ${imported} importados, ${skipped} ignorados (duplicados) de ${results.length} resultados`,
-    );
-
     return {
-      imported,
-      skipped,
-      total: results.length,
-      message: `${imported} negócios importados com sucesso. ${skipped} já existiam.`,
+      imported: imported.length,
+      skipped: skipped.length,
+      businesses: imported,
     };
   }
 
-  /**
-   * Admin vê estatísticas gerais do SaaS.
-   */
-  async getStats() {
-    const [
-      totalUsers,
-      totalBusinesses,
-      claimedBusinesses,
-      unclaimedBusinesses,
-      googleBusinesses,
-      manualBusinesses,
-      pendingClaims,
-    ] = await Promise.all([
+  // ─── User Management ─────────────────────────────────────────────────────────
+
+  async getAllUsers(page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true,
+          _count: { select: { businesses: true, claimRequests: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
       this.prisma.user.count(),
-      this.prisma.business.count(),
-      this.prisma.business.count({ where: { isClaimed: true } }),
-      this.prisma.business.count({ where: { isClaimed: false } }),
-      this.prisma.business.count({ where: { source: BusinessSource.GOOGLE } }),
-      this.prisma.business.count({ where: { source: BusinessSource.MANUAL } }),
-      this.prisma.claimRequest.count({ where: { status: 'PENDING' } }),
     ]);
 
     return {
-      users: { total: totalUsers },
-      businesses: {
-        total: totalBusinesses,
-        claimed: claimedBusinesses,
-        unclaimed: unclaimedBusinesses,
-        bySource: { google: googleBusinesses, manual: manualBusinesses },
-      },
-      claims: { pending: pendingClaims },
+      data: users,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  // ─── Report Business (owner requests admin to add it) ────────────────────────
+
+  async reportMissingBusiness(userId: string, note: string, businessName?: string) {
+    // Store as a notification for admin — we use the notifications table
+    return this.prisma.notification.create({
+      data: {
+        userId,
+        title: '📍 Negócio em falta reportado',
+        message: `Um dono reportou um negócio em falta${businessName ? `: "${businessName}"` : ''}. Nota: ${note}`,
+        data: { type: 'MISSING_BUSINESS', reportedBy: userId, businessName, note },
+        isRead: false,
+      },
+    });
   }
 }

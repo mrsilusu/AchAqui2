@@ -38,6 +38,7 @@ import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
+import { ClaimFlow } from './ClaimFlow';
 
 import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
 
@@ -499,6 +500,7 @@ export function OwnerModule({
   const [showOccupancyEditor, setShowOccupancyEditor] = useState(false);
   const [showFeaturedModal, setShowFeaturedModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showClaimFlow, setShowClaimFlow]       = useState(false);
   const [showPromoManager, setShowPromoManager] = useState(false);
   const [promotions, setPromotions] = useState(INITIAL_PROMOTIONS);
   const [showPromoForm, setShowPromoForm] = useState(false);
@@ -4342,7 +4344,7 @@ export function OwnerModule({
               <TouchableOpacity
                 style={profS.actionButton}
                 activeOpacity={0.7}
-                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+                onPress={() => setShowClaimFlow(true)}
               >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
@@ -5859,6 +5861,17 @@ export function OwnerModule({
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* ── CLAIM FLOW — Onboarding do Dono ────────────────────────────── */}
+      <ClaimFlow
+        visible={showClaimFlow}
+        onClose={() => setShowClaimFlow(false)}
+        onCreateNew={() => Alert.alert(
+          'Criar negócio',
+          'A funcionalidade de criação manual de negócio está disponível no painel principal. Sai do perfil e usa o botão "+" no dashboard.',
+        )}
+        accessToken={accessToken}
+      />
 
 
     </View>
