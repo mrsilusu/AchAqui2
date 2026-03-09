@@ -213,10 +213,22 @@ export class BookingService {
       businessId: dto.businessId,
     };
 
+    const roomBookingData = {
+      ...bookingData,
+      guestName:  dto.guestName  ?? user.name,
+      guestPhone: dto.guestPhone ?? null,
+      adults:     dto.adults     ?? 1,
+      children:   dto.children   ?? 0,
+      rooms:      dto.rooms      ?? 1,
+      totalPrice: dto.totalPrice ?? null,
+      notes:      dto.notes      ?? null,
+      roomTypeId: dto.roomTypeId ?? null,
+    };
+
     const booking =
       bookingType === BookingTypeDto.ROOM
         ? await this.prisma.roomBooking.create({
-            data: bookingData,
+            data: roomBookingData,
             include: {
               business: {
                 select: {
@@ -240,11 +252,12 @@ export class BookingService {
             },
           });
 
+    const guestLabel = dto.guestName ?? user.name;
     const ownerNotification = await this.prisma.notification.create({
       data: {
         userId: business.owner.id,
-        title: 'Nova Reserva Recebida',
-        message: `${user.name} criou uma nova reserva em ${business.name}.`,
+        title: '🛎️ Nova Reserva Recebida',
+        message: `${guestLabel} criou uma nova reserva em ${business.name}.`,
         data: {
           bookingId: booking.id,
           bookingType,

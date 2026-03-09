@@ -22,14 +22,16 @@
  * ============================================================================
  */
 
-import React, { useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  Alert,
   View, Text, StyleSheet, TouchableOpacity,
   Animated, Platform, Dimensions, PanResponder,
 } from 'react-native';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
+import { backendApi } from '../../lib/backendApi';
 
 import { HospitalityModule }    from '../../operations/HospitalityModule';
 import { DiningModule }         from '../../operations/DiningModule';
@@ -69,10 +71,25 @@ const LAYER_MAP = {
 // ─────────────────────────────────────────────────────────────────────────────
 // OPERATIONAL LAYER RENDERER
 // ─────────────────────────────────────────────────────────────────────────────
-export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken, createBooking, liveBookings, updateOwnerBiz, ownerRoomBookings, onOwnerRoomBookingsChange }) {
+export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken, createBooking, liveBookings, updateOwnerBiz, ownerRoomBookings, onOwnerRoomBookingsChange, liveBusiness }) {
   const insets = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+  // ── Confirmar / Rejeitar reserva (owner) ─────────────────────────────────
+  const handleStatusChange = useCallback(async (bookingId, newStatus) => {
+    if (!accessToken) return;
+    try {
+      if (newStatus === 'rejected' || newStatus === 'cancelled') {
+        await backendApi.rejectBooking(bookingId, {}, accessToken);
+      } else {
+        await backendApi.confirmBooking(bookingId, {}, accessToken);
+      }
+      // Supabase Realtime irá actualizar liveBookings automaticamente
+    } catch (err) {
+      Alert.alert('Erro', err?.message || 'Não foi possível actualizar a reserva.');
+    }
+  }, [accessToken]);
 
   // PanResponder próprio: swipe-right fecha a layer (não propaga para o modal pai)
   const panResponder = useRef(
@@ -118,7 +135,16 @@ export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken
   if (!config) return null;
 
   const { Component, title, emoji, color } = config;
-  const business = layer.activeBusiness;
+  const business = liveBusiness || layer.activeBusiness;
+
+  // Filtrar bookings por tipo para cada módulo
+  const roomLiveBookings = Array.isArray(liveBookings)
+    ? liveBookings.filter(b => b.bookingType === 'ROOM' || b.bookingType === 'room')
+    : [];
+  const tableLiveBookings = Array.isArray(liveBookings)
+    ? liveBookings.filter(b => b.bookingType === 'TABLE' || b.bookingType === 'table' || !b.bookingType)
+    : [];
+  const moduleBookings = layer.activeLayer === 'hospitality' ? roomLiveBookings : tableLiveBookings;
 
   return (
     <Animated.View
@@ -163,10 +189,12 @@ export function OperationalLayerRenderer({ layer, isOwner, tenantId, accessToken
         <Component
           business={business}
           ownerMode={isOwner}
+          ownerBusinessPrivate={business}
           tenantId={tenantId}
           accessToken={accessToken}
           onCreateBooking={createBooking}
-          liveBookings={liveBookings}
+          liveBookings={moduleBookings}
+          onStatusChange={handleStatusChange}
           updateOwnerBiz={updateOwnerBiz}
           ownerRoomBookings={ownerRoomBookings}
           onOwnerRoomBookingsChange={onOwnerRoomBookingsChange}

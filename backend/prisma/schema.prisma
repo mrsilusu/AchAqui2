@@ -75,6 +75,7 @@ model Business {
   googlePlaceId  String?          @unique
   bookings       Booking[]
   roomBookings   RoomBooking[]
+  roomTypes      RoomType[]
   items          Item[]
   operatingHours OperatingHour[]
   claimRequests  ClaimRequest[]
@@ -99,18 +100,50 @@ model Booking {
 }
 
 model RoomBooking {
-  id         String        @id @default(uuid())
-  startDate  DateTime
-  endDate    DateTime
-  status     BookingStatus
-  userId     String
-  businessId String
-  user       User          @relation(fields: [userId], references: [id])
-  business   Business      @relation(fields: [businessId], references: [id])
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id          String        @id @default(uuid())
+  startDate   DateTime
+  endDate     DateTime
+  status      BookingStatus
+  userId      String
+  businessId  String
+  guestName   String?
+  guestPhone  String?
+  adults      Int           @default(1)
+  children    Int           @default(0)
+  rooms       Int           @default(1)
+  totalPrice  Float?
+  notes       String?
+  roomTypeId  String?
+  roomType    RoomType?     @relation(fields: [roomTypeId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  business    Business      @relation(fields: [businessId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@map("room_bookings")
+}
+
+model RoomType {
+  id                String        @id @default(uuid())
+  businessId        String
+  business          Business      @relation(fields: [businessId], references: [id])
+  name              String
+  description       String        @default("")
+  pricePerNight     Float
+  maxGuests         Int           @default(2)
+  totalRooms        Int           @default(1)
+  available         Boolean       @default(true)
+  amenities         String[]      @default([])
+  minNights         Int           @default(1)
+  taxRate           Float         @default(0)
+  weekendMultiplier Float         @default(1.0)
+  seasonalRates     Json?         // [{ label, startDate, endDate, multiplier }]
+  photos            String[]      @default([])
+  bookings          RoomBooking[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("room_types")
 }
 
 model RefreshToken {
@@ -131,6 +164,8 @@ model Item {
   price       Float
   capacity    Int
   description String
+  available   Boolean  @default(true)
+  totalRooms  Int      @default(1)
   businessId  String
   business    Business @relation(fields: [businessId], references: [id])
   createdAt   DateTime @default(now())

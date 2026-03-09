@@ -20,10 +20,10 @@
  * ============================================================================
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
-  SafeAreaView, Image, TextInput, Alert,
+  SafeAreaView, Image, TextInput, Alert, Switch,
   Dimensions, Platform, Animated, PanResponder,
   KeyboardAvoidingView, Linking,
 } from 'react-native';
@@ -380,7 +380,7 @@ export function OwnerModule({
   const [blockStartDate, setBlockStartDate] = useState('');
   const [blockEndDate, setBlockEndDate] = useState('');
   const [editingRoom, setEditingRoom] = useState(null);
-  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
   const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
   // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
   // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
@@ -393,10 +393,36 @@ export function OwnerModule({
       checkIn: '28/02/2026', checkOut: '02/03/2026', nights: 2, totalPrice: 70000, status: 'confirmed', createdAt: '2026-02-19' },
   ];
   const [localRoomBookings, setLocalRoomBookings] = useState(LOCAL_ROOM_BOOKINGS_FALLBACK);
-  // roomBookings: se Main forneceu estado partilhado usa-o; senão usa local (testes isolados)
-  const roomBookings = ownerRoomBookingsProp ?? localRoomBookings;
+  // statusOverrides — optimistic update sobre ownerRoomBookingsProp (só leitura)
+  const [roomStatusOverrides, setRoomStatusOverrides] = useState({});
   const setRoomBookings = onOwnerRoomBookingsChange ?? setLocalRoomBookings;
+  // roomBookings: aplica overrides por cima da fonte de verdade
+  const roomBookings = useMemo(() => {
+    const base = ownerRoomBookingsProp ?? localRoomBookings;
+    if (Object.keys(roomStatusOverrides).length === 0) return base;
+    return base.map(rb => roomStatusOverrides[rb.id]
+      ? { ...rb, status: roomStatusOverrides[rb.id] }
+      : rb
+    );
+  }, [ownerRoomBookingsProp, localRoomBookings, roomStatusOverrides]);
+
+  // Limpar overrides quando o Realtime confirmar o novo status
+  useEffect(() => {
+    if (!ownerRoomBookingsProp || Object.keys(roomStatusOverrides).length === 0) return;
+    setRoomStatusOverrides(prev => {
+      const next = { ...prev };
+      let changed = false;
+      ownerRoomBookingsProp.forEach(rb => {
+        if (next[rb.id] && rb.status === next[rb.id]) {
+          delete next[rb.id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [ownerRoomBookingsProp]);
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
+  const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
   const [deliveryAreas, setDeliveryAreas] = useState(OWNER_BUSINESS.deliveryAreas || []);
@@ -667,7 +693,9 @@ export function OwnerModule({
       return;
     }
 
-    const mappedReservations = liveBookings.map((booking) => {
+    const mappedReservations = liveBookings
+      .filter(booking => booking.bookingType === 'TABLE' || booking.bookingType === 'table')
+      .map((booking) => {
       const startDate = booking.startDate ? new Date(booking.startDate) : null;
       let normalizedStatus = 'pending';
       if (booking.status === 'CONFIRMED') normalizedStatus = 'active';
@@ -1023,7 +1051,9 @@ export function OwnerModule({
         description: roomForm.description || '',
         pricePerNight: parseFloat(roomForm.pricePerNight),
         maxGuests: parseInt(roomForm.maxGuests) || 1,
-        amenities: typeof roomForm.amenities === 'string' ? roomForm.amenities : JSON.stringify(roomForm.amenities || []),
+        totalRooms: parseInt(roomForm.totalRooms) || 1,
+        available: roomForm.available !== false,
+        amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
         businessId: ownerBusinessId,
       };
 
@@ -1049,7 +1079,7 @@ export function OwnerModule({
 
       setShowRoomForm(false);
       setEditingRoom(null);
-      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
       Alert.alert('Sucesso', editingRoom ? 'Quarto atualizado.' : 'Quarto criado.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível guardar o quarto.');
@@ -1551,7 +1581,9 @@ export function OwnerModule({
                     style={bizS.actionCard} 
                     activeOpacity={0.8}
                     onPress={() => {
-                      const ob = businesses.find(b=>b.name===OWNER_BUSINESS.name); if(ob){ onViewBusiness?.(ob); }
+                      if (ownerBiz) {
+                        onViewBusiness?.({ ...ownerBiz, roomTypes: roomTypes?.length ? roomTypes : (ownerBiz.roomTypes || []) });
+                      }
                     }}
                   >
                     <View style={bizS.actionIcon}><Icon name="eye" size={22} color={COLORS.red} strokeWidth={2} /></View>
@@ -2563,8 +2595,14 @@ export function OwnerModule({
                   <TextInput style={editorS.formInput} value={roomForm.pricePerNight} onChangeText={(text) => setRoomForm({...roomForm, pricePerNight: text})} placeholder="Ex: 25000 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
                   <Text style={editorS.formLabel}>Hóspedes Máx</Text>
                   <TextInput style={editorS.formInput} value={roomForm.maxGuests} onChangeText={(text) => setRoomForm({...roomForm, maxGuests: text})} placeholder="Ex: 4 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+                  <Text style={editorS.formLabel}>Nº de Quartos Disponíveis</Text>
+                  <TextInput style={editorS.formInput} value={roomForm.totalRooms} onChangeText={(text) => setRoomForm({...roomForm, totalRooms: text})} placeholder="Ex: 3" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+                  <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
+                    <Text style={editorS.formLabel}>Disponível</Text>
+                    <Switch value={roomForm.available} onValueChange={(val) => setRoomForm({...roomForm, available: val})} trackColor={{false:'#D1D5DB', true:COLORS.green}} thumbColor={COLORS.white} />
+                  </View>
                   <View style={editorS.formActions}>
-                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
+                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
                     <TouchableOpacity 
                       style={[editorS.formBtnSave, ((!roomForm.name) || isRoomLoading) && {opacity:0.5}]} 
                       disabled={!roomForm.name || isRoomLoading} 
@@ -2625,94 +2663,138 @@ export function OwnerModule({
                   cancelled:        { label:'Cancelada',         color:'#DC2626', bg:'#FEF2F2' },
                   rejected:         { label:'Rejeitado',         color:'#7C3AED', bg:'#F5F3FF' },
                 }[rb.status] || { label:rb.status, color:COLORS.grayText, bg:COLORS.grayBg };
+                const isOpen = !!roomBookingsExpanded[rb.id];
+                const toggleRb = () => setRoomBookingsExpanded(prev => ({ ...prev, [rb.id]: !prev[rb.id] }));
                 return (
-                  <View key={rb.id} style={{borderRadius:12, borderWidth:1, padding:14, marginBottom:12, backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30'}}>
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8}}>
+                  <View key={rb.id} style={{borderRadius:12, borderWidth:1, padding:14, marginBottom:8, backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30'}}>
+                    {/* Linha resumo — sempre visível */}
+                    <TouchableOpacity
+                      style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}
+                      onPress={toggleRb}
+                      activeOpacity={0.7}
+                    >
                       <View style={{flex:1}}>
                         <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{rb.guestName}</Text>
                         <Text style={{fontSize:12, color:COLORS.grayText, marginTop:1}}>{rb.guestPhone}</Text>
                       </View>
-                      <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
+                      <View style={{flexDirection:'row', alignItems:'center', gap:8}}>
+                        <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
+                          <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
+                        </View>
+                        <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.grayText} />
                       </View>
-                    </View>
-                    <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText, marginBottom:4}}>{room?.name || 'Quarto'}</Text>
-                    <View style={{flexDirection:'row', gap:16, marginBottom:4}}>
-                      <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
-                      <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
-                    </View>
-                    {(rb.adults || rb.children > 0) && (
-                      <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:4}}>
-                        👤 {rb.adults||1} adulto{(rb.adults||1)!==1?'s':''}{rb.children>0?` · ${rb.children} criança${rb.children!==1?'s':''}`:''} · {rb.rooms||1} quarto{(rb.rooms||1)!==1?'s':''}
-                      </Text>
-                    )}
-                    {(rb.rooms && rb.rooms > 1) && (
-                      <View style={{flexDirection:'row', alignItems:'center', gap:4, marginBottom:4}}>
-                        <View style={{backgroundColor:COLORS.blue+'18', paddingHorizontal:8, paddingVertical:3, borderRadius:6, flexDirection:'row', alignItems:'center', gap:4}}>
-                          <Icon name="home" size={11} color={COLORS.blue} strokeWidth={2.5}/>
-                          <Text style={{fontSize:11, fontWeight:'700', color:COLORS.blue}}>Reserva de {rb.rooms} quartos</Text>
+                    </TouchableOpacity>
+
+                    {/* Detalhes — só visíveis quando expandido */}
+                    {isOpen && (
+                      <View style={{marginTop:10, gap:4}}>
+                        <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText}}>{room?.name || 'Quarto'}</Text>
+                        <View style={{flexDirection:'row', gap:16}}>
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
+                        </View>
+                        {(rb.adults || rb.children > 0) && (
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>
+                            👤 {rb.adults||1} adulto{(rb.adults||1)!==1?'s':''}{rb.children>0?` · ${rb.children} criança${rb.children!==1?'s':''}`:''} · {rb.rooms||1} quarto{(rb.rooms||1)!==1?'s':''}
+                          </Text>
+                        )}
+                        {rb.specialRequest ? (
+                          <View style={{padding:8, backgroundColor:'#FEF9C3', borderRadius:8, borderLeftWidth:3, borderLeftColor:'#D97706'}}>
+                            <Text style={{fontSize:11, fontWeight:'700', color:'#92400E', marginBottom:1}}>Pedido especial</Text>
+                            <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.specialRequest}</Text>
+                          </View>
+                        ) : null}
+                        {rb.cancelReason && (
+                          <View style={{paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
+                            <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
+                              {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
+                            </Text>
+                            <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
+                          </View>
+                        )}
+                        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
+                          <View>
+                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
+                            {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
+                              <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
+                            )}
+                            {rb.status === 'confirmed_paid' && (
+                              <Text style={{fontSize:10, color:COLORS.green, fontWeight:'600', marginTop:2}}>✅ Pago na chegada</Text>
+                            )}
+                          </View>
+                          <View style={{flexDirection:'row', gap:8}}>
+                            {rb.status === 'pending' && (
+                              <>
+                                <TouchableOpacity
+                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                                  onPress={async () => {
+                                    setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'confirmed' }));
+                                    try {
+                                      await backendApi.confirmBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                      Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`);
+                                    } catch (err) {
+                                      setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                      Alert.alert('Erro', err?.message || 'Não foi possível confirmar.');
+                                    }
+                                  }}
+                                >
+                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
+                                  onPress={async () => {
+                                    setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'rejected' }));
+                                    try {
+                                      await backendApi.rejectBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                      Alert.alert('Recusado', `Reserva de ${rb.guestName} recusada.`);
+                                    } catch (err) {
+                                      setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                      Alert.alert('Erro', err?.message || 'Não foi possível recusar.');
+                                    }
+                                  }}
+                                >
+                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                            {rb.status === 'confirmed_unpaid' && (
+                              <TouchableOpacity
+                                style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                                onPress={async () => {
+                                  setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'confirmed_paid' }));
+                                  try {
+                                    await backendApi.confirmBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                    Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`);
+                                  } catch (err) {
+                                    setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                    Alert.alert('Erro', err?.message || 'Não foi possível registar pagamento.');
+                                  }
+                                }}
+                              >
+                                <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>💵 Marcar Pago</Text>
+                              </TouchableOpacity>
+                            )}
+                            {(rb.status === 'confirmed' || rb.status === 'confirmed_paid') && (
+                              <TouchableOpacity
+                                style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
+                                onPress={async () => {
+                                  setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'cancelled' }));
+                                  try {
+                                    await backendApi.rejectBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                    Alert.alert('Cancelado', `Reserva de ${rb.guestName} cancelada.`);
+                                  } catch (err) {
+                                    setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                    Alert.alert('Erro', err?.message || 'Não foi possível cancelar.');
+                                  }
+                                }}
+                              >
+                                <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
                         </View>
                       </View>
                     )}
-                    {rb.specialRequest ? (
-                      <View style={{marginBottom:4, padding:8, backgroundColor:'#FEF9C3', borderRadius:8, borderLeftWidth:3, borderLeftColor:'#D97706'}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:'#92400E', marginBottom:1}}>Pedido especial</Text>
-                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.specialRequest}</Text>
-                      </View>
-                    ) : null}
-                    {rb.cancelReason && (
-                      <View style={{marginTop:6, marginBottom:4, paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
-                          {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
-                        </Text>
-                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
-                      </View>
-                    )}
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
-                      <View>
-                        <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
-                        {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
-                          <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
-                        )}
-                        {rb.status === 'confirmed_paid' && (
-                          <Text style={{fontSize:10, color:COLORS.green, fontWeight:'600', marginTop:2}}>✅ Pago na chegada</Text>
-                        )}
-                      </View>
-                      <View style={{flexDirection:'row', gap:8}}>
-                        {rb.status === 'pending' && (
-                          <>
-                            <TouchableOpacity
-                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
-                              onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status: rb.payOnArrival ? 'confirmed_unpaid' : 'confirmed'} : b)); Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`); }}
-                            >
-                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
-                              onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('reject'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
-                            >
-                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
-                            </TouchableOpacity>
-                          </>
-                        )}
-                        {rb.status === 'confirmed_unpaid' && (
-                          <TouchableOpacity
-                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
-                            onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status:'confirmed_paid'} : b)); Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`); }}
-                          >
-                            <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>💵 Marcar Pago</Text>
-                          </TouchableOpacity>
-                        )}
-                        {(rb.status === 'confirmed' || rb.status === 'confirmed_paid') && (
-                          <TouchableOpacity
-                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
-                            onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('cancel'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
-                          >
-                            <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
                   </View>
                 );
               });
@@ -2729,7 +2811,7 @@ export function OwnerModule({
               <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={profS.headerTitle}>Tipos de Quarto</Text>
-            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); setShowRoomForm(true); }}>
+            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); setShowRoomForm(true); }}>
               <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
@@ -2752,7 +2834,7 @@ export function OwnerModule({
                     </View>
                   </View>
                   <View style={editorS.itemActions}>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
                       <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover', `Remover "${room.name}"?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{ const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); }}])}>
