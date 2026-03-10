@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import backendApi from '../lib/backendApi';
+import { FolioScreen } from './FolioScreen';
 
 const STATUS = {
   PENDING:     { label: 'Pendente',   color: '#D97706', bg: '#FFFBEB' },
@@ -92,7 +93,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           ) : null}
           {booking.totalPrice ? (
             <View style={rS.row}>
-              <Icon name="dollar-sign" size={13} color={COLORS.grayText} strokeWidth={2} />
+              <Icon name="payment" size={13} color={COLORS.grayText} strokeWidth={2} />
               <Text style={rS.rowText}>
                 {booking.totalPrice.toLocaleString()} Kz
                 {booking.paymentStatus === 'PAID' ? ' · ✅ Pago' : ' · ⏳ Pendente'}
@@ -101,7 +102,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           ) : null}
           {booking.notes ? (
             <View style={rS.row}>
-              <Icon name="file-text" size={13} color={COLORS.grayText} strokeWidth={2} />
+              <Icon name="briefcase" size={13} color={COLORS.grayText} strokeWidth={2} />
               <Text style={[rS.rowText, { flex: 1 }]}>{booking.notes}</Text>
             </View>
           ) : null}
@@ -118,7 +119,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                 {(booking.status === 'PENDING' || booking.status === 'CONFIRMED') && (
                   <TouchableOpacity style={[rS.btn, rS.btnGreen]} onPress={() => onAction(booking.id, 'checkin')} disabled={busy}>
                     {busy ? <ActivityIndicator size="small" color="#fff" /> : (
-                      <><Icon name="log-in" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-In</Text></>
+                      <><Icon name="reservation" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-In</Text></>
                     )}
                   </TouchableOpacity>
                 )}
@@ -130,11 +131,17 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
               </>
             )}
             {(tab === 'departures' || tab === 'guests') && booking.status === 'CHECKED_IN' && (
-              <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'checkout')} disabled={busy}>
-                {busy ? <ActivityIndicator size="small" color="#fff" /> : (
-                  <><Icon name="log-out" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-Out</Text></>
-                )}
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio')} disabled={busy}>
+                  <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />
+                  <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Folio</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'checkout')} disabled={busy}>
+                  {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+                    <><Icon name="arrow" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-Out</Text></>
+                  )}
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -153,6 +160,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [folioBooking, setFolioBooking] = useState(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -192,6 +200,14 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       noshow:   'Marcar como No-Show? O quarto será libertado.',
       confirm:  'Confirmar esta reserva?',
     };
+    // Folio não precisa de confirmação — abre directamente
+    if (action === 'folio') {
+      const allBookings = [...(data.guests || []), ...(data.arrivals || []), ...(data.departures || [])];
+      const bk = allBookings.find(b => b.id === bookingId);
+      if (bk) setFolioBooking(bk);
+      return;
+    }
+
     Alert.alert(labels[action], msgs[action], [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -233,7 +249,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
             <Text style={rS.headerSub}>{todayStr}</Text>
           </View>
           <TouchableOpacity style={rS.iconBtn} onPress={() => load(true)}>
-            <Icon name="refresh-cw" size={18} color={COLORS.blue} strokeWidth={2} />
+            <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
           </TouchableOpacity>
         </View>
 
@@ -318,6 +334,14 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
           </ScrollView>
         )}
       </View>
+      {folioBooking && (
+        <FolioScreen
+          booking={folioBooking}
+          businessId={businessId}
+          accessToken={accessToken}
+          onClose={() => { setFolioBooking(null); load(true); }}
+        />
+      )}
     </Modal>
   );
 }

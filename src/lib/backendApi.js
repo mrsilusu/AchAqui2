@@ -192,6 +192,29 @@ export const backendApi = {
     apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
   
 
+  // ─── HT — Folio + Checkout Financeiro (Sprint 3)
+  getHtFolio: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio`, { accessToken }),
+
+  addHtFolioItem: (bookingId, dto, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio`, {
+      method: 'POST', body: dto, accessToken,
+    }),
+
+  removeHtFolioItem: (bookingId, itemId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio/${itemId}`, {
+      method: 'DELETE', accessToken,
+    }),
+
+  htFinancialCheckout: (bookingId, dto, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/financial-checkout`, {
+      method: 'POST', body: dto, accessToken,
+    }),
+
+  // ─── HT — Dashboard PMS (Sprint 2)
+  getHtDashboard: (businessId, accessToken) =>
+    apiRequest(`/ht/dashboard?businessId=${businessId}`, { accessToken }),
+
   // ─── HT — Receção / PMS (Sprint 1)
   getHtArrivals: (businessId, accessToken) =>
     apiRequest(`/ht/bookings/arrivals?businessId=${businessId}`, { accessToken }),

@@ -36,6 +36,7 @@ import {
 } from '../../core/AchAqui_Core';
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { ReceptionScreen }    from '../../operations/ReceptionScreen';
+import { DashboardPMS }       from '../../operations/DashboardPMS';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
@@ -423,6 +424,7 @@ export function OwnerModule({
     });
   }, [ownerRoomBookingsProp]);
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
   const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
@@ -1364,11 +1366,11 @@ export function OwnerModule({
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Alojamento e Turismo</Text>
                   {OWNER_BUSINESS.modules?.accommodation && (
-                    <TouchableOpacity style={[bizS.actionCard, { borderColor: '#22A06B' + '30', backgroundColor: '#F0FDF4' }]} activeOpacity={0.8} onPress={() => setShowReception(true)}>
-                      <View style={[bizS.actionIcon, { backgroundColor: '#22A06B' + '20' }]}><Icon name="home" size={22} color="#22A06B" strokeWidth={2} /></View>
+                    <TouchableOpacity style={[bizS.actionCard, { borderColor: '#1565C0' + '30', backgroundColor: '#EFF6FF' }]} activeOpacity={0.8} onPress={() => setShowDashboard(true)}>
+                      <View style={[bizS.actionIcon, { backgroundColor: '#1565C0' + '20' }]}><Icon name="barChart" size={22} color="#1565C0" strokeWidth={2} /></View>
                       <View style={{flex:1}}>
-                        <Text style={[bizS.actionTitle, { color: '#15803D' }]}>Receção</Text>
-                        <Text style={bizS.actionDesc}>Check-in · Check-out · Hóspedes em casa</Text>
+                        <Text style={[bizS.actionTitle, { color: '#1565C0' }]}>Dashboard PMS</Text>
+                        <Text style={bizS.actionDesc}>Ocupação · Receção · Folio · Receita</Text>
                       </View>
                       <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
@@ -2362,9 +2364,17 @@ export function OwnerModule({
 
       {/* ROOMS EDITOR - FASE 3 */}
 {/* ── GESTÃO DE OCUPAÇÃO MODAL — Image 2 design ────────────────── */}
+      {showDashboard && (
+        <DashboardPMS
+          businessId={ownerBusinessId}
+          accessToken={accessToken}
+          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onClose={() => setShowDashboard(false)}
+        />
+      )}
       {showReception && (
         <ReceptionScreen
-          businessId={OWNER_BUSINESS?.id}
+          businessId={ownerBusinessId}
           accessToken={accessToken}
           roomTypes={OWNER_BUSINESS?.roomTypes || []}
           onClose={() => setShowReception(false)}

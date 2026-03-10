@@ -40,6 +40,7 @@ import {
   AppContext,
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
+import { DashboardPMS } from './DashboardPMS';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -816,6 +817,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
@@ -1114,6 +1116,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         </View>
         {isOwner && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
+              <Icon name="bar-chart-2" size={16} color={COLORS.white} strokeWidth={2} />
+              <Text style={hS.ownerActionBtnText}>Dashboard</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#22A06B' }]} onPress={() => setShowReception(true)}>
               <Icon name="home" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Receção</Text>
@@ -1271,6 +1277,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         />
       )}
 
+      {isOwner && showDashboard && (
+        <DashboardPMS
+          businessId={ownerBusinessPrivate?.id}
+          accessToken={ctx?.accessToken}
+          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onClose={() => setShowDashboard(false)}
+        />
+      )}
       {isOwner && showReception && (
         <ReceptionScreen
           businessId={ownerBusinessPrivate?.id}

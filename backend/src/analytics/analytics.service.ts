@@ -26,7 +26,7 @@ export class AnalyticsService {
         COALESCE(SUM(i."capacity"), 0) AS total_capacity,
         COALESCE(SUM(CASE WHEN bk."status" = 'CONFIRMED' THEN i."price" ELSE 0 END), 0) AS estimated_revenue
       FROM "Business" b
-      LEFT JOIN "table_bookings" bk ON bk."businessId" = b."id"
+      LEFT JOIN "di_table_bookings" bk ON bk."businessId" = b."id"
       LEFT JOIN "Item" i ON i."businessId" = b."id"
       WHERE b."ownerId" = ${ownerId}
     `;

@@ -45,17 +45,21 @@ export class BookingService {
       },
     };
 
-    const tableBooking = await this.prisma.diTableBooking.findFirst({
+    const tableBookingRaw = await this.prisma.diTableBooking.findFirst({
       where: {
         id: bookingId,
-        business: {
-          ownerId,
-        },
+        business: { ownerId },
       },
-      include,
+      include: { business: { select: { id: true, name: true } } },
     });
 
-    if (tableBooking) {
+    if (tableBookingRaw) {
+      // DiTableBooking não tem relação user — buscar manualmente
+      const tableUser = await this.prisma.user.findUnique({
+        where: { id: tableBookingRaw.userId },
+        select: { id: true, name: true },
+      });
+      const tableBooking = { ...tableBookingRaw, user: tableUser ?? { id: tableBookingRaw.userId, name: '' } };
       return { booking: tableBooking, bookingType: BookingTypeDto.TABLE as const };
     }
 
@@ -77,54 +81,26 @@ export class BookingService {
   }
 
   async findAllForUser(userId: string, role: UserRole) {
-    const includeForOwner = {
-      business: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+    // DiTableBooking não tem relação user no schema — includes separados por modelo
+    const htInclude = {
+      business: { select: { id: true, name: true } },
+      user: { select: { id: true, name: true, email: true } },
     };
-
-    const includeForClient = {
-      business: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+    const diInclude = {
+      business: { select: { id: true, name: true } },
     };
 
     if (role === UserRole.OWNER) {
       const [tableBookings, roomBookings] = await Promise.all([
         this.prisma.diTableBooking.findMany({
-          where: {
-            business: {
-              ownerId: userId,
-            },
-          },
-          include: includeForOwner,
-          orderBy: {
-            createdAt: 'desc',
-          },
+          where: { business: { ownerId: userId } },
+          include: diInclude,
+          orderBy: { createdAt: 'desc' },
         }),
         this.prisma.htRoomBooking.findMany({
-          where: {
-            business: {
-              ownerId: userId,
-            },
-          },
-          include: includeForOwner,
-          orderBy: {
-            createdAt: 'desc',
-          },
+          where: { business: { ownerId: userId } },
+          include: htInclude,
+          orderBy: { createdAt: 'desc' },
         }),
       ]);
 
@@ -136,22 +112,14 @@ export class BookingService {
 
     const [tableBookings, roomBookings] = await Promise.all([
       this.prisma.diTableBooking.findMany({
-        where: {
-          userId,
-        },
-        include: includeForClient,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        where: { userId },
+        include: diInclude,
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.htRoomBooking.findMany({
-        where: {
-          userId,
-        },
-        include: includeForClient,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        where: { userId },
+        include: { business: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
