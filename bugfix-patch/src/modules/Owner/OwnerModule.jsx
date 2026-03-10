@@ -35,7 +35,6 @@ import {
   renderStars, getBusinessStatus, AMENITY_ICON_MAP,
 } from '../../core/AchAqui_Core';
 import { HospitalityModule }  from '../../operations/HospitalityModule';
-import { ReceptionScreen }    from '../../operations/ReceptionScreen';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
@@ -423,7 +422,6 @@ export function OwnerModule({
     });
   }, [ownerRoomBookingsProp]);
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
-  const [showReception, setShowReception] = useState(false);
   const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
@@ -668,6 +666,26 @@ export function OwnerModule({
     updateOwnerBiz({ deals, promo: activePromo ? activePromo.title : null });
     onSyncPromoDeals?.(updatedPromotions);
   }, [updateOwnerBiz, onSyncPromoDeals]);
+
+  // ── Carregar roomTypes da DB ao entrar no modo dono ─────────────────────
+  // BUGFIX: roomTypes era inicializado com OWNER_BUSINESS (mock estático em
+  // memória). Após logout/login o mock voltava ao valor original e os quartos
+  // criados na DB nunca apareciam no editor do dono.
+  // A solução replica o mesmo padrão do AchAqui_Main.handleBusinessPress:
+  // sempre que o dono autentica e temos ownerBusinessId + accessToken,
+  // fazemos fetch e actualizamos o estado local.
+  useEffect(() => {
+    if (authRole !== 'OWNER' || !ownerBusinessId || !accessToken) return;
+
+    backendApi.getRoomsByBusiness(ownerBusinessId, accessToken)
+      .then(rooms => {
+        if (Array.isArray(rooms) && rooms.length > 0) {
+          setRoomTypes(rooms);
+          OWNER_BUSINESS.roomTypes = rooms;
+        }
+      })
+      .catch(() => {});
+  }, [authRole, ownerBusinessId, accessToken]);
 
   useEffect(() => {
     if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
@@ -1363,16 +1381,6 @@ export function OwnerModule({
                   )}
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Alojamento e Turismo</Text>
-                  {OWNER_BUSINESS.modules?.accommodation && (
-                    <TouchableOpacity style={[bizS.actionCard, { borderColor: '#22A06B' + '30', backgroundColor: '#F0FDF4' }]} activeOpacity={0.8} onPress={() => setShowReception(true)}>
-                      <View style={[bizS.actionIcon, { backgroundColor: '#22A06B' + '20' }]}><Icon name="home" size={22} color="#22A06B" strokeWidth={2} /></View>
-                      <View style={{flex:1}}>
-                        <Text style={[bizS.actionTitle, { color: '#15803D' }]}>Receção</Text>
-                        <Text style={bizS.actionDesc}>Check-in · Check-out · Hóspedes em casa</Text>
-                      </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                    </TouchableOpacity>
-                  )}
                   {OWNER_BUSINESS.modules?.accommodation && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomTypesEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} /></View>
@@ -2362,15 +2370,6 @@ export function OwnerModule({
 
       {/* ROOMS EDITOR - FASE 3 */}
 {/* ── GESTÃO DE OCUPAÇÃO MODAL — Image 2 design ────────────────── */}
-      {showReception && (
-        <ReceptionScreen
-          businessId={OWNER_BUSINESS?.id}
-          accessToken={accessToken}
-          roomTypes={OWNER_BUSINESS?.roomTypes || []}
-          onClose={() => setShowReception(false)}
-        />
-      )}
-
       {showRoomsEditor && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>

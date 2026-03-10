@@ -192,7 +192,7 @@ export const backendApi = {
     apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
   
 
-  // ─── HT — Receção / PMS (Sprint 1)
+  // ─── HT — Receção (Sprint 1 PMS)
   getHtArrivals: (businessId, accessToken) =>
     apiRequest(`/ht/bookings/arrivals?businessId=${businessId}`, { accessToken }),
   getHtDepartures: (businessId, accessToken) =>

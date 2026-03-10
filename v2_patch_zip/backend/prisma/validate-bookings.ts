@@ -162,16 +162,16 @@ async function main() {
         const business = await prisma.business.findUnique({
           where: { id: testBusiness.id },
           include: {
-            diBookings: true,
-            htBookings: true,
+            diTableBookings: true,
+            roomBookings: true,
           },
         });
 
         if (!business) return false;
 
-        const total = (business.diBookings?.length || 0) + (business.htBookings?.length || 0);
+        const total = (business.diTableBookings?.length || 0) + (business.htRoomBookings?.length || 0);
         console.log(
-          `   Owner sees: ${business.diBookings?.length || 0} table + ${business.htBookings?.length || 0} room`,
+          `   Owner sees: ${business.diTableBookings?.length || 0} table + ${business.htRoomBookings?.length || 0} room`,
         );
         return total > 0;
       },

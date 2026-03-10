@@ -163,7 +163,7 @@ async function main() {
           where: { id: testBusiness.id },
           include: {
             diBookings: true,
-            htBookings: true,
+            roomBookings: true,
           },
         });
 
