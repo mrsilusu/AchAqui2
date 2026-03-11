@@ -215,7 +215,7 @@ export const backendApi = {
   getHtDashboard: (businessId, accessToken) =>
     apiRequest(`/ht/dashboard?businessId=${businessId}`, { accessToken }),
 
-  // ─── HT — Quartos físicos ───────────────────────────────────────────────────
+  // ─── HT — Quartos físicos (CRUD individual)
   getHtRooms: (businessId, accessToken) =>
     apiRequest(`/ht/rooms?businessId=${businessId}`, { accessToken }),
   createHtRoom: (payload, accessToken) =>

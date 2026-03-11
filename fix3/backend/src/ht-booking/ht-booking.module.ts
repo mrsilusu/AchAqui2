@@ -1,3 +1,4 @@
+// backend/src/ht-booking/ht-booking.module.ts
 import { Module } from '@nestjs/common';
 import { HtBookingController } from './ht-booking.controller';
 import { HtBookingService }    from './ht-booking.service';

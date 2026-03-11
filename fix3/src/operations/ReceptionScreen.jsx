@@ -17,9 +17,9 @@ const STATUS = {
 };
 
 const TABS = [
-  { key: 'arrivals',   label: 'Chegadas (7d)', icon: 'reservation' },
-  { key: 'departures', label: 'Saídas (7d)',   icon: 'arrow'       },
-  { key: 'guests',     label: 'Em Casa',        icon: 'hotel'       },
+  { key: 'arrivals',   label: 'Chegadas', icon: 'log-in'  },
+  { key: 'departures', label: 'Saídas',   icon: 'log-out' },
+  { key: 'guests',     label: 'Em Casa',  icon: 'home'    },
 ];
 
 function fmt(dateStr, mode = 'date') {
@@ -183,8 +183,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         departures: Array.isArray(d) ? d : [],
         guests:     Array.isArray(g) ? g : [],
       });
-    } catch (e) {
-      if (alive.current) Alert.alert('Erro ao carregar', e?.message || 'Não foi possível carregar os dados da receção.');
+    } catch {
+      if (alive.current) Alert.alert('Erro', 'Não foi possível carregar os dados da receção.');
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
     }
@@ -256,9 +256,9 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         {/* Contadores */}
         <View style={rS.counters}>
           {[
-            { key: 'arrivals',   n: data.arrivals.length,   color: '#1565C0', label: 'Chegadas 7d' },
-            { key: 'departures', n: data.departures.length, color: '#D97706', label: 'Saídas 7d'   },
-            { key: 'guests',     n: data.guests.length,     color: '#22A06B', label: 'Em Casa'     },
+            { key: 'arrivals',   n: data.arrivals.length,   color: '#1565C0', label: 'Chegadas' },
+            { key: 'departures', n: data.departures.length, color: '#D97706', label: 'Saídas'   },
+            { key: 'guests',     n: data.guests.length,     color: '#22A06B', label: 'Em Casa'  },
           ].map((c, i) => (
             <React.Fragment key={c.key}>
               {i > 0 && <View style={rS.divider} />}

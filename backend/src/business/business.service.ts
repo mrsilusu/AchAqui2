@@ -77,10 +77,14 @@ export class BusinessService {
       where: { isActive: true },
       include: {
         owner: {
+          select: { id: true, name: true },
+        },
+        htRoomTypes: {
           select: {
-            id: true,
-            name: true,
-            // email e role são privados — não expor publicamente
+            id: true, name: true, description: true,
+            pricePerNight: true, maxGuests: true,
+            totalRooms: true, available: true,
+            amenities: true, photos: true,
           },
         },
       },
@@ -114,10 +118,14 @@ export class BusinessService {
       where: { id },
       include: {
         owner: {
+          select: { id: true, name: true },
+        },
+        htRoomTypes: {
           select: {
-            id: true,
-            name: true,
-            // email e role são privados — não expor publicamente
+            id: true, name: true, description: true,
+            pricePerNight: true, maxGuests: true,
+            totalRooms: true, available: true,
+            amenities: true, photos: true,
           },
         },
       },

@@ -224,7 +224,7 @@ function normalizeBusiness(rawBusiness) {
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
-    roomTypes: rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : (base.roomTypes?.length ? base.roomTypes : (meta.roomTypes || [])),
+    roomTypes: (rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || []),
     metadata: meta,
     owner: rawBusiness.owner || null,
   };

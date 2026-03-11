@@ -219,15 +219,17 @@ export class HtBookingService {
     return updated;
   }
 
-  // CHEGADAS DE HOJE — reservas com startDate = hoje, status PENDING ou CONFIRMED.
+  // CHEGADAS — próximos 7 dias (PENDING ou CONFIRMED). Se não houver hoje, mostra as próximas.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
   async getTodayArrivals(businessId: string, ownerId: string) {
     await this.assertOwnership(businessId, ownerId);
-    const { start, end } = todayRange();
+    const now   = new Date();
+    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
     return this.prisma.htRoomBooking.findMany({
       where: {
         businessId,
-        startDate: { gte: start, lte: end },
+        startDate: { gte: start, lte: end7 },
         status: { in: [HtBookingStatus.PENDING, HtBookingStatus.CONFIRMED] },
       },
       select: BOOKING_SELECT,
@@ -235,14 +237,16 @@ export class HtBookingService {
     });
   }
 
-  // SAÍDAS DE HOJE — reservas com endDate = hoje e status CHECKED_IN.
+  // SAÍDAS — próximos 7 dias com status CHECKED_IN.
   async getTodayDepartures(businessId: string, ownerId: string) {
     await this.assertOwnership(businessId, ownerId);
-    const { start, end } = todayRange();
+    const now   = new Date();
+    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
     return this.prisma.htRoomBooking.findMany({
       where: {
         businessId,
-        endDate: { gte: start, lte: end },
+        endDate: { gte: start, lte: end7 },
         status: HtBookingStatus.CHECKED_IN,
       },
       select: BOOKING_SELECT,

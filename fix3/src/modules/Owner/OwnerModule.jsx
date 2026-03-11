@@ -367,9 +367,10 @@ export function OwnerModule({
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', basePrice: '', duration: '', available: true });
   const [isServiceLoading, setIsServiceLoading] = useState(false);
   const [roomTypes, setRoomTypes]       = useState(OWNER_BUSINESS.roomTypes || []);
-  const [htRooms, setHtRooms]           = useState([]);
+  const [htRooms, setHtRooms]           = useState([]);       // quartos físicos
   const [loadingRooms, setLoadingRooms] = useState(false);
-  const [roomPhysForm, setRoomPhysForm] = useState(null); // null | { roomTypeId, number, floor, notes, editId }
+  const [roomPhysForm, setRoomPhysForm] = useState(null);     // null | { roomTypeId, number, floor, notes, editId }
+  const [savingRoom, setSavingRoom]     = useState(false);
   const [showRoomsEditor, setShowRoomsEditor] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [isRoomLoading, setIsRoomLoading] = useState(false);
@@ -566,28 +567,31 @@ export function OwnerModule({
     OWNER_BUSINESS;
   const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
 
-  // ── Quartos físicos ──────────────────────────────────────────────────────────
+  // ── Carregar quartos físicos ────────────────────────────────────────────────
   const loadHtRooms = useCallback(async () => {
     if (!ownerBusinessId || !accessToken) return;
     setLoadingRooms(true);
     try {
       const rooms = await backendApi.getHtRooms(ownerBusinessId, accessToken);
       if (Array.isArray(rooms)) setHtRooms(rooms);
-    } catch { /* sem quartos ainda */ }
+    } catch { /* silencioso — pode não ter rooms ainda */ }
     finally { setLoadingRooms(false); }
   }, [ownerBusinessId, accessToken]);
 
   const saveHtRoom = useCallback(async () => {
-    if (!roomPhysForm) return;
+    if (!roomPhysForm || !ownerBusinessId || !accessToken) return;
     if (!roomPhysForm.number?.trim()) { Alert.alert('Erro', 'O número do quarto é obrigatório.'); return; }
+    setSavingRoom(true);
     try {
       if (roomPhysForm.editId) {
+        // Editar
         await backendApi.updateHtRoom(roomPhysForm.editId, {
           number: roomPhysForm.number.trim(),
           floor:  parseInt(roomPhysForm.floor) || 1,
           notes:  roomPhysForm.notes || null,
         }, accessToken);
       } else {
+        // Criar
         await backendApi.createHtRoom({
           businessId: ownerBusinessId,
           roomTypeId: roomPhysForm.roomTypeId,
@@ -598,7 +602,9 @@ export function OwnerModule({
       }
       setRoomPhysForm(null);
       loadHtRooms();
-    } catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível guardar.'); }
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível guardar o quarto.');
+    } finally { setSavingRoom(false); }
   }, [roomPhysForm, ownerBusinessId, accessToken, loadHtRooms]);
 
   const deleteHtRoom = useCallback(async (roomId, roomNumber) => {
@@ -1089,6 +1095,11 @@ export function OwnerModule({
   const handleSaveRoom = useCallback(async () => {
     if (!roomForm.name.trim()) {
       Alert.alert('Erro', 'Nome do quarto é obrigatório.');
+      return;
+    }
+
+    if (!roomForm.pricePerNight) {
+      Alert.alert('Erro', 'Preço por noite é obrigatório.');
       return;
     }
 
@@ -2656,22 +2667,18 @@ export function OwnerModule({
 
       {/* MODAL — quarto físico individual */}
       {roomPhysForm && (
-        <Modal visible animationType="slide" transparent onRequestClose={() => setRoomPhysForm(null)}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}
-          >
-            <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={() => setRoomPhysForm(null)} />
-            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 }}>
+        <Modal visible animationType="fade" transparent onRequestClose={() => setRoomPhysForm(null)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 16 }}>
                 {roomPhysForm.editId ? 'Editar Quarto Físico' : 'Novo Quarto Físico'}
               </Text>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 }}>Número / Identificador *</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 }}>Número do quarto *</Text>
               <TextInput
                 style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 14, marginBottom: 12, color: '#111' }}
                 value={roomPhysForm.number}
                 onChangeText={v => setRoomPhysForm(f => ({ ...f, number: v }))}
-                placeholder="Ex: 101, 202, Bangalô 3, Chalé A"
+                placeholder="Ex: 101, 202, Bangalô 3"
                 placeholderTextColor="#aaa"
                 autoFocus
               />
@@ -2694,20 +2701,21 @@ export function OwnerModule({
               />
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity
-                  style={{ flex: 1, paddingVertical: 13, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center' }}
+                  style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center' }}
                   onPress={() => setRoomPhysForm(null)}
                 >
                   <Text style={{ fontWeight: '600', color: '#555' }}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={{ flex: 1, paddingVertical: 13, borderRadius: 10, backgroundColor: '#1565C0', alignItems: 'center' }}
+                  style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: savingRoom ? '#aaa' : '#1565C0', alignItems: 'center' }}
                   onPress={saveHtRoom}
+                  disabled={savingRoom}
                 >
-                  <Text style={{ fontWeight: '700', color: '#fff' }}>Guardar</Text>
+                  <Text style={{ fontWeight: '700', color: '#fff' }}>{savingRoom ? 'A guardar...' : 'Guardar'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </Modal>
       )}
 
@@ -2970,7 +2978,7 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
                       <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar Tipo</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover Tipo', `Remover "${room.name}" e todos os seus quartos físicos?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress: async ()=>{ try { await backendApi.deleteRoom(room.id, accessToken); setHtRooms(prev => prev.filter(r => r.roomTypeId !== room.id)); const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); } catch(e){ Alert.alert('Erro', e?.message||'Não foi possível remover.'); }}}])}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover', `Remover "${room.name}"?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{ const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); }}])}>
                       <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText,{color:COLORS.grayText}]}>Remover</Text>
                     </TouchableOpacity>
                   </View>
@@ -2980,39 +2988,41 @@ export function OwnerModule({
                     return (
                       <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#F0EDE6', paddingTop: 10 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            {loadingRooms ? 'A carregar...' : `Quartos físicos (${physRooms.length})`}
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                            Quartos físicos ({physRooms.length})
                           </Text>
                           <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3, paddingHorizontal: 8, backgroundColor: '#EFF6FF', borderRadius: 8 }}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#EFF6FF', borderRadius: 8 }}
                             onPress={() => setRoomPhysForm({ roomTypeId: room.id, number: '', floor: '1', notes: '', editId: null })}
                           >
-                            <Icon name="plusCircle" size={12} color="#1565C0" strokeWidth={2.5} />
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#1565C0' }}>Adicionar quarto</Text>
+                            <Icon name="plus" size={12} color="#1565C0" strokeWidth={2.5} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#1565C0' }}>Adicionar</Text>
                           </TouchableOpacity>
                         </View>
-                        {!loadingRooms && physRooms.length === 0 && (
-                          <Text style={{ fontSize: 12, color: '#bbb', fontStyle: 'italic', paddingBottom: 4 }}>
-                            Nenhum quarto físico. Clique em Adicionar para criar.
+                        {loadingRooms ? (
+                          <Text style={{ fontSize: 12, color: '#aaa', textAlign: 'center', paddingVertical: 8 }}>A carregar...</Text>
+                        ) : physRooms.length === 0 ? (
+                          <Text style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic', paddingBottom: 4 }}>
+                            Sem quartos físicos. Clique em Adicionar para criar.
                           </Text>
-                        )}
-                        {physRooms.map(pr => {
-                          const dotColor = pr.status === 'CLEAN' ? '#22A06B' : pr.status === 'DIRTY' ? '#D97706' : pr.status === 'MAINTENANCE' ? '#DC2626' : '#6B7280';
-                          return (
-                            <View key={pr.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#F7F6F2' }}>
-                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginRight: 8 }} />
+                        ) : (
+                          physRooms.map(pr => (
+                            <View key={pr.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F7F6F2' }}>
+                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: pr.status === 'CLEAN' ? '#22A06B' : pr.status === 'DIRTY' ? '#D97706' : pr.status === 'MAINTENANCE' ? '#DC2626' : '#1565C0', marginRight: 8 }} />
                               <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#111' }}>Nº {pr.number}</Text>
-                              <Text style={{ fontSize: 12, color: '#888', marginRight: 10 }}>Piso {pr.floor ?? 1}</Text>
-                              <Text style={{ fontSize: 11, color: dotColor, fontWeight: '600', marginRight: 8 }}>{pr.status}</Text>
-                              <TouchableOpacity style={{ padding: 4, marginRight: 2 }} onPress={() => setRoomPhysForm({ roomTypeId: room.id, number: pr.number, floor: String(pr.floor ?? 1), notes: pr.notes || '', editId: pr.id })}>
-                                <Icon name="edit" size={13} color={COLORS.blue} strokeWidth={2} />
+                              <Text style={{ fontSize: 12, color: '#888', marginRight: 8 }}>Piso {pr.floor ?? 1}</Text>
+                              <TouchableOpacity
+                                style={{ padding: 4, marginRight: 4 }}
+                                onPress={() => setRoomPhysForm({ roomTypeId: room.id, number: pr.number, floor: String(pr.floor ?? 1), notes: pr.notes || '', editId: pr.id })}
+                              >
+                                <Icon name="edit" size={14} color={COLORS.blue} strokeWidth={2} />
                               </TouchableOpacity>
                               <TouchableOpacity style={{ padding: 4 }} onPress={() => deleteHtRoom(pr.id, pr.number)}>
-                                <Icon name="x" size={13} color={COLORS.grayText} strokeWidth={2} />
+                                <Icon name="x" size={14} color={COLORS.grayText} strokeWidth={2} />
                               </TouchableOpacity>
                             </View>
-                          );
-                        })}
+                          ))
+                        )}
                       </View>
                     );
                   })()}

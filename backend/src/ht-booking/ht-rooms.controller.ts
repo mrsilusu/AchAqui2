@@ -1,5 +1,3 @@
-// backend/src/ht-booking/ht-rooms.controller.ts
-// Endpoint auxiliar para gerir HtRoom físicos
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
@@ -10,27 +8,25 @@ import { HtRoomsService } from './ht-rooms.service';
 @Roles(UserRole.OWNER)
 @Controller('ht/rooms')
 export class HtRoomsController {
-  constructor(private readonly htRoomsService: HtRoomsService) {}
+  constructor(private readonly s: HtRoomsService) {}
 
-  /** Lista todos os quartos físicos do negócio */
   @Get()
-  getAll(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htRoomsService.getAll(businessId, req.user.userId);
+  getAll(@Query('businessId') bId: string, @Req() req: any) {
+    return this.s.getAll(bId, req.user.userId);
   }
 
-  /** Gera HtRooms a partir dos HtRoomTypes existentes (migração/seed) */
-  @Post('seed')
-  seed(@Body() body: { businessId: string }, @Req() req: any) {
-    return this.htRoomsService.seedFromRoomTypes(body.businessId, req.user.userId);
+  @Post()
+  create(@Body() body: any, @Req() req: any) {
+    return this.s.create(req.user.userId, body);
   }
 
-  /** Actualiza estado de um quarto (housekeeping) */
-  @Patch(':id/status')
-  updateStatus(
-    @Param('id') id: string,
-    @Body() body: { status: string },
-    @Req() req: any,
-  ) {
-    return this.htRoomsService.updateStatus(id, body.status, req.user.userId);
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    return this.s.update(id, req.user.userId, body);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.s.remove(id, req.user.userId);
   }
 }
