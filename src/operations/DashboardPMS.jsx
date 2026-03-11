@@ -15,7 +15,8 @@ import {
   ScrollView, Modal, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
-import backendApi from '../lib/backendApi';
+import { backendApi } from '../lib/backendApi';
+import { Alert } from 'react-native';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -81,6 +82,22 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError]           = useState(null);
+  const [seeding, setSeeding]       = useState(false);
+
+  const seedRooms = useCallback(async () => {
+    if (!businessId || !accessToken) return;
+    setSeeding(true);
+    try {
+      const res = await backendApi.seedHtRooms(businessId, accessToken);
+      Alert.alert('Quartos gerados', res.message || 'Quartos físicos criados com sucesso.');
+      load(); // recarregar dashboard
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível gerar os quartos.');
+    } finally {
+      setSeeding(false);
+    }
+  }, [businessId, accessToken, load]);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -97,7 +114,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
       setData(result);
     } catch (e) {
       if (!alive.current) return;
-      // Falha silenciosa — mostrar dados vazios em vez de crashar
+      setError(e?.message || 'Erro ao carregar dashboard. Verifique a ligação.');
       setData(null);
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
@@ -139,6 +156,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           <View style={dS.center}>
             <ActivityIndicator size="large" color={COLORS.blue} />
             <Text style={dS.loadingText}>A carregar dashboard...</Text>
+          </View>
+        ) : error ? (
+          <View style={dS.center}>
+            <Icon name="alertCircle" size={36} color="#DC2626" strokeWidth={1.5} />
+            <Text style={dS.errorTitle}>Erro ao carregar</Text>
+            <Text style={dS.errorText}>{error}</Text>
+            <TouchableOpacity style={dS.retryBtn} onPress={() => load()}>
+              <Text style={dS.retryBtnText}>Tentar novamente</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <ScrollView
@@ -216,7 +242,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
               <TouchableOpacity style={dS.receptionBtn} onPress={onOpenReception}>
-                <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
+                <Icon name="hotel" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
@@ -226,7 +252,17 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
             <Text style={dS.sectionTitle}>Quartos</Text>
             {data?.rooms?.length === 0 || !data ? (
               <View style={dS.empty}>
-                <Text style={dS.emptyText}>Sem quartos configurados.{'\n'}Adiciona quartos em "Editar Tipos de Quarto".</Text>
+                <Icon name="hotel" size={32} color="#CCC" strokeWidth={1.5} />
+                <Text style={dS.emptyText}>{'Ainda não há quartos físicos.\nOs tipos de quarto existem mas precisam de ser gerados.'}</Text>
+                <TouchableOpacity
+                  style={[dS.retryBtn, seeding && { opacity: 0.6 }]}
+                  onPress={seedRooms}
+                  disabled={seeding}
+                >
+                  <Text style={dS.retryBtnText}>
+                    {seeding ? 'A gerar...' : 'Gerar quartos físicos'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : (
               Object.entries(roomsByFloor).map(([floor, rooms]) => (

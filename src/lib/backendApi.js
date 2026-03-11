@@ -215,6 +215,14 @@ export const backendApi = {
   getHtDashboard: (businessId, accessToken) =>
     apiRequest(`/ht/dashboard?businessId=${businessId}`, { accessToken }),
 
+  // ─── HT — Quartos físicos
+  getHtRooms: (businessId, accessToken) =>
+    apiRequest(`/ht/rooms?businessId=${businessId}`, { accessToken }),
+  seedHtRooms: (businessId, accessToken) =>
+    apiRequest('/ht/rooms/seed', { method: 'POST', body: { businessId }, accessToken }),
+  updateHtRoomStatus: (roomId, status, accessToken) =>
+    apiRequest(`/ht/rooms/${roomId}/status`, { method: 'PATCH', body: { status }, accessToken }),
+
   // ─── HT — Receção / PMS (Sprint 1)
   getHtArrivals: (businessId, accessToken) =>
     apiRequest(`/ht/bookings/arrivals?businessId=${businessId}`, { accessToken }),

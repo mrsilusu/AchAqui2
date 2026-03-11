@@ -17,9 +17,9 @@ const STATUS = {
 };
 
 const TABS = [
-  { key: 'arrivals',   label: 'Chegadas', icon: 'log-in'  },
-  { key: 'departures', label: 'Saídas',   icon: 'log-out' },
-  { key: 'guests',     label: 'Em Casa',  icon: 'home'    },
+  { key: 'arrivals',   label: 'Chegadas', icon: 'reservation'  },
+  { key: 'departures', label: 'Saídas',   icon: 'arrow' },
+  { key: 'guests',     label: 'Em Casa',  icon: 'hotel'    },
 ];
 
 function fmt(dateStr, mode = 'date') {
@@ -61,7 +61,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           <View style={[rS.badge, { backgroundColor: st.bg }]}>
             <Text style={[rS.badgeText, { color: st.color }]}>{st.label}</Text>
           </View>
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={15} color={COLORS.grayText} strokeWidth={2} />
+          <Icon name={open ? 'back' : 'chevronDown'} size={15} color={COLORS.grayText} strokeWidth={2} />
         </View>
       </TouchableOpacity>
 

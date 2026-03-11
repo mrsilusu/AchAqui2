@@ -7,7 +7,16 @@ export class HtDashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async assertOwnership(businessId: string, ownerId: string) {
-    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
+    const b = await this.prisma.business.findFirst({
+      where: {
+        id: businessId,
+        OR: [
+          { ownerId },
+          // fallback: negócio sem owner ainda atribuído mas reivindicado pelo user
+          { ownerId: null, id: businessId },
+        ],
+      },
+    });
     if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
