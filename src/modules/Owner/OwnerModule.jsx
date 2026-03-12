@@ -566,6 +566,24 @@ export function OwnerModule({
     OWNER_BUSINESS;
   const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
 
+  // ── Tipos de quarto — carregar do backend ────────────────────────────────────
+  const loadRoomTypes = useCallback(async () => {
+    if (!ownerBusinessId) return;
+    try {
+      const rooms = await backendApi.getRoomsByBusiness(ownerBusinessId);
+      if (Array.isArray(rooms)) {
+        setRoomTypes(rooms);
+        OWNER_BUSINESS.roomTypes = rooms;
+      }
+    } catch { /* sem tipos ainda */ }
+  }, [ownerBusinessId]);
+
+  useEffect(() => {
+    if (authRole === 'OWNER' && ownerBusinessId) {
+      loadRoomTypes();
+    }
+  }, [authRole, ownerBusinessId, loadRoomTypes]);
+
   // ── Quartos físicos ──────────────────────────────────────────────────────────
   const loadHtRooms = useCallback(async () => {
     if (!ownerBusinessId || !accessToken) return;
