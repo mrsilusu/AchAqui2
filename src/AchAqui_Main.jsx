@@ -35,6 +35,7 @@ import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
+import { ClaimFlow }            from './modules/Owner/ClaimFlow';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { useBusinessFilters }   from './hooks/useBusinessFilters';
@@ -442,6 +443,9 @@ function AppContent() {
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
+  // ── ClaimFlow ──────────────────────────────────────────────────────────────
+  const [showClaimFlow, setShowClaimFlow] = useState(false);
+
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
@@ -618,6 +622,7 @@ function AppContent() {
               insets={insets}
               authUser={authSession.user}
               onSaveSession={authSession.saveSession}
+              onCreateNew={() => setShowClaimFlow(true)}
             />
           )}
 
@@ -773,6 +778,14 @@ function AppContent() {
           />
         </View>
       )}
+
+      {/* ── CLAIM FLOW ──────────────────────────────────────────────────── */}
+      <ClaimFlow
+        visible={showClaimFlow}
+        onClose={() => setShowClaimFlow(false)}
+        onCreateNew={() => setShowClaimFlow(false)}
+        accessToken={authSession.accessToken}
+      />
 
       {/* ── NÍVEL 2: MÓDULOS OPERACIONAIS ─────────────────────────────── */}
       {/* Sobrepõe o BusinessDetailModal (Nível 1) — absoluteFill completo  */}

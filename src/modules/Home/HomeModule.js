@@ -778,6 +778,7 @@ function ProfileTab({
   isBusinessMode = false,
   authUser = null,
   onSaveSession = () => {},
+  onCreateNew = () => {},
 }) {
   // ── Auth state ────────────────────────────────────────────────────────────
   const [authMode, setAuthMode] = React.useState('login'); // 'login' | 'signup'
@@ -976,7 +977,7 @@ function ProfileTab({
               <TouchableOpacity
                 style={profS.actionButton}
                 activeOpacity={0.7}
-                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+                onPress={onCreateNew}
               >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
