@@ -42,6 +42,8 @@ import { useMetaAnimation }     from './hooks/useMetaAnimation';
 import { useAuthSession } from './hooks/useAuthSession';
 import { useLiveSync } from './hooks/useLiveSync';
 import { backendApi } from './lib/backendApi';
+import { AuthModal } from './modules/Auth/AuthModal';
+import { ClaimFlow } from './modules/Owner/ClaimFlow';
 
 import { sortS } from './styles/Main.styles';
 
@@ -447,6 +449,48 @@ function AppContent() {
   const [activeNavTab, setActiveNavTab]         = useState('home');
   const [activeBusinessTab, setActiveBusinessTab] = useState('dashboard');
 
+  // ── Auth Modal + Claim Flow ────────────────────────────────────────────────
+  const [showAuthModal, setShowAuthModal]   = useState(false);
+  const [authModalMode, setAuthModalMode]   = useState('signin');
+  const [showClaimFlow, setShowClaimFlow]   = useState(false);
+
+  const handleOpenLogin = useCallback((mode = 'signin') => {
+    setAuthModalMode(mode);
+    setShowAuthModal(true);
+  }, []);
+
+  const handleAuthSuccess = useCallback(async (session) => {
+    await authSession.saveSession(session);
+    if (session?.user?.role === 'OWNER') {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
+    }
+  }, [authSession]);
+
+  const handleLogout = useCallback(async () => {
+    Alert.alert(
+      'Terminar sessão',
+      'Tens a certeza que queres sair?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sair',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (authSession.refreshToken) {
+                await backendApi.logout?.({ refreshToken: authSession.refreshToken });
+              }
+            } catch { /* ignora erros de logout remoto */ }
+            await authSession.saveSession(null);
+            setIsBusinessMode(false);
+            setActiveNavTab('home');
+          },
+        },
+      ],
+    );
+  }, [authSession]);
+
   // ── Business detail ────────────────────────────────────────────────────────
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -616,6 +660,10 @@ function AppContent() {
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
+              authUser={authSession.user}
+              onLogin={handleOpenLogin}
+              onLogout={handleLogout}
+              onOpenClaimFlow={() => setShowClaimFlow(true)}
             />
           )}
 
@@ -647,6 +695,33 @@ function AppContent() {
           {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
+
+      {/* ── AUTH MODAL ──────────────────────────────── */}
+      <AuthModal
+        visible={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
+        initialMode={authModalMode}
+      />
+
+      {/* ── CLAIM FLOW ───────────────────────────────── */}
+      <ClaimFlow
+        visible={showClaimFlow}
+        onClose={() => setShowClaimFlow(false)}
+        onCreateNew={() => {
+          setShowClaimFlow(false);
+          setIsBusinessMode(true);
+          setActiveBusinessTab('settings');
+          setTimeout(() => {
+            Alert.alert(
+              'Criar negócio',
+              'Preenche as Informações Básicas para registar o teu negócio na plataforma.',
+              [{ text: 'OK' }]
+            );
+          }, 400);
+        }}
+        accessToken={authSession.accessToken}
+      />
 
       {/* ── SORT MODAL ──────────────────────────────── */}
       <Modal visible={filters.showSortModal} transparent animationType="fade" onRequestClose={() => filters.setShowSortModal(false)}>
