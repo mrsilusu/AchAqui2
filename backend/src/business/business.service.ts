@@ -143,11 +143,16 @@ export class BusinessService {
 
     return this.prisma.business.create({
       data: {
+        description: '',
+        latitude: -8.8388,
+        longitude: 13.2894,
         ...baseData,
         ...(metadata !== undefined
           ? { metadata: metadata as Prisma.InputJsonValue }
           : {}),
         ownerId,
+        isClaimed: true,
+        isActive: true,
       },
     });
   }

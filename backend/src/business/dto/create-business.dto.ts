@@ -16,15 +16,30 @@ export class CreateBusinessDto {
 
   @IsString()
   @MinLength(5)
-  description: string;
+  @IsOptional()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  municipality?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
 
+  @IsOptional()
   @IsNumber()
-  latitude: number;
+  latitude?: number;
 
+  @IsOptional()
   @IsNumber()
-  longitude: number;
+  longitude?: number;
 }
