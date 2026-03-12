@@ -59,6 +59,7 @@ import {
 } from '../../core/AchAqui_Core';
 
 import { hS, acS, fbS, spS, profS, bizS } from '../../styles/Main.styles';
+import { backendApi } from '../../lib/backendApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -775,7 +776,132 @@ function ProfileTab({
   setActiveBusinessTab = () => {},
   USER_PROFILE = USER_PROFILE_DEFAULT,
   isBusinessMode = false,
+  authUser = null,
+  onSaveSession = () => {},
 }) {
+  // ── Auth state ────────────────────────────────────────────────────────────
+  const [authMode, setAuthMode] = React.useState('login'); // 'login' | 'signup'
+  const [authEmail, setAuthEmail] = React.useState('');
+  const [authPassword, setAuthPassword] = React.useState('');
+  const [authName, setAuthName] = React.useState('');
+  const [authRole, setAuthRole] = React.useState('CLIENT');
+  const [authLoading, setAuthLoading] = React.useState(false);
+
+  const handleAuth = async () => {
+    if (!authEmail.trim() || !authPassword.trim()) {
+      Alert.alert('Erro', 'Email e password são obrigatórios.');
+      return;
+    }
+    if (authMode === 'signup' && !authName.trim()) {
+      Alert.alert('Erro', 'Nome é obrigatório.');
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      let session;
+      if (authMode === 'signup') {
+        session = await backendApi.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          name: authName.trim(),
+          role: authRole,
+        });
+      } else {
+        session = await backendApi.signIn({ email: authEmail.trim(), password: authPassword });
+      }
+      await onSaveSession(session);
+      setAuthEmail(''); setAuthPassword(''); setAuthName('');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || (authMode === 'signup' ? 'Não foi possível criar conta.' : 'Credenciais inválidas.'));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert('Sair', 'Tens a certeza que queres sair?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sair', style: 'destructive', onPress: () => onSaveSession(null) },
+    ]);
+  };
+
+  // ── Se não autenticado — mostrar formulário ───────────────────────────────
+  if (!authUser) {
+    return (
+      <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5, justifyContent: 'center' }]}>
+        <ScrollView contentContainerStyle={{ padding: 24, gap: 0 }} keyboardShouldPersistTaps="handled">
+          <Text style={{ fontSize: 26, fontWeight: '800', color: COLORS.darkText, marginBottom: 4 }}>
+            {authMode === 'login' ? 'Entrar' : 'Criar conta'}
+          </Text>
+          <Text style={{ fontSize: 14, color: COLORS.grayText, marginBottom: 24 }}>
+            {authMode === 'login' ? 'Acede à tua conta AchAqui' : 'Regista-te no AchAqui'}
+          </Text>
+
+          {authMode === 'signup' && (
+            <>
+              <Text style={authS.label}>Nome</Text>
+              <TextInput
+                style={authS.input}
+                placeholder="O teu nome"
+                placeholderTextColor={COLORS.grayText}
+                value={authName}
+                onChangeText={setAuthName}
+                autoCapitalize="words"
+              />
+            </>
+          )}
+
+          <Text style={authS.label}>Email</Text>
+          <TextInput
+            style={authS.input}
+            placeholder="email@exemplo.com"
+            placeholderTextColor={COLORS.grayText}
+            value={authEmail}
+            onChangeText={setAuthEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={authS.label}>Password</Text>
+          <TextInput
+            style={authS.input}
+            placeholder="••••••••"
+            placeholderTextColor={COLORS.grayText}
+            value={authPassword}
+            onChangeText={setAuthPassword}
+            secureTextEntry
+          />
+
+          {authMode === 'signup' && (
+            <>
+              <Text style={authS.label}>Tipo de conta</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+                {[{ key: 'CLIENT', label: '👤 Cliente' }, { key: 'OWNER', label: '🏢 Dono de Negócio' }].map(r => (
+                  <TouchableOpacity
+                    key={r.key}
+                    style={[authS.roleChip, authRole === r.key && authS.roleChipActive]}
+                    onPress={() => setAuthRole(r.key)}
+                  >
+                    <Text style={[authS.roleChipText, authRole === r.key && { color: '#fff' }]}>{r.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          <TouchableOpacity style={authS.btn} onPress={handleAuth} disabled={authLoading}>
+            <Text style={authS.btnText}>{authLoading ? 'A processar...' : (authMode === 'login' ? 'Entrar' : 'Criar conta')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={{ alignItems: 'center', marginTop: 16 }} onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
+            <Text style={{ fontSize: 14, color: COLORS.red, fontWeight: '600' }}>
+              {authMode === 'login' ? 'Não tens conta? Criar conta' : 'Já tens conta? Entrar'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
   return (
 <View style={[profS.overlay, { 
           top: insets.top,
@@ -977,6 +1103,14 @@ function ProfileTab({
                 <Text style={profS.menuLabel}>Sobre AchAqui</Text>
                 <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[profS.menuRow, { borderTopWidth: 1, borderTopColor: COLORS.grayLine, marginTop: 8, paddingTop: 16 }]}
+                activeOpacity={0.7}
+                onPress={handleLogout}
+              >
+                <Icon name="logout" size={22} color="#DC2626" strokeWidth={2} />
+                <Text style={[profS.menuLabel, { color: '#DC2626', fontWeight: '700' }]}>Sair da conta</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={profS.divider} />
@@ -1015,3 +1149,13 @@ function ProfileTab({
   // ── NAV BAR ───────────────────────────────────────────────────────────────
   );
 }
+
+const authS = {
+  label:        { fontSize: 12, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6, marginTop: 12 },
+  input:        { backgroundColor: '#F7F6F2', borderRadius: 12, padding: 14, fontSize: 15, color: COLORS.darkText, borderWidth: 1, borderColor: '#ECEAE3', marginBottom: 4 },
+  btn:          { backgroundColor: COLORS.red, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 20 },
+  btnText:      { fontSize: 15, fontWeight: '700', color: '#fff' },
+  roleChip:     { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#ECEAE3', alignItems: 'center', backgroundColor: '#F7F6F2' },
+  roleChipActive: { backgroundColor: COLORS.red, borderColor: COLORS.red },
+  roleChipText: { fontSize: 13, fontWeight: '600', color: COLORS.darkText },
+};

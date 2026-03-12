@@ -1287,7 +1287,103 @@ export function OwnerModule({
     );
   }, [accessToken]);
 
+  // ── Criar negócio (owner sem negócio) ────────────────────────────────────
+  const hasOwnBusiness = businesses?.some(b => b?.owner?.id === authUserId);
+  const [showCreateBiz, setShowCreateBiz] = React.useState(false);
+  const [bizForm, setBizForm] = React.useState({ name: '', category: 'Hotel', address: '', phone: '' });
+  const [bizLoading, setBizLoading] = React.useState(false);
+
+  const BUSINESS_CATEGORIES = ['Hotel','Restaurante','Café','Barbearia','Salão de Beleza','Clínica','Farmácia','Ginásio','Loja','Outro'];
+
+  const handleCreateBusiness = async () => {
+    if (!bizForm.name.trim()) { Alert.alert('Erro', 'Nome do negócio é obrigatório.'); return; }
+    setBizLoading(true);
+    try {
+      await backendApi.createBusiness({
+        name: bizForm.name.trim(),
+        category: bizForm.category,
+        address: bizForm.address.trim() || undefined,
+        phone: bizForm.phone.trim() || undefined,
+      }, accessToken);
+      Alert.alert('Sucesso', 'Negócio criado! A atualizar...');
+      setShowCreateBiz(false);
+      onRefreshOwnerData?.();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível criar o negócio.');
+    } finally {
+      setBizLoading(false);
+    }
+  };
+
   // ── RENDER ────────────────────────────────────────────────────────────────
+  // Se o owner não tem negócio, mostrar ecrã de criação
+  if (authRole === 'OWNER' && !hasOwnBusiness) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#F7F6F2' }}>
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={onExitOwnerMode}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={profS.headerTitle}>Criar Negócio</Text>
+            <View style={{ width: 36 }} />
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20 }}>
+            <Text style={{ fontSize: 16, color: COLORS.grayText, marginBottom: 24 }}>
+              Ainda não tens um negócio registado. Cria o teu agora para começar a gerir reservas e quartos.
+            </Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Nome do Negócio *</Text>
+            <TextInput
+              style={{ backgroundColor: '#fff', borderRadius: 12, padding: 14, fontSize: 15, color: COLORS.darkText, borderWidth: 1, borderColor: '#ECEAE3', marginBottom: 16 }}
+              placeholder="Ex: Hotel Talatona Premium"
+              placeholderTextColor="#aaa"
+              value={bizForm.name}
+              onChangeText={v => setBizForm(p => ({ ...p, name: v }))}
+            />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Categoria</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {BUSINESS_CATEGORIES.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: bizForm.category === cat ? COLORS.red : '#fff', borderWidth: 1, borderColor: bizForm.category === cat ? COLORS.red : '#ECEAE3' }}
+                    onPress={() => setBizForm(p => ({ ...p, category: cat }))}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: bizForm.category === cat ? '#fff' : COLORS.darkText }}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Endereço</Text>
+            <TextInput
+              style={{ backgroundColor: '#fff', borderRadius: 12, padding: 14, fontSize: 15, color: COLORS.darkText, borderWidth: 1, borderColor: '#ECEAE3', marginBottom: 16 }}
+              placeholder="Ex: Rua Comandante Valodia, 123, Talatona"
+              placeholderTextColor="#aaa"
+              value={bizForm.address}
+              onChangeText={v => setBizForm(p => ({ ...p, address: v }))}
+            />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.grayText, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Telefone</Text>
+            <TextInput
+              style={{ backgroundColor: '#fff', borderRadius: 12, padding: 14, fontSize: 15, color: COLORS.darkText, borderWidth: 1, borderColor: '#ECEAE3', marginBottom: 24 }}
+              placeholder="Ex: +244 923 456 789"
+              placeholderTextColor="#aaa"
+              keyboardType="phone-pad"
+              value={bizForm.phone}
+              onChangeText={v => setBizForm(p => ({ ...p, phone: v }))}
+            />
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.red, borderRadius: 14, padding: 16, alignItems: 'center' }}
+              onPress={handleCreateBusiness}
+              disabled={bizLoading}
+            >
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>{bizLoading ? 'A criar...' : 'Criar Negócio'}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1 }}>
         <View style={[profS.overlay, { 

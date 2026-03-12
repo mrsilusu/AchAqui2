@@ -616,6 +616,8 @@ function AppContent() {
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
+              authUser={authSession.user}
+              onSaveSession={authSession.saveSession}
             />
           )}
 
