@@ -5,20 +5,44 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { HtFolioItemType, HtPaymentMethod } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export class AddFolioItemDto {
+  @IsEnum(HtFolioItemType)
   type: HtFolioItemType;
+
+  @IsString()
+  @MaxLength(80)
   description: string;
+
+  @IsNumber()
+  @Min(1)
   quantity: number;
+
+  @IsNumber()
+  @Min(0.01)
   unitPrice: number;
 }
 
 export class FinancialCheckoutDto {
+  @IsEnum(HtPaymentMethod)
   paymentMethod: HtPaymentMethod;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   depositPaid?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   discountAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   discountReason?: string;
 }
 
