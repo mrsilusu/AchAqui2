@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus, UserRole } from '@prisma/client';
+import { HtBookingStatus, UserRole } from '@prisma/client';
 import { EventsGateway } from '../events/events.gateway';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -45,21 +45,25 @@ export class BookingService {
       },
     };
 
-    const tableBooking = await this.prisma.booking.findFirst({
+    const tableBookingRaw = await this.prisma.diTableBooking.findFirst({
       where: {
         id: bookingId,
-        business: {
-          ownerId,
-        },
+        business: { ownerId },
       },
-      include,
+      include: { business: { select: { id: true, name: true } } },
     });
 
-    if (tableBooking) {
+    if (tableBookingRaw) {
+      // DiTableBooking não tem relação user — buscar manualmente
+      const tableUser = await this.prisma.user.findUnique({
+        where: { id: tableBookingRaw.userId },
+        select: { id: true, name: true },
+      });
+      const tableBooking = { ...tableBookingRaw, user: tableUser ?? { id: tableBookingRaw.userId, name: '' } };
       return { booking: tableBooking, bookingType: BookingTypeDto.TABLE as const };
     }
 
-    const roomBooking = await this.prisma.roomBooking.findFirst({
+    const roomBooking = await this.prisma.htRoomBooking.findFirst({
       where: {
         id: bookingId,
         business: {
@@ -77,54 +81,26 @@ export class BookingService {
   }
 
   async findAllForUser(userId: string, role: UserRole) {
-    const includeForOwner = {
-      business: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+    // DiTableBooking não tem relação user no schema — includes separados por modelo
+    const htInclude = {
+      business: { select: { id: true, name: true } },
+      user: { select: { id: true, name: true, email: true } },
     };
-
-    const includeForClient = {
-      business: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+    const diInclude = {
+      business: { select: { id: true, name: true } },
     };
 
     if (role === UserRole.OWNER) {
       const [tableBookings, roomBookings] = await Promise.all([
-        this.prisma.booking.findMany({
-          where: {
-            business: {
-              ownerId: userId,
-            },
-          },
-          include: includeForOwner,
-          orderBy: {
-            createdAt: 'desc',
-          },
+        this.prisma.diTableBooking.findMany({
+          where: { business: { ownerId: userId } },
+          include: diInclude,
+          orderBy: { createdAt: 'desc' },
         }),
-        this.prisma.roomBooking.findMany({
-          where: {
-            business: {
-              ownerId: userId,
-            },
-          },
-          include: includeForOwner,
-          orderBy: {
-            createdAt: 'desc',
-          },
+        this.prisma.htRoomBooking.findMany({
+          where: { business: { ownerId: userId } },
+          include: htInclude,
+          orderBy: { createdAt: 'desc' },
         }),
       ]);
 
@@ -135,23 +111,15 @@ export class BookingService {
     }
 
     const [tableBookings, roomBookings] = await Promise.all([
-      this.prisma.booking.findMany({
-        where: {
-          userId,
-        },
-        include: includeForClient,
-        orderBy: {
-          createdAt: 'desc',
-        },
+      this.prisma.diTableBooking.findMany({
+        where: { userId },
+        include: diInclude,
+        orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.roomBooking.findMany({
-        where: {
-          userId,
-        },
-        include: includeForClient,
-        orderBy: {
-          createdAt: 'desc',
-        },
+      this.prisma.htRoomBooking.findMany({
+        where: { userId },
+        include: { business: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
@@ -208,15 +176,27 @@ export class BookingService {
     const bookingData = {
       startDate,
       endDate,
-      status: dto.status ?? BookingStatus.PENDING,
+      status: dto.status ?? HtBookingStatus.PENDING,
       userId,
       businessId: dto.businessId,
     };
 
+    const roomBookingData = {
+      ...bookingData,
+      guestName:  dto.guestName  ?? user.name,
+      guestPhone: dto.guestPhone ?? null,
+      adults:     dto.adults     ?? 1,
+      children:   dto.children   ?? 0,
+      rooms:      dto.rooms      ?? 1,
+      totalPrice: dto.totalPrice ?? null,
+      notes:      dto.notes      ?? null,
+      roomTypeId: dto.roomTypeId ?? null,
+    };
+
     const booking =
       bookingType === BookingTypeDto.ROOM
-        ? await this.prisma.roomBooking.create({
-            data: bookingData,
+        ? await this.prisma.htRoomBooking.create({
+            data: roomBookingData,
             include: {
               business: {
                 select: {
@@ -227,7 +207,7 @@ export class BookingService {
               },
             },
           })
-        : await this.prisma.booking.create({
+        : await this.prisma.diTableBooking.create({
             data: bookingData,
             include: {
               business: {
@@ -240,11 +220,12 @@ export class BookingService {
             },
           });
 
+    const guestLabel = dto.guestName ?? user.name;
     const ownerNotification = await this.prisma.notification.create({
       data: {
         userId: business.owner.id,
-        title: 'Nova Reserva Recebida',
-        message: `${user.name} criou uma nova reserva em ${business.name}.`,
+        title: '🛎️ Nova Reserva Recebida',
+        message: `${guestLabel} criou uma nova reserva em ${business.name}.`,
         data: {
           bookingId: booking.id,
           bookingType,
@@ -306,21 +287,21 @@ export class BookingService {
       throw new BadRequestException('Reserva não pertence ao businessId informado.');
     }
 
-    if (booking.status === BookingStatus.CANCELLED) {
+    if (booking.status === HtBookingStatus.CANCELLED) {
       throw new BadRequestException('Não é possível confirmar uma reserva cancelada.');
     }
 
     const updatedBooking =
-      booking.status === BookingStatus.CONFIRMED
+      booking.status === HtBookingStatus.CONFIRMED
         ? booking
         : bookingType === BookingTypeDto.ROOM
-          ? await this.prisma.roomBooking.update({
+          ? await this.prisma.htRoomBooking.update({
               where: { id: booking.id },
-              data: { status: BookingStatus.CONFIRMED },
+              data: { status: HtBookingStatus.CONFIRMED },
             })
-          : await this.prisma.booking.update({
+          : await this.prisma.diTableBooking.update({
               where: { id: booking.id },
-              data: { status: BookingStatus.CONFIRMED },
+              data: { status: HtBookingStatus.CONFIRMED },
             });
 
     const clientNotification = await this.prisma.notification.create({
@@ -332,7 +313,7 @@ export class BookingService {
           bookingId: booking.id,
           bookingType,
           businessId: booking.business.id,
-          status: BookingStatus.CONFIRMED,
+          status: HtBookingStatus.CONFIRMED,
         },
       },
     });
@@ -342,7 +323,7 @@ export class BookingService {
       bookingId: booking.id,
       bookingType,
       businessId: booking.business.id,
-      status: BookingStatus.CONFIRMED,
+      status: HtBookingStatus.CONFIRMED,
     });
 
     return { ...updatedBooking, bookingType };
@@ -363,16 +344,16 @@ export class BookingService {
 
     const reason = dto.reason?.trim();
     const updatedBooking =
-      booking.status === BookingStatus.CANCELLED
+      booking.status === HtBookingStatus.CANCELLED
         ? booking
         : bookingType === BookingTypeDto.ROOM
-          ? await this.prisma.roomBooking.update({
+          ? await this.prisma.htRoomBooking.update({
               where: { id: booking.id },
-              data: { status: BookingStatus.CANCELLED },
+              data: { status: HtBookingStatus.CANCELLED },
             })
-          : await this.prisma.booking.update({
+          : await this.prisma.diTableBooking.update({
               where: { id: booking.id },
-              data: { status: BookingStatus.CANCELLED },
+              data: { status: HtBookingStatus.CANCELLED },
             });
 
     const clientNotification = await this.prisma.notification.create({
@@ -386,7 +367,7 @@ export class BookingService {
           bookingId: booking.id,
           bookingType,
           businessId: booking.business.id,
-          status: BookingStatus.CANCELLED,
+          status: HtBookingStatus.CANCELLED,
           reason: reason || null,
         },
       },
@@ -397,7 +378,7 @@ export class BookingService {
       bookingId: booking.id,
       bookingType,
       businessId: booking.business.id,
-      status: BookingStatus.CANCELLED,
+      status: HtBookingStatus.CANCELLED,
       reason: reason || null,
     });
 

@@ -22,6 +22,11 @@ export class CreateRoomDto {
   @IsOptional()
   available?: boolean;
 
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  totalRooms?: number;
+
   @IsString()
   @IsOptional()
   amenities?: string; // JSON string or comma-separated

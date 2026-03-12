@@ -34,6 +34,7 @@ import { BusinessDetailModal }  from './modules/Detail/BusinessDetailModal';
 import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
+import { AdminModule }          from './modules/Admin/AdminModule';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { useBusinessFilters }   from './hooks/useBusinessFilters';
@@ -190,7 +191,23 @@ function normalizeBusiness(rawBusiness) {
     isPremium: base.isPremium || meta.isPremium || false,
     verifiedBadge: true,
     isVerified: true,
-    modules: base.modules || meta.modules || { professional: true },
+    modules: base.modules || meta.modules || (() => {
+      const cat = (rawBusiness.category || meta.category || '').toLowerCase();
+      const pid = base.primaryCategoryId || meta.primaryCategoryId || '';
+      const subs = base.subCategoryIds || meta.subCategoryIds || [];
+      const isHotel  = pid === 'hotelsTravel' || subs.includes('hotelsTravel') ||
+        cat.includes('hotel') || cat.includes('hostel') || cat.includes('pousada') || cat.includes('resort');
+      const isFood   = pid === 'restaurants' || cat.includes('restaur') || cat.includes('café') || cat.includes('bar');
+      const isBeauty = cat.includes('beleza') || cat.includes('sal\u00e3o') || cat.includes('spa') || cat.includes('beauty');
+      const isHealth = cat.includes('sa\u00fade') || cat.includes('cl\u00ednica') || cat.includes('m\u00e9dic') || cat.includes('health');
+      return {
+        ...(isHotel  && { accommodation: true }),
+        ...(isFood   && { gastronomy: true }),
+        ...(isBeauty && { beauty: true }),
+        ...(isHealth && { health: true }),
+        ...(!isHotel && !isFood && !isBeauty && !isHealth && { professional: true }),
+      };
+    })(),
     address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
     neighborhood: base.neighborhood || meta.neighborhood || '',
     phone: base.phone || meta.phone || '',
@@ -207,7 +224,7 @@ function normalizeBusiness(rawBusiness) {
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
-    roomTypes: base.roomTypes?.length ? base.roomTypes : (meta.roomTypes || []),
+    roomTypes: (rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || []),
     metadata: meta,
     owner: rawBusiness.owner || null,
   };
@@ -380,19 +397,48 @@ function AppContent() {
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
 
   // ── Reservas de quartos partilhadas (dono ↔ cliente) ──────────────────────
-  // Estado elevado para Main para que OwnerModule e HospitalityModule (via
-  // OperationalLayerRenderer) partilhem exactamente os mesmos dados.
-  // Quando o backend estiver ligado, substituir por liveSync.bookings.
-  const [ownerRoomBookings, setOwnerRoomBookings] = useState([
-    { id: 'rb_1', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
-      guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
-      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
-      adults: 2, children: 0, rooms: 1, totalPrice: 60000, status: 'confirmed' },
-    { id: 'rb_2', businessId: OWNER_BUSINESS.id, roomTypeId: '1',
-      guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
-      checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
-      adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
-  ]);
+  // Deriva directamente de liveSync.bookings (actualizado pelo Supabase Realtime).
+  // Converte o formato da API para o formato interno do HospitalityModule.
+  const ownerRoomBookings = useMemo(() => {
+    const all = liveSync.bookings;
+    if (!Array.isArray(all) || all.length === 0) return [];
+    return all
+      .filter(b => b.bookingType === 'ROOM')
+      .map(b => {
+        const toDisplay = (iso) => {
+          if (!iso) return '';
+          const d = new Date(iso);
+          return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`;
+        };
+        const checkIn  = toDisplay(b.startDate);
+        const checkOut = toDisplay(b.endDate);
+        const nights   = b.startDate && b.endDate
+          ? Math.round((new Date(b.endDate) - new Date(b.startDate)) / 86400000)
+          : 0;
+        return {
+          id:          b.id,
+          businessId:  b.businessId || b.business?.id,
+          roomTypeId:  b.roomTypeId || '1',
+          bookingType: 'ROOM',
+          guestName:   b.guestName  || b.user?.name  || 'Hóspede',
+          guestPhone:  b.guestPhone || b.user?.phone || b.user?.email || '',
+          checkIn,
+          checkOut,
+          nights,
+          adults:      b.adults    ?? 1,
+          children:    b.children  ?? 0,
+          rooms:       b.rooms     ?? 1,
+          totalPrice:  b.totalPrice ?? 0,
+          status:      b.status?.toLowerCase() ?? 'pending',
+          notes:       b.notes ?? '',
+        };
+      });
+  }, [liveSync.bookings]);
+
+  // setOwnerRoomBookings — mantido para compatibilidade com optimistic updates no HospitalityModule
+  const setOwnerRoomBookings = useCallback((updater) => {
+    // Sem-op: liveSync.bookings é a fonte de verdade; Realtime actualiza automaticamente
+  }, []);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
@@ -448,6 +494,15 @@ function AppContent() {
     meta.swipeProgress.setValue(0);
     setSelectedBusinessId(b.id);
     setShowDetail(true);
+
+    // Sempre buscar quartos da BD — actualiza se existirem, no-op se não
+    backendApi.getRoomsByBusiness(b.id).then(rooms => {
+      if (Array.isArray(rooms)) {
+        setBusinesses(prev => prev.map(biz =>
+          biz.id === b.id ? { ...biz, roomTypes: rooms } : biz
+        ));
+      }
+    }).catch(() => {});
   }, [meta.swipeProgress]);
 
   const requestLocationPermission = () => {
@@ -530,8 +585,17 @@ function AppContent() {
       <Animated.View style={meta.homeAnimatedStyle}>
         <View style={{ flex: 1, backgroundColor: '#F7F7F8' }}>
 
+          {/* Admin */}
+          {authSession.isAdmin && (
+            <AdminModule
+              accessToken={authSession.accessToken}
+              onExit={() => {}}
+              insets={insets}
+            />
+          )}
+
           {/* Cliente: todas as tabs via HomeModuleFull */}
-          {!isBusinessMode && (
+          {!isBusinessMode && !authSession.isAdmin && (
             <HomeModuleFull
               {...filters}
               activeNavTab={activeNavTab}
@@ -556,7 +620,7 @@ function AppContent() {
           )}
 
           {/* Dono */}
-          {isBusinessMode && (
+          {isBusinessMode && !authSession.isAdmin && (
             <OwnerModule
               businesses={businesses}
               activeBusinessTab={activeBusinessTab}
@@ -580,7 +644,7 @@ function AppContent() {
             />
           )}
 
-          <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />
+          {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
 
@@ -691,6 +755,11 @@ function AppContent() {
             onToggleBookmark={toggleBookmark}
             swipeProgress={meta.swipeProgress}
             layer={layer}
+            authSession={{
+              accessToken: authSession.accessToken,
+              userId: authSession.user?.id,
+              role: authSession.user?.role,
+            }}
             onClose={() => {
               // Fecha também a layer operacional se estiver activa
               if (layer.activeLayer) layer.closeImmediate();
@@ -709,7 +778,7 @@ function AppContent() {
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <OperationalLayerRenderer
             layer={layer}
-            isOwner={isBusinessMode}
+            isOwner={authSession.isOwner || isBusinessMode}
             tenantId={selectedBusiness?.id}
             accessToken={authSession.accessToken}
             createBooking={liveSync.createBooking}
@@ -717,6 +786,7 @@ function AppContent() {
             updateOwnerBiz={updateOwnerBiz}
             ownerRoomBookings={ownerRoomBookings}
             onOwnerRoomBookingsChange={setOwnerRoomBookings}
+            liveBusiness={businesses.find(b => b.id === layer.activeBusiness?.id) || layer.activeBusiness}
           />
         </View>
       )}

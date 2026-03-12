@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -65,6 +66,7 @@ export class BusinessService {
           ST_MakePoint(b."longitude", b."latitude"),
           ST_MakePoint(${longitude}, ${latitude})
         ) <= ${radiusMeters}
+        AND b."isActive" = true
         ORDER BY distance_meters ASC
       `,
     );
@@ -72,16 +74,42 @@ export class BusinessService {
 
   findAll() {
     return this.prisma.business.findMany({
+      where: { isActive: true },
       include: {
         owner: {
+          select: { id: true, name: true },
+        },
+        htRoomTypes: {
           select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
+            id: true, name: true, description: true,
+            pricePerNight: true, maxGuests: true,
+            totalRooms: true, available: true,
+            amenities: true, photos: true,
           },
         },
       },
+    });
+  }
+
+  searchByName(q: string, municipality?: string) {
+    return this.prisma.business.findMany({
+      where: {
+        isActive: true,
+        name: { contains: q, mode: 'insensitive' },
+        ...(municipality ? { municipality: { contains: municipality, mode: 'insensitive' } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        description: true,
+        municipality: true,
+        isClaimed: true,
+        source: true,
+        metadata: true,
+      },
+      take: 20,
+      orderBy: { name: 'asc' },
     });
   }
 
@@ -90,11 +118,14 @@ export class BusinessService {
       where: { id },
       include: {
         owner: {
+          select: { id: true, name: true },
+        },
+        htRoomTypes: {
           select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
+            id: true, name: true, description: true,
+            pricePerNight: true, maxGuests: true,
+            totalRooms: true, available: true,
+            amenities: true, photos: true,
           },
         },
       },
@@ -282,7 +313,8 @@ export class BusinessService {
 
     const promos = (metadata.promos as any[]) || [];
     const newPromo = {
-      id: `promo_${Date.now()}`,
+      // SEGURANÇA: UUID v4 em vez de Date.now() — previne enumeração/timing attacks.
+      id: randomUUID(),
       ...createPromoDto,
       createdAt: new Date().toISOString(),
     };
@@ -303,7 +335,9 @@ export class BusinessService {
   }
 
   async updatePromo(promoId: string, ownerId: string, updatePromoDto: any) {
-    // Find business and promo
+    // SEGURANÇA: Cross-Tenant check — filtramos SEMPRE por ownerId antes de qualquer
+    // operação. Um Owner A nunca consegue modificar promoções de Owner B,
+    // mesmo que conheça o promoId (IDOR prevenido ao nível da query).
     const businesses = await this.prisma.business.findMany({
       where: { ownerId },
       select: { id: true, metadata: true },
@@ -347,6 +381,8 @@ export class BusinessService {
   }
 
   async deletePromo(promoId: string, ownerId: string) {
+    // SEGURANÇA: Cross-Tenant check — mesmo padrão de updatePromo.
+    // A query where: { ownerId } garante isolamento entre tenants.
     const businesses = await this.prisma.business.findMany({
       where: { ownerId },
       select: { id: true, metadata: true },

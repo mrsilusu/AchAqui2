@@ -33,12 +33,14 @@ import React, { useContext,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Modal, TextInput, Alert, Switch, Platform,
+  Modal, TextInput, Alert, Switch, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import {
   sanitizeInput, validateExternalUrl, Icon, COLORS,
   AppContext,
 } from '../core/AchAqui_Core';
+import { ReceptionScreen } from './ReceptionScreen';
+import { DashboardPMS } from './DashboardPMS';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -61,6 +63,12 @@ const STATUS_CONFIG = {
   confirmed_paid:   { label:'Pago na Chegada',   color:'#22A06B', bg:'#F0FDF4' },
   cancelled:        { label:'Cancelada',         color:'#DC2626', bg:'#FEF2F2' },
   rejected:         { label:'Rejeitado',         color:'#7C3AED', bg:'#F5F3FF' },
+  PENDING:          { label:'Pendente',          color:'#D97706', bg:'#FFFBEB' },
+  CONFIRMED:        { label:'Confirmada',         color:'#1565C0', bg:'#EFF6FF' },
+  CHECKED_IN:       { label:'Em Casa',            color:'#22A06B', bg:'#F0FDF4' },
+  CHECKED_OUT:      { label:'Checkout',           color:'#6B7280', bg:'#F9FAFB' },
+  NO_SHOW:          { label:'No-Show',            color:'#DC2626', bg:'#FEF2F2' },
+  CANCELLED:        { label:'Cancelada',          color:'#7C3AED', bg:'#F5F3FF' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,6 +574,8 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                   placeholder="Cama extra, andar alto, chegada tardia..."
                   placeholderTextColor={COLORS.grayText}
                   multiline
+                  blurOnSubmit={false}
+                  returnKeyType="default"
                   maxLength={300} />
               </View>
 
@@ -669,6 +679,7 @@ function ICalSyncCard({ icalLink, onLinkChange, icalStatus, onSync }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
   const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState({});
   const FILTERS = [['all','Todas'],['pending','Pendentes'],['confirmed','Confirmadas'],['confirmed_unpaid','Aguarda Pag.'],['cancelled','Canceladas']];
 
   const filtered = bookings.filter(rb =>
@@ -676,6 +687,8 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
     filter === 'cancelled' ? (rb.status === 'cancelled' || rb.status === 'rejected') :
     rb.status === filter
   );
+
+  const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -707,53 +720,68 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
           ) : filtered.map(rb => {
             const room   = roomTypes?.find(r => r.id === rb.roomTypeId);
             const status = STATUS_CONFIG[rb.status] || { label: rb.status, color: COLORS.grayText, bg: COLORS.grayBg };
+            const isOpen = !!expanded[rb.id];
             return (
               <View key={rb.id} style={[hS.bookingCard, { backgroundColor: status.bg, borderColor: status.color + '40' }]}>
-                <View style={hS.bookingCardHeader}>
+                {/* ── Linha resumo: sempre visível, toca para expandir ── */}
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                  onPress={() => toggle(rb.id)}
+                  activeOpacity={0.7}
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={hS.bookingGuestName}>{rb.guestName}</Text>
                     <Text style={hS.bookingGuestPhone}>{rb.guestPhone}</Text>
                   </View>
-                  <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
-                    <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
-                  </View>
-                </View>
-                <Text style={hS.bookingRoomName}>{room?.name || 'Quarto'}</Text>
-                <Text style={hS.bookingDates}>📅 {rb.checkIn} → {rb.checkOut} · {rb.nights} noite{rb.nights !== 1 ? 's' : ''}</Text>
-                {(rb.adults || rb.children > 0) && (
-                  <Text style={hS.bookingGuests}>
-                    👤 {rb.adults || 1} adulto{(rb.adults || 1) !== 1 ? 's' : ''}
-                    {rb.children > 0 ? ` · ${rb.children} criança${rb.children !== 1 ? 's' : ''}` : ''}
-                    {' '}· {rb.rooms || 1} quarto{(rb.rooms || 1) !== 1 ? 's' : ''}
-                  </Text>
-                )}
-                {rb.specialRequest ? (
-                  <View style={hS.specialReqCard}>
-                    <Text style={hS.specialReqText}>📝 {rb.specialRequest}</Text>
-                  </View>
-                ) : null}
-                <View style={hS.bookingFooter}>
-                  <Text style={hS.bookingTotal}>{(rb.totalPrice || 0).toLocaleString()} Kz</Text>
-                  {rb.status === 'pending' && (
-                    <View style={hS.bookingActions}>
-                      <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
-                        <Text style={hS.rejectBtnText}>Rejeitar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
-                        <Text style={hS.approveBtnText}>Confirmar</Text>
-                      </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
+                      <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
-                  )}
-                  {rb.status === 'confirmed_unpaid' && (
-                    <TouchableOpacity style={hS.approveBtn}
-                      onPress={() => Alert.alert('Marcar Pago', `${(rb.totalPrice || 0).toLocaleString()} Kz`, [
-                        { text: 'Cancelar' },
-                        { text: 'Confirmar Pagamento', onPress: () => onStatusChange(rb.id, 'confirmed_paid') },
-                      ])}>
-                      <Text style={hS.approveBtnText}>💵 Marcar Pago</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                    <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.grayText} />
+                  </View>
+                </TouchableOpacity>
+
+                {/* ── Detalhes: só visíveis quando expandido ── */}
+                {isOpen && (
+                  <View style={{ marginTop: 10, gap: 4 }}>
+                    <Text style={hS.bookingRoomName}>{room?.name || 'Quarto'}</Text>
+                    <Text style={hS.bookingDates}>📅 {rb.checkIn} → {rb.checkOut} · {rb.nights} noite{rb.nights !== 1 ? 's' : ''}</Text>
+                    {(rb.adults || rb.children > 0) && (
+                      <Text style={hS.bookingGuests}>
+                        👤 {rb.adults || 1} adulto{(rb.adults || 1) !== 1 ? 's' : ''}
+                        {rb.children > 0 ? ` · ${rb.children} criança${rb.children !== 1 ? 's' : ''}` : ''}
+                        {' '}· {rb.rooms || 1} quarto{(rb.rooms || 1) !== 1 ? 's' : ''}
+                      </Text>
+                    )}
+                    {rb.specialRequest ? (
+                      <View style={hS.specialReqCard}>
+                        <Text style={hS.specialReqText}>📝 {rb.specialRequest}</Text>
+                      </View>
+                    ) : null}
+                    <View style={hS.bookingFooter}>
+                      <Text style={hS.bookingTotal}>{(rb.totalPrice || 0).toLocaleString()} Kz</Text>
+                      {rb.status === 'pending' && (
+                        <View style={hS.bookingActions}>
+                          <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
+                            <Text style={hS.rejectBtnText}>Rejeitar</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
+                            <Text style={hS.approveBtnText}>Confirmar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      {rb.status === 'confirmed_unpaid' && (
+                        <TouchableOpacity style={hS.approveBtn}
+                          onPress={() => Alert.alert('Marcar Pago', `${(rb.totalPrice || 0).toLocaleString()} Kz`, [
+                            { text: 'Cancelar' },
+                            { text: 'Confirmar Pagamento', onPress: () => onStatusChange(rb.id, 'confirmed_paid') },
+                          ])}>
+                          <Text style={hS.approveBtnText}>💵 Marcar Pago</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -766,14 +794,14 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
   const updateOwnerBiz = updateOwnerBizProp ?? ctx?.updateOwnerBiz ?? (() => {});
 
   // ── RBAC Zero Trust ──────────────────────────────────────────────────────
-  const isOwner = ownerMode && tenantId === business?.id;
+  const isOwner = ownerMode === true;
 
   // ── Dados privados (apenas quando isOwner) ───────────────────────────────
   const ownerRooms = useMemo(() => {
@@ -789,6 +817,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showReception, setShowReception] = useState(false);
+
+  // Overrides de status locais — aplicados sobre apiBookings para optimistic update
+  // Limpos automaticamente quando o Realtime confirma o novo status
+  const [statusOverrides, setStatusOverrides] = useState({});
 
   // ── Reservas — fonte única de verdade ─────────────────────────────────────
   // Prioridade (maior → menor):
@@ -811,8 +845,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   // Converte liveBookings (formato API) para o formato interno do HospitalityModule
   const apiBookings = useMemo(() => {
     if (!Array.isArray(liveBookings) || liveBookings.length === 0) return null;
+    if (!business?.id) return null;
     return liveBookings
-      .filter(b => b.businessId === business?.id || !b.businessId)
+      .filter(b =>
+        b.businessId === business.id &&
+        (b.bookingType === 'ROOM' || b.bookingType === 'room')
+      )
       .map(b => {
         const start = b.startDate ? new Date(b.startDate) : null;
         const end   = b.endDate   ? new Date(b.endDate)   : null;
@@ -820,10 +858,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         const toFmt  = (d) => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` : '';
         return {
           id:          b.id,
-          businessId:  b.businessId || business?.id,
-          roomTypeId:  b.roomTypeId || '1',
-          guestName:   b.user?.name  || b.guestName  || 'Cliente',
-          guestPhone:  b.user?.email || b.guestPhone || '',
+          businessId:  b.businessId,
+          roomTypeId:  b.roomTypeId || null,
+          guestName:   b.guestName  || b.user?.name  || 'Cliente',
+          guestPhone:  b.guestPhone || b.user?.email || '',
           checkIn:     toFmt(start),
           checkOut:    toFmt(end),
           nights,
@@ -840,10 +878,34 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   // apiBookings > ownerRoomBookingsProp (filtrado por negócio) > localBookings
   const sharedBookings = useMemo(() => {
     if (!ownerRoomBookingsProp) return null;
-    return ownerRoomBookingsProp.filter(b => !b.businessId || b.businessId === business?.id);
+    // Exigir businessId explícito — nunca aceitar reservas sem negócio definido
+    return ownerRoomBookingsProp.filter(b => b.businessId && b.businessId === business?.id);
   }, [ownerRoomBookingsProp, business?.id]);
 
-  const roomBookings = apiBookings ?? sharedBookings ?? localBookings;
+  const roomBookings = useMemo(() => {
+    const base = apiBookings ?? sharedBookings ?? localBookings;
+    if (Object.keys(statusOverrides).length === 0) return base;
+    return base.map(rb => statusOverrides[rb.id]
+      ? { ...rb, status: statusOverrides[rb.id] }
+      : rb
+    );
+  }, [apiBookings, sharedBookings, localBookings, statusOverrides]);
+
+  // Limpar overrides quando o Realtime confirmar o novo status
+  useEffect(() => {
+    if (!apiBookings || Object.keys(statusOverrides).length === 0) return;
+    setStatusOverrides(prev => {
+      const next = { ...prev };
+      let changed = false;
+      apiBookings.forEach(rb => {
+        if (next[rb.id] && rb.status === next[rb.id]) {
+          delete next[rb.id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [apiBookings]);
 
   const setRoomBookings = useCallback((updater) => {
     // Se temos estado partilhado, propagar para o Main (e portanto para o OwnerModule)
@@ -879,8 +941,41 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     }
     setIcalStatus({ loaded: false, ranges: [], error: null, lastSync: null });
     try {
-      const res  = await fetch(url);
-      const text = await res.text();
+      const res = await fetch(url);
+
+      // SEGURANÇA: Limite de tamanho — previne DoS por ficheiro .ics gigante (Zip Bomb).
+      // Um ficheiro iCal legítimo raramente ultrapassa 1 MB.
+      const MAX_ICAL_BYTES = 1 * 1024 * 1024; // 1 MB
+      const contentLength = res.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > MAX_ICAL_BYTES) {
+        setIcalStatus({ loaded: false, ranges: [], error: 'Ficheiro iCal demasiado grande (máx. 1 MB).', lastSync: null });
+        return;
+      }
+
+      // Leitura com abort se o stream ultrapassar o limite
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('Não foi possível ler a resposta.');
+      let received = 0;
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.length;
+        if (received > MAX_ICAL_BYTES) {
+          await reader.cancel();
+          setIcalStatus({ loaded: false, ranges: [], error: 'Ficheiro iCal demasiado grande (máx. 1 MB).', lastSync: null });
+          return;
+        }
+        chunks.push(value);
+      }
+      const text = new TextDecoder().decode(
+        chunks.reduce((acc, chunk) => {
+          const merged = new Uint8Array(acc.length + chunk.length);
+          merged.set(acc); merged.set(chunk, acc.length);
+          return merged;
+        }, new Uint8Array(0))
+      );
+
       const ranges = parseIcalText(text);
       const now  = new Date();
       const lastSync = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -929,8 +1024,18 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         await onCreateBooking({
           businessId: business.id,
           bookingType: 'ROOM',
-          startDate: toISO(booking.checkIn),
-          endDate: toISO(booking.checkOut),
+          startDate:   toISO(booking.checkIn),
+          endDate:     toISO(booking.checkOut),
+          guestName:   booking.guestName   || undefined,
+          guestPhone:  booking.guestPhone  || undefined,
+          adults:      booking.adults      ?? 1,
+          children:    booking.children    ?? 0,
+          rooms:       booking.rooms       ?? 1,
+          // SEGURANÇA: totalPrice NÃO é enviado ao backend.
+          // O backend recalcula sempre o preço a partir das tarifas na DB.
+          // Enviar o preço do frontend permitiria manipulação de valor (ex: 50.000 Kz → 1 Kz).
+          notes:       booking.notes       || undefined,
+          roomTypeId:  booking.roomTypeId  || undefined,
         });
 
         // Optimistic update: adicionar ao estado partilhado imediatamente
@@ -972,15 +1077,26 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, [business.id, onCreateBooking, setRoomBookings]);
 
   // ── Mudar status de reserva (modo dono) ──────────────────────────────────
-  const handleStatusChange = useCallback((bookingId, newStatus) => {
-    if (!isOwner) return; // RBAC guard
-    setRoomBookings(prev => prev.map(rb => rb.id === bookingId ? { ...rb, status: newStatus } : rb));
-  }, [isOwner]);
+  const handleStatusChange = useCallback(async (bookingId, newStatus) => {
+    if (!isOwner) return;
+    setStatusOverrides(prev => ({ ...prev, [bookingId]: newStatus }));
+    try {
+      if (typeof onStatusChangeProp === 'function') {
+        await onStatusChangeProp(bookingId, newStatus);
+      }
+    } catch (err) {
+      setStatusOverrides(prev => { const n = { ...prev }; delete n[bookingId]; return n; });
+      Alert.alert('Erro', err?.message || 'Não foi possível actualizar a reserva.');
+    }
+  }, [isOwner, onStatusChangeProp]);
 
   const rooms = business?.roomTypes || [];
   const filteredRooms = guestCount > 0 ? rooms.filter(r => r.maxGuests >= guestCount) : rooms;
-  const activeBookings = roomBookings.filter(rb => rb.businessId === business?.id);
-  const pendingCount   = activeBookings.filter(rb => rb.status === 'pending').length;
+  const activeBookings = roomBookings.filter(rb =>
+    rb.businessId === business?.id &&
+    (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
+  );
+  const pendingCount = activeBookings.filter(rb => rb.status === 'pending').length;
 
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
@@ -1000,6 +1116,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         </View>
         {isOwner && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
+              <Icon name="bar-chart-2" size={16} color={COLORS.white} strokeWidth={2} />
+              <Text style={hS.ownerActionBtnText}>Dashboard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#22A06B' }]} onPress={() => setShowReception(true)}>
+              <Icon name="home" size={16} color={COLORS.white} strokeWidth={2} />
+              <Text style={hS.ownerActionBtnText}>Receção</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={hS.ownerActionBtn} onPress={() => setShowBookingsManager(true)}>
               {pendingCount > 0 && (
                 <View style={hS.pendingBadge}>
@@ -1017,18 +1141,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         )}
       </View>
 
-      {/* ── iCAL (só dono) ─────────────────────────────────────────── */}
-      {isOwner && (
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-          <ICalSyncCard
-            icalLink={icalLink}
-            onLinkChange={handleIcalChange}
-            icalStatus={icalStatus}
-            onSync={handleSync}
-          />
-        </View>
-      )}
-
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       {/* ── SELETOR DE DATAS ────────────────────────────────────────── */}
       <View style={hS.dateSection}>
         <Text style={hS.dateSectionTitle}>📅 Selecionar Datas</Text>
@@ -1144,6 +1262,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         )}
       </View>
 
+      </ScrollView>
+
       {/* ── MODAIS ──────────────────────────────────────────────────── */}
       {bookingRoom && (
         <BookingModal
@@ -1157,6 +1277,22 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         />
       )}
 
+      {isOwner && showDashboard && (
+        <DashboardPMS
+          businessId={ownerBusinessPrivate?.id}
+          accessToken={ctx?.accessToken}
+          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onClose={() => setShowDashboard(false)}
+        />
+      )}
+      {isOwner && showReception && (
+        <ReceptionScreen
+          businessId={ownerBusinessPrivate?.id}
+          accessToken={ctx?.accessToken}
+          roomTypes={ownerBusinessPrivate?.roomTypes || []}
+          onClose={() => setShowReception(false)}
+        />
+      )}
       {isOwner && showBookingsManager && (
         <BookingsManager
           bookings={activeBookings}
@@ -1256,9 +1392,9 @@ const hS = StyleSheet.create({
                       elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
   roomCardUnavailable: { opacity: 0.75, borderColor: '#FCA5A5' },
   roomHeader:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
-  roomName:         { fontSize: 15, fontWeight: '700', color: '#111111', flex: 1, marginRight: 12 },
-  roomDesc:         { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
-  roomPriceWrap:    { alignItems: 'flex-end' },
+  roomName:         { fontSize: 15, fontWeight: '700', color: '#111111', flexShrink: 1, flexWrap: 'wrap', marginRight: 8 },
+  roomDesc:         { fontSize: 12, color: '#8A8A8A', marginTop: 2, flexShrink: 1 },
+  roomPriceWrap:    { alignItems: 'flex-end', flexShrink: 0, minWidth: 80 },
   roomPrice:        { fontSize: 14, fontWeight: '800', color: '#D32323' },
   roomPriceUnit:    { fontSize: 10, color: '#8A8A8A' },
   amenRow:          { marginBottom: 10 },

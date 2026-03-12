@@ -20,8 +20,8 @@ import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
-import { CreateRoomDto } from './dto/create-room.dto';
-import { UpdateRoomDto } from './dto/update-room.dto';
+import { CreateRoomTypeDto } from './dto/create-room-type.dto';
+import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
 import { ItemService } from './item.service';
 
 @Controller('items')
@@ -180,40 +180,40 @@ export class ItemController {
   }
 
   // ─────────────────────────────────────────────────────
-  // ROOMS ENDPOINTS (Secção 7 — Rooms Editor)
+  // ROOM TYPES ENDPOINTS — tabela dedicada room_types
   // ─────────────────────────────────────────────────────
 
   @Get('rooms/by-business')
   @Public()
   findRoomsByBusiness(@Query('businessId') businessId: string) {
-    return this.itemService.findRoomsByBusiness(businessId);
+    return this.itemService.getRoomsByBusiness(businessId);
   }
 
   @Post('rooms')
   @Roles(UserRole.OWNER)
-  createRoom(
+  createRoomType(
     @Req() req: { user: { userId: string } },
-    @Body() createRoomDto: CreateRoomDto,
+    @Body() dto: CreateRoomTypeDto,
   ) {
-    return this.itemService.createRoom(req.user.userId, createRoomDto);
+    return this.itemService.createRoomType(req.user.userId, dto);
   }
 
   @Patch('rooms/:id')
   @Roles(UserRole.OWNER)
-  updateRoom(
+  updateRoomType(
     @Param('id') id: string,
     @Req() req: { user: { userId: string } },
-    @Body() updateRoomDto: UpdateRoomDto,
+    @Body() dto: UpdateRoomTypeDto,
   ) {
-    return this.itemService.updateRoom(id, req.user.userId, updateRoomDto);
+    return this.itemService.updateRoomType(id, req.user.userId, dto);
   }
 
   @Delete('rooms/:id')
   @Roles(UserRole.OWNER)
-  removeRoom(
+  removeRoomType(
     @Param('id') id: string,
     @Req() req: { user: { userId: string } }
   ) {
-    return this.itemService.removeRoom(id, req.user.userId);
+    return this.itemService.removeRoomType(id, req.user.userId);
   }
 }

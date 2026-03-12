@@ -32,6 +32,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
+import { apiRequest } from '../../lib/backendApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 300;
@@ -132,6 +133,7 @@ export function BusinessDetailModal({
   swipeProgress,
   onClose,
   layer,  // useOperationalLayer() criado externamente (Main) — Nível 2 acima
+  authSession = null,  // { accessToken, userId, role }
 }) {
   const insets  = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
@@ -165,6 +167,8 @@ export function BusinessDetailModal({
   const [reviewSort,        setReviewSort]          = useState('recent');
   const [reviewFilter,      setReviewFilter]        = useState('all');
   const [showReviewStats,   setShowReviewStats]     = useState(false);
+  const [claimLoading,      setClaimLoading]        = useState(false);
+  const [claimDone,         setClaimDone]           = useState(false);
 
   const scrollRef      = useRef(null);
   const sectionOffsets = useRef({});
@@ -290,6 +294,39 @@ export function BusinessDetailModal({
     Share.share({ message: `${business.name} — ${business.address || 'Luanda, Angola'}` });
   }, [business]);
 
+  const handleClaim = useCallback(async () => {
+    if (!authSession?.accessToken) {
+      Alert.alert('Sessão expirada', 'Faz login novamente para reivindicar este negócio.');
+      return;
+    }
+    Alert.alert(
+      'Reivindicar negócio',
+      `Tens a certeza que queres reivindicar "${business.name}"? A tua candidatura será analisada pelo admin.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Reivindicar',
+          onPress: async () => {
+            setClaimLoading(true);
+            try {
+              await apiRequest(`/claims/${business.id}`, {
+                method: 'POST',
+                body: { evidence: `Pedido via app — ${business.name}` },
+                accessToken: authSession.accessToken,
+              });
+              setClaimDone(true);
+              Alert.alert('✅ Pedido enviado', 'O teu pedido foi enviado. Receberás uma notificação quando for analisado.');
+            } catch (err) {
+              Alert.alert('Erro', err?.message || 'Não foi possível enviar o pedido.');
+            } finally {
+              setClaimLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [authSession, business]);
+
   const handleCall = useCallback(() => {
     if (business.phone) Linking.openURL(`tel:${business.phone}`);
   }, [business]);
@@ -386,6 +423,31 @@ export function BusinessDetailModal({
               <Text style={s.photoCounterText}>{currentPhotoIndex + 1} / {photos.length}</Text>
             </View>
           )}
+          {/* Botão reivindicar — flutuante sobre a foto, canto inferior esquerdo */}
+          {!business.isClaimed && authSession?.accessToken && authSession?.role !== 'ADMIN' && (
+            <TouchableOpacity
+              style={[s.claimHeroBadge, claimDone && s.claimHeroBadgeDone]}
+              onPress={claimDone ? null : handleClaim}
+              activeOpacity={claimDone ? 1 : 0.85}
+              disabled={claimLoading}
+            >
+              <Icon
+                name={claimDone ? 'check' : 'flag'}
+                size={12}
+                color={claimDone ? '#16a34a' : COLORS.white}
+                strokeWidth={2.5}
+              />
+              <Text style={[s.claimHeroBadgeText, claimDone && { color: '#16a34a' }]}>
+                {claimDone ? 'Pedido enviado' : 'Reivindicar'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {business.isClaimed && business.ownerId === authSession?.userId && (
+            <View style={s.claimHeroBadgeDone}>
+              <Icon name="check" size={12} color="#16a34a" strokeWidth={2.5} />
+              <Text style={[s.claimHeroBadgeText, { color: '#16a34a' }]}>És o dono</Text>
+            </View>
+          )}
         </Animated.View>
 
         {/* ── INFO STRIP — branco, abaixo do hero ── */}
@@ -426,22 +488,19 @@ export function BusinessDetailModal({
           </View>
         </View>
 
-        {/* ── INICIE UMA AVALIAÇÃO ──────────────────────────────────── */}
+        {/* ── AVALIAÇÃO + SOCIAL — secção compacta ─────────────────── */}
         <View style={s.ratingSection}>
-          <Text style={s.ratingTitle}>INICIE UMA AVALIAÇÃO</Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 6 }}>
-            {[1,2,3,4,5].map(i => (
-              <TouchableOpacity key={i} onPress={() => setRatingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-                <Text style={{ fontSize: 30, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={s.ratingCta}>Toque para avaliar</Text>
-        </View>
-
-        {/* ── SOCIAL STATS + BOTÕES ────────────────────────────────── */}
-        <View style={s.socialSection}>
-          <View style={s.socialStats}>
+          {/* Linha 1: estrelas + stats inline */}
+          <View style={s.ratingRow}>
+            <Text style={s.ratingTitle}>Avaliar</Text>
+            <View style={s.starsRow}>
+              {[1,2,3,4,5].map(i => (
+                <TouchableOpacity key={i} onPress={() => setRatingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                  <Text style={{ fontSize: 20, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={s.statDivider} />
             <View style={s.statCol}>
               <Text style={s.statValue}>{business.followers != null ? business.followers.toLocaleString() : '1243'}</Text>
               <Text style={s.statLabel}>Seguidores</Text>
@@ -452,13 +511,15 @@ export function BusinessDetailModal({
               <Text style={s.statLabel}>Check-ins</Text>
             </View>
           </View>
+
+          {/* Linha 2: botões sociais */}
           <View style={s.socialBtnsRow}>
             <TouchableOpacity
               style={[s.socialBtn, followed && s.socialBtnActive]}
               onPress={() => setFollowed(p => !p)}
               activeOpacity={0.8}
             >
-              <Icon name={followed ? 'check' : 'save'} size={14} color={followed ? COLORS.white : COLORS.darkText} strokeWidth={2} />
+              <Icon name={followed ? 'check' : 'save'} size={13} color={followed ? COLORS.white : COLORS.darkText} strokeWidth={2} />
               <Text style={[s.socialBtnText, followed && s.socialBtnTextActive]}>{followed ? 'A seguir' : 'Seguir'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -466,11 +527,11 @@ export function BusinessDetailModal({
               onPress={() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); }}
               activeOpacity={0.8}
             >
-              <Icon name="checkin" size={14} color={COLORS.darkText} strokeWidth={1.5} />
+              <Icon name="checkin" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Check-in</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.socialBtn} onPress={() => onToggleBookmark?.(business.id)} activeOpacity={0.8}>
-              <Icon name="bookmark" size={14} color={COLORS.darkText} strokeWidth={1.5} />
+              <Icon name="bookmark" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Guardar</Text>
             </TouchableOpacity>
           </View>
@@ -832,19 +893,21 @@ const s = StyleSheet.create({
   priceText:         { fontSize: 11, color: '#8A8A8A', fontWeight: '600' },
 
   // Rating starter
-  ratingSection:     { backgroundColor: '#FFFFFF', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#EBEBEB', alignItems: 'center' },
-  ratingTitle:       { fontSize: 11, color: '#8A8A8A', fontWeight: '700', letterSpacing: 0.8, marginBottom: 10 },
+  ratingSection:     { backgroundColor: '#FFFFFF', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#EBEBEB' },
+  ratingRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  ratingTitle:       { fontSize: 11, color: '#8A8A8A', fontWeight: '700', letterSpacing: 0.5 },
+  starsRow:          { flexDirection: 'row', gap: 3, flex: 1 },
   ratingCta:         { fontSize: 11, color: '#8A8A8A', fontWeight: '600' },
 
   // Social
-  socialSection:     { backgroundColor: '#FFFFFF', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#EBEBEB' },
-  socialStats:       { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginBottom: 12 },
+  socialSection:     { backgroundColor: '#FFFFFF', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#EBEBEB' },
+  socialStats:       { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginBottom: 10 },
   statCol:           { alignItems: 'center' },
-  statValue:         { fontSize: 22, fontWeight: '700', color: '#111111' },
-  statLabel:         { fontSize: 11, color: '#8A8A8A', marginTop: 3 },
-  statDivider:       { width: 1, height: 40, backgroundColor: '#EBEBEB' },
+  statValue:         { fontSize: 15, fontWeight: '700', color: '#111111' },
+  statLabel:         { fontSize: 10, color: '#8A8A8A', marginTop: 1 },
+  statDivider:       { width: 1, height: 26, backgroundColor: '#EBEBEB' },
   socialBtnsRow:     { flexDirection: 'row', gap: 8 },
-  socialBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EBEBEB', borderRadius: 20, paddingVertical: 10, gap: 6 },
+  socialBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EBEBEB', borderRadius: 20, paddingVertical: 8, gap: 5 },
   socialBtnActive:   { backgroundColor: COLORS.red || '#D32323', borderColor: COLORS.red || '#D32323' },
   socialBtnText:     { fontSize: 12, fontWeight: '700', color: '#111111' },
   socialBtnTextActive: { color: '#FFFFFF' },
@@ -925,6 +988,23 @@ const s = StyleSheet.create({
   viewAllText:       { fontSize: 12, color: '#D32323', fontWeight: '700', textAlign: 'center' },
   addPhotoBtn:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#EBEBEB', marginTop: 4 },
   addPhotoText:      { fontSize: 13, fontWeight: '600', color: '#111111' },
+  claimHeroBadge: {
+    position: 'absolute', bottom: 14, left: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.52)',
+    paddingVertical: 6, paddingHorizontal: 11,
+    borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+  },
+  claimHeroBadgeDone: {
+    position: 'absolute', bottom: 14, left: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(240,255,244,0.92)',
+    paddingVertical: 6, paddingHorizontal: 11,
+    borderRadius: 20,
+    borderWidth: 1, borderColor: '#16a34a40',
+  },
+  claimHeroBadgeText: { fontSize: 12, fontWeight: '700', color: COLORS.white, letterSpacing: 0.2 },
 
   // Q&A
   qaSection:         { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },

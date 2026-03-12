@@ -399,68 +399,154 @@ export class ItemService {
   // ROOMS METHODS (Secção 7 — Rooms Editor)
   // ─────────────────────────────────────────────────────
 
-  findRoomsByBusiness(businessId: string) {
-    if (!businessId) {
-      throw new BadRequestException('businessId é obrigatório.');
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // ROOM TYPES — tabela dedicada room_types
+  // ─────────────────────────────────────────────────────────────────────────
 
-    return this.prisma.item.findMany({
+  // ─── Helpers HtRoom ──────────────────────────────────────────────────────
+  private async nextRoomNumber(businessId: string): Promise<string> {
+    const existing = await this.prisma.htRoom.findMany({
       where: { businessId },
-      orderBy: { createdAt: 'desc' },
+      select: { number: true },
+    });
+    const nums = existing.map(r => parseInt(r.number, 10)).filter(n => !isNaN(n));
+    const max  = nums.length ? Math.max(...nums) : 100;
+    return String(max + 1);
+  }
+
+  private async createPhysicalRooms(
+    businessId: string, roomTypeId: string, total: number, floor = 1,
+  ): Promise<void> {
+    for (let i = 0; i < total; i++) {
+      const number = await this.nextRoomNumber(businessId);
+      await this.prisma.htRoom.create({
+        data: { businessId, roomTypeId, number, floor, status: 'CLEAN' },
+      });
+    }
+  }
+
+  private async syncPhysicalRooms(
+    businessId: string, roomTypeId: string, newTotal: number, floor = 1,
+  ): Promise<void> {
+    const current = await this.prisma.htRoom.findMany({
+      where: { businessId, roomTypeId },
+      include: {
+        bookings: { where: { status: { in: ['CONFIRMED', 'CHECKED_IN', 'PENDING'] } } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const diff = newTotal - current.length;
+    if (diff > 0) {
+      for (let i = 0; i < diff; i++) {
+        const number = await this.nextRoomNumber(businessId);
+        await this.prisma.htRoom.create({
+          data: { businessId, roomTypeId, number, floor, status: 'CLEAN' },
+        });
+      }
+    } else if (diff < 0) {
+      const removable = current
+        .filter(r => r.bookings.length === 0 && r.status === 'CLEAN')
+        .slice(0, Math.abs(diff));
+      for (const r of removable) {
+        await this.prisma.htRoom.delete({ where: { id: r.id } });
+      }
+    }
+  }
+
+    async getRoomsByBusiness(businessId: string) {
+    if (!businessId) throw new BadRequestException('businessId é obrigatório.');
+    return this.prisma.htRoomType.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'asc' },
     });
   }
 
-  async createRoom(ownerId: string, createRoomDto: any) {
+  async createRoomType(ownerId: string, dto: any) {
     const business = await this.prisma.business.findUnique({
-      where: { id: createRoomDto.businessId },
+      where: { id: dto.businessId },
       select: { id: true, ownerId: true },
     });
-
     if (!business) throw new NotFoundException('Estabelecimento não encontrado.');
     if (business.ownerId !== ownerId)
-      throw new ForbiddenException('Apenas o proprietário pode adicionar quartos.');
+      throw new ForbiddenException('Apenas o proprietário pode adicionar tipos de quarto.');
 
-    return this.prisma.item.create({
+    const roomType = await this.prisma.htRoomType.create({
       data: {
-        name: createRoomDto.name,
-        description: createRoomDto.description || '',
-        price: createRoomDto.pricePerNight,
-        businessId: createRoomDto.businessId,
-        capacity: createRoomDto.maxGuests,
+        businessId:        dto.businessId,
+        name:              dto.name,
+        description:       dto.description       ?? '',
+        pricePerNight:     dto.pricePerNight,
+        maxGuests:         dto.maxGuests          ?? 2,
+        totalRooms:        dto.totalRooms         ?? 1,
+        available:         dto.available          !== false,
+        amenities:         dto.amenities          ?? [],
+        minNights:         dto.minNights          ?? 1,
+        taxRate:           dto.taxRate            ?? 0,
+        weekendMultiplier: dto.weekendMultiplier  ?? 1.0,
+        seasonalRates:     dto.seasonalRates      ?? undefined,
+        photos:            dto.photos             ?? [],
       },
     });
+
+    // Criar quartos físicos (HtRoom) automaticamente
+    const total = dto.totalRooms ?? 1;
+    const floor = dto.floor ?? 1;
+    await this.createPhysicalRooms(dto.businessId, roomType.id, total, floor);
+
+    return roomType;
   }
 
-  async updateRoom(id: string, ownerId: string, updateRoomDto: any) {
-    const item = await this.prisma.item.findUnique({
+  async updateRoomType(id: string, ownerId: string, dto: any) {
+    const room = await this.prisma.htRoomType.findUnique({
+      where: { id },
+      include: { business: { select: { ownerId: true, id: true } } },
+    });
+    if (!room) throw new NotFoundException('Tipo de quarto não encontrado.');
+    if (room.business.ownerId !== ownerId)
+      throw new ForbiddenException('Apenas o proprietário pode editar tipos de quarto.');
+
+    const data: any = {};
+    if (dto.name              !== undefined) data.name              = dto.name;
+    if (dto.description       !== undefined) data.description       = dto.description;
+    if (dto.pricePerNight     !== undefined) data.pricePerNight     = dto.pricePerNight;
+    if (dto.maxGuests         !== undefined) data.maxGuests         = dto.maxGuests;
+    if (dto.totalRooms        !== undefined) data.totalRooms        = dto.totalRooms;
+    if (dto.available         !== undefined) data.available         = dto.available;
+    if (dto.amenities         !== undefined) data.amenities         = dto.amenities;
+    if (dto.minNights         !== undefined) data.minNights         = dto.minNights;
+    if (dto.taxRate           !== undefined) data.taxRate           = dto.taxRate;
+    if (dto.weekendMultiplier !== undefined) data.weekendMultiplier = dto.weekendMultiplier;
+    if (dto.seasonalRates     !== undefined) data.seasonalRates     = dto.seasonalRates as any;
+    if (dto.photos            !== undefined) data.photos            = dto.photos;
+
+    const updated = await this.prisma.htRoomType.update({ where: { id }, data });
+
+    // Sincronizar quartos físicos se totalRooms foi alterado
+    if (dto.totalRooms !== undefined && dto.totalRooms !== room.totalRooms) {
+      await this.syncPhysicalRooms(room.businessId, id, dto.totalRooms, dto.floor ?? 1);
+    }
+
+    return updated;
+  }
+
+  async removeRoomType(id: string, ownerId: string) {
+    const room = await this.prisma.htRoomType.findUnique({
       where: { id },
       include: { business: { select: { ownerId: true } } },
     });
+    if (!room) throw new NotFoundException('Tipo de quarto não encontrado.');
+    if (room.business.ownerId !== ownerId)
+      throw new ForbiddenException('Apenas o proprietário pode remover tipos de quarto.');
 
-    if (!item) throw new NotFoundException('Quarto não encontrado.');
-    if (item.business.ownerId !== ownerId)
-      throw new ForbiddenException('Apenas o proprietário pode editar quartos.');
-
-    const dataToUpdate: any = {};
-    if (updateRoomDto.name) dataToUpdate.name = updateRoomDto.name;
-    if (updateRoomDto.description) dataToUpdate.description = updateRoomDto.description;
-    if (updateRoomDto.pricePerNight !== undefined) dataToUpdate.price = updateRoomDto.pricePerNight;
-    if (updateRoomDto.maxGuests !== undefined) dataToUpdate.capacity = updateRoomDto.maxGuests;
-
-    return this.prisma.item.update({ where: { id }, data: dataToUpdate });
-  }
-
-  async removeRoom(id: string, ownerId: string) {
-    const item = await this.prisma.item.findUnique({
-      where: { id },
-      include: { business: { select: { ownerId: true } } },
+    // Remover quartos físicos sem reservas activas
+    await this.prisma.htRoom.deleteMany({
+      where: {
+        roomTypeId: id,
+        bookings: { none: { status: { in: ['CONFIRMED', 'CHECKED_IN', 'PENDING'] } } },
+      },
     });
 
-    if (!item) throw new NotFoundException('Quarto não encontrado.');
-    if (item.business.ownerId !== ownerId)
-      throw new ForbiddenException('Apenas o proprietário pode remover quartos.');
-
-    await this.prisma.item.delete({ where: { id } });
-    return { message: 'Quarto removido com sucesso.' };
+    await this.prisma.htRoomType.delete({ where: { id } });
+    return { message: 'Tipo de quarto e quartos físicos removidos com sucesso.' };
   }
 }

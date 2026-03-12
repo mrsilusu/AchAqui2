@@ -36,7 +36,13 @@ export class BusinessController {
     @Query('latitude') latitude: string,
     @Query('longitude') longitude: string,
     @Query('radiusKm') radiusKm?: string,
+    @Query('q') q?: string,
+    @Query('municipality') municipality?: string,
   ) {
+    // Name-based search for ClaimFlow
+    if (q) {
+      return this.businessService.searchByName(q, municipality);
+    }
     return this.businessService.searchNearby({
       latitude,
       longitude,

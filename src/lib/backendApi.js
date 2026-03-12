@@ -191,6 +191,54 @@ export const backendApi = {
   deletePromo: (promoId, accessToken) =>
     apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
   
+
+  // ─── HT — Folio + Checkout Financeiro (Sprint 3)
+  getHtFolio: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio`, { accessToken }),
+
+  addHtFolioItem: (bookingId, dto, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio`, {
+      method: 'POST', body: dto, accessToken,
+    }),
+
+  removeHtFolioItem: (bookingId, itemId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/folio/${itemId}`, {
+      method: 'DELETE', accessToken,
+    }),
+
+  htFinancialCheckout: (bookingId, dto, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/financial-checkout`, {
+      method: 'POST', body: dto, accessToken,
+    }),
+
+  // ─── HT — Dashboard PMS (Sprint 2)
+  getHtDashboard: (businessId, accessToken) =>
+    apiRequest(`/ht/dashboard?businessId=${businessId}`, { accessToken }),
+
+  // ─── HT — Quartos físicos ───────────────────────────────────────────────────
+  getHtRooms: (businessId, accessToken) =>
+    apiRequest(`/ht/rooms?businessId=${businessId}`, { accessToken }),
+  createHtRoom: (payload, accessToken) =>
+    apiRequest('/ht/rooms', { method: 'POST', body: payload, accessToken }),
+  updateHtRoom: (roomId, payload, accessToken) =>
+    apiRequest(`/ht/rooms/${roomId}`, { method: 'PATCH', body: payload, accessToken }),
+  deleteHtRoom: (roomId, accessToken) =>
+    apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
+
+  // ─── HT — Receção / PMS (Sprint 1)
+  getHtArrivals: (businessId, accessToken) =>
+    apiRequest(`/ht/bookings/arrivals?businessId=${businessId}`, { accessToken }),
+  getHtDepartures: (businessId, accessToken) =>
+    apiRequest(`/ht/bookings/departures?businessId=${businessId}`, { accessToken }),
+  getHtCurrentGuests: (businessId, accessToken) =>
+    apiRequest(`/ht/bookings/guests?businessId=${businessId}`, { accessToken }),
+  htCheckIn: (bookingId, payload, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/checkin`, { method: 'PATCH', body: payload, accessToken }),
+  htCheckOut: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/checkout`, { method: 'PATCH', body: {}, accessToken }),
+  htNoShow: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
+
   getNotifications: (accessToken) => apiRequest('/notifications', { accessToken }),
   markNotificationRead: (id, accessToken) =>
     apiRequest(`/notifications/${id}/read`, { method: 'PATCH', accessToken }),

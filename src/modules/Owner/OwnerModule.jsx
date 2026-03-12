@@ -20,10 +20,10 @@
  * ============================================================================
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
-  SafeAreaView, Image, TextInput, Alert,
+  SafeAreaView, Image, TextInput, Alert, Switch,
   Dimensions, Platform, Animated, PanResponder,
   KeyboardAvoidingView, Linking,
 } from 'react-native';
@@ -35,9 +35,12 @@ import {
   renderStars, getBusinessStatus, AMENITY_ICON_MAP,
 } from '../../core/AchAqui_Core';
 import { HospitalityModule }  from '../../operations/HospitalityModule';
+import { ReceptionScreen }    from '../../operations/ReceptionScreen';
+import { DashboardPMS }       from '../../operations/DashboardPMS';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
+import { ClaimFlow } from './ClaimFlow';
 
 import { editorS, configS, polS, photoS, bizS, profS, hS } from '../../styles/Main.styles';
 
@@ -363,7 +366,10 @@ export function OwnerModule({
   const [editingService, setEditingService] = useState(null);
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', basePrice: '', duration: '', available: true });
   const [isServiceLoading, setIsServiceLoading] = useState(false);
-  const [roomTypes, setRoomTypes] = useState(OWNER_BUSINESS.roomTypes || []);
+  const [roomTypes, setRoomTypes]       = useState(OWNER_BUSINESS.roomTypes || []);
+  const [htRooms, setHtRooms]           = useState([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [roomPhysForm, setRoomPhysForm] = useState(null); // null | { roomTypeId, number, floor, notes, editId }
   const [showRoomsEditor, setShowRoomsEditor] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [isRoomLoading, setIsRoomLoading] = useState(false);
@@ -379,7 +385,7 @@ export function OwnerModule({
   const [blockStartDate, setBlockStartDate] = useState('');
   const [blockEndDate, setBlockEndDate] = useState('');
   const [editingRoom, setEditingRoom] = useState(null);
-  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
   const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
   // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
   // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
@@ -392,10 +398,38 @@ export function OwnerModule({
       checkIn: '28/02/2026', checkOut: '02/03/2026', nights: 2, totalPrice: 70000, status: 'confirmed', createdAt: '2026-02-19' },
   ];
   const [localRoomBookings, setLocalRoomBookings] = useState(LOCAL_ROOM_BOOKINGS_FALLBACK);
-  // roomBookings: se Main forneceu estado partilhado usa-o; senão usa local (testes isolados)
-  const roomBookings = ownerRoomBookingsProp ?? localRoomBookings;
+  // statusOverrides — optimistic update sobre ownerRoomBookingsProp (só leitura)
+  const [roomStatusOverrides, setRoomStatusOverrides] = useState({});
   const setRoomBookings = onOwnerRoomBookingsChange ?? setLocalRoomBookings;
+  // roomBookings: aplica overrides por cima da fonte de verdade
+  const roomBookings = useMemo(() => {
+    const base = ownerRoomBookingsProp ?? localRoomBookings;
+    if (Object.keys(roomStatusOverrides).length === 0) return base;
+    return base.map(rb => roomStatusOverrides[rb.id]
+      ? { ...rb, status: roomStatusOverrides[rb.id] }
+      : rb
+    );
+  }, [ownerRoomBookingsProp, localRoomBookings, roomStatusOverrides]);
+
+  // Limpar overrides quando o Realtime confirmar o novo status
+  useEffect(() => {
+    if (!ownerRoomBookingsProp || Object.keys(roomStatusOverrides).length === 0) return;
+    setRoomStatusOverrides(prev => {
+      const next = { ...prev };
+      let changed = false;
+      ownerRoomBookingsProp.forEach(rb => {
+        if (next[rb.id] && rb.status === next[rb.id]) {
+          delete next[rb.id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [ownerRoomBookingsProp]);
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showReception, setShowReception] = useState(false);
+  const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
   const [deliveryAreas, setDeliveryAreas] = useState(OWNER_BUSINESS.deliveryAreas || []);
@@ -499,6 +533,7 @@ export function OwnerModule({
   const [showOccupancyEditor, setShowOccupancyEditor] = useState(false);
   const [showFeaturedModal, setShowFeaturedModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showClaimFlow, setShowClaimFlow]       = useState(false);
   const [showPromoManager, setShowPromoManager] = useState(false);
   const [promotions, setPromotions] = useState(INITIAL_PROMOTIONS);
   const [showPromoForm, setShowPromoForm] = useState(false);
@@ -525,11 +560,67 @@ export function OwnerModule({
   });
 
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
-  const ownerBiz =
-    businesses?.find((b) => b?.owner?.id === authUserId) ||
-    businesses?.find((b) => b.id === OWNER_BUSINESS.id) ||
-    OWNER_BUSINESS;
-  const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
+  // Prioridade: 1º negócio da BD com este owner, 2º negócio com o ID fixo do mock, 3º mock local
+  const ownerBiz = React.useMemo(() => {
+    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
+    if (fromApi) return fromApi;
+    const byId = businesses?.find((b) => b.id === OWNER_BUSINESS.id);
+    if (byId) return byId;
+    return OWNER_BUSINESS;
+  }, [businesses, authUserId]);
+
+  // ownerBusinessId: usar sempre o ID real da BD quando disponível
+  const ownerBusinessId = React.useMemo(() => {
+    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
+    return fromApi?.id || ownerBiz?.id || OWNER_BUSINESS.id;
+  }, [businesses, authUserId, ownerBiz]);
+
+  // ── Quartos físicos ──────────────────────────────────────────────────────────
+  const loadHtRooms = useCallback(async () => {
+    if (!ownerBusinessId || !accessToken) return;
+    setLoadingRooms(true);
+    try {
+      const rooms = await backendApi.getHtRooms(ownerBusinessId, accessToken);
+      if (Array.isArray(rooms)) setHtRooms(rooms);
+    } catch { /* sem quartos ainda */ }
+    finally { setLoadingRooms(false); }
+  }, [ownerBusinessId, accessToken]);
+
+  const saveHtRoom = useCallback(async () => {
+    if (!roomPhysForm) return;
+    if (!roomPhysForm.number?.trim()) { Alert.alert('Erro', 'O número do quarto é obrigatório.'); return; }
+    try {
+      if (roomPhysForm.editId) {
+        await backendApi.updateHtRoom(roomPhysForm.editId, {
+          number: roomPhysForm.number.trim(),
+          floor:  parseInt(roomPhysForm.floor) || 1,
+          notes:  roomPhysForm.notes || null,
+        }, accessToken);
+      } else {
+        await backendApi.createHtRoom({
+          businessId: ownerBusinessId,
+          roomTypeId: roomPhysForm.roomTypeId,
+          number:     roomPhysForm.number.trim(),
+          floor:      parseInt(roomPhysForm.floor) || 1,
+          notes:      roomPhysForm.notes || null,
+        }, accessToken);
+      }
+      setRoomPhysForm(null);
+      loadHtRooms();
+    } catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível guardar.'); }
+  }, [roomPhysForm, ownerBusinessId, accessToken, loadHtRooms]);
+
+  const deleteHtRoom = useCallback(async (roomId, roomNumber) => {
+    Alert.alert('Remover quarto', `Remover quarto nº ${roomNumber}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Remover', style: 'destructive', onPress: async () => {
+        try {
+          await backendApi.deleteHtRoom(roomId, accessToken);
+          loadHtRooms();
+        } catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível remover.'); }
+      }},
+    ]);
+  }, [accessToken, loadHtRooms]);
 
   const persistBusinessDraft = useCallback(async (fields) => {
     if (!ownerBusinessId || !accessToken || !fields || Object.keys(fields).length === 0) {
@@ -665,7 +756,9 @@ export function OwnerModule({
       return;
     }
 
-    const mappedReservations = liveBookings.map((booking) => {
+    const mappedReservations = liveBookings
+      .filter(booking => booking.bookingType === 'TABLE' || booking.bookingType === 'table')
+      .map((booking) => {
       const startDate = booking.startDate ? new Date(booking.startDate) : null;
       let normalizedStatus = 'pending';
       if (booking.status === 'CONFIRMED') normalizedStatus = 'active';
@@ -1008,11 +1101,6 @@ export function OwnerModule({
       return;
     }
 
-    if (!roomForm.pricePerNight) {
-      Alert.alert('Erro', 'Preço por noite é obrigatório.');
-      return;
-    }
-
     setIsRoomLoading(true);
 
     try {
@@ -1021,7 +1109,9 @@ export function OwnerModule({
         description: roomForm.description || '',
         pricePerNight: parseFloat(roomForm.pricePerNight),
         maxGuests: parseInt(roomForm.maxGuests) || 1,
-        amenities: typeof roomForm.amenities === 'string' ? roomForm.amenities : JSON.stringify(roomForm.amenities || []),
+        totalRooms: parseInt(roomForm.totalRooms) || 1,
+        available: roomForm.available !== false,
+        amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
         businessId: ownerBusinessId,
       };
 
@@ -1047,7 +1137,7 @@ export function OwnerModule({
 
       setShowRoomForm(false);
       setEditingRoom(null);
-      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true });
+      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
       Alert.alert('Sucesso', editingRoom ? 'Quarto atualizado.' : 'Quarto criado.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível guardar o quarto.');
@@ -1330,6 +1420,16 @@ export function OwnerModule({
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Alojamento e Turismo</Text>
                   {OWNER_BUSINESS.modules?.accommodation && (
+                    <TouchableOpacity style={[bizS.actionCard, { borderColor: '#1565C0' + '30', backgroundColor: '#EFF6FF' }]} activeOpacity={0.8} onPress={() => setShowDashboard(true)}>
+                      <View style={[bizS.actionIcon, { backgroundColor: '#1565C0' + '20' }]}><Icon name="barChart" size={22} color="#1565C0" strokeWidth={2} /></View>
+                      <View style={{flex:1}}>
+                        <Text style={[bizS.actionTitle, { color: '#1565C0' }]}>Dashboard PMS</Text>
+                        <Text style={bizS.actionDesc}>Ocupação · Receção · Folio · Receita</Text>
+                      </View>
+                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
+                  {OWNER_BUSINESS.modules?.accommodation && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomTypesEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="globe" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}>
@@ -1350,7 +1450,7 @@ export function OwnerModule({
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.accommodation && (
-                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomsEditor(true)}>
+                    <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => { setShowRoomsEditor(true); loadHtRooms(); }}>
                       <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}>
                         <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
@@ -1549,7 +1649,9 @@ export function OwnerModule({
                     style={bizS.actionCard} 
                     activeOpacity={0.8}
                     onPress={() => {
-                      const ob = businesses.find(b=>b.name===OWNER_BUSINESS.name); if(ob){ onViewBusiness?.(ob); }
+                      if (ownerBiz) {
+                        onViewBusiness?.({ ...ownerBiz, roomTypes: roomTypes?.length ? roomTypes : (ownerBiz.roomTypes || []) });
+                      }
                     }}
                   >
                     <View style={bizS.actionIcon}><Icon name="eye" size={22} color={COLORS.red} strokeWidth={2} /></View>
@@ -2316,6 +2418,23 @@ export function OwnerModule({
 
       {/* ROOMS EDITOR - FASE 3 */}
 {/* ── GESTÃO DE OCUPAÇÃO MODAL — Image 2 design ────────────────── */}
+      {showDashboard && (
+        <DashboardPMS
+          businessId={ownerBusinessId}
+          accessToken={accessToken}
+          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onClose={() => setShowDashboard(false)}
+        />
+      )}
+      {showReception && (
+        <ReceptionScreen
+          businessId={ownerBusinessId}
+          accessToken={accessToken}
+          roomTypes={roomTypes}
+          onClose={() => setShowReception(false)}
+        />
+      )}
+
       {showRoomsEditor && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>
@@ -2544,6 +2663,63 @@ export function OwnerModule({
         </View>
       )}
 
+      {/* MODAL — quarto físico individual */}
+      {roomPhysForm && (
+        <Modal visible animationType="slide" transparent onRequestClose={() => setRoomPhysForm(null)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}
+          >
+            <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={() => setRoomPhysForm(null)} />
+            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 16 }}>
+                {roomPhysForm.editId ? 'Editar Quarto Físico' : 'Novo Quarto Físico'}
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 }}>Número / Identificador *</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 14, marginBottom: 12, color: '#111' }}
+                value={roomPhysForm.number}
+                onChangeText={v => setRoomPhysForm(f => ({ ...f, number: v }))}
+                placeholder="Ex: 101, 202, Bangalô 3, Chalé A"
+                placeholderTextColor="#aaa"
+                autoFocus
+              />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 }}>Piso</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 14, marginBottom: 12, color: '#111' }}
+                value={roomPhysForm.floor}
+                onChangeText={v => setRoomPhysForm(f => ({ ...f, floor: v }))}
+                placeholder="Ex: 1"
+                placeholderTextColor="#aaa"
+                keyboardType="numeric"
+              />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 }}>Notas (opcional)</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 14, marginBottom: 20, color: '#111' }}
+                value={roomPhysForm.notes}
+                onChangeText={v => setRoomPhysForm(f => ({ ...f, notes: v }))}
+                placeholder="Ex: Vista para o mar, canto esquerdo"
+                placeholderTextColor="#aaa"
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 13, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center' }}
+                  onPress={() => setRoomPhysForm(null)}
+                >
+                  <Text style={{ fontWeight: '600', color: '#555' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 13, borderRadius: 10, backgroundColor: '#1565C0', alignItems: 'center' }}
+                  onPress={saveHtRoom}
+                >
+                  <Text style={{ fontWeight: '700', color: '#fff' }}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
+
       {/* ROOM FORM */}
       {showRoomForm && (
         <Modal visible={showRoomForm} animationType="fade" transparent={true} onRequestClose={() => setShowRoomForm(false)}>
@@ -2561,8 +2737,14 @@ export function OwnerModule({
                   <TextInput style={editorS.formInput} value={roomForm.pricePerNight} onChangeText={(text) => setRoomForm({...roomForm, pricePerNight: text})} placeholder="Ex: 25000 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
                   <Text style={editorS.formLabel}>Hóspedes Máx</Text>
                   <TextInput style={editorS.formInput} value={roomForm.maxGuests} onChangeText={(text) => setRoomForm({...roomForm, maxGuests: text})} placeholder="Ex: 4 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+                  <Text style={editorS.formLabel}>Nº de Quartos Disponíveis</Text>
+                  <TextInput style={editorS.formInput} value={roomForm.totalRooms} onChangeText={(text) => setRoomForm({...roomForm, totalRooms: text})} placeholder="Ex: 3" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+                  <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:12}}>
+                    <Text style={editorS.formLabel}>Disponível</Text>
+                    <Switch value={roomForm.available} onValueChange={(val) => setRoomForm({...roomForm, available: val})} trackColor={{false:'#D1D5DB', true:COLORS.green}} thumbColor={COLORS.white} />
+                  </View>
                   <View style={editorS.formActions}>
-                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
+                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
                     <TouchableOpacity 
                       style={[editorS.formBtnSave, ((!roomForm.name) || isRoomLoading) && {opacity:0.5}]} 
                       disabled={!roomForm.name || isRoomLoading} 
@@ -2623,94 +2805,138 @@ export function OwnerModule({
                   cancelled:        { label:'Cancelada',         color:'#DC2626', bg:'#FEF2F2' },
                   rejected:         { label:'Rejeitado',         color:'#7C3AED', bg:'#F5F3FF' },
                 }[rb.status] || { label:rb.status, color:COLORS.grayText, bg:COLORS.grayBg };
+                const isOpen = !!roomBookingsExpanded[rb.id];
+                const toggleRb = () => setRoomBookingsExpanded(prev => ({ ...prev, [rb.id]: !prev[rb.id] }));
                 return (
-                  <View key={rb.id} style={{borderRadius:12, borderWidth:1, padding:14, marginBottom:12, backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30'}}>
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8}}>
+                  <View key={rb.id} style={{borderRadius:12, borderWidth:1, padding:14, marginBottom:8, backgroundColor:statusConfig.bg, borderColor:statusConfig.color+'30'}}>
+                    {/* Linha resumo — sempre visível */}
+                    <TouchableOpacity
+                      style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}
+                      onPress={toggleRb}
+                      activeOpacity={0.7}
+                    >
                       <View style={{flex:1}}>
                         <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{rb.guestName}</Text>
                         <Text style={{fontSize:12, color:COLORS.grayText, marginTop:1}}>{rb.guestPhone}</Text>
                       </View>
-                      <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
+                      <View style={{flexDirection:'row', alignItems:'center', gap:8}}>
+                        <View style={{backgroundColor:statusConfig.color+'25', paddingHorizontal:8, paddingVertical:3, borderRadius:8}}>
+                          <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color}}>{statusConfig.label}</Text>
+                        </View>
+                        <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.grayText} />
                       </View>
-                    </View>
-                    <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText, marginBottom:4}}>{room?.name || 'Quarto'}</Text>
-                    <View style={{flexDirection:'row', gap:16, marginBottom:4}}>
-                      <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
-                      <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
-                    </View>
-                    {(rb.adults || rb.children > 0) && (
-                      <Text style={{fontSize:12, color:COLORS.grayText, marginBottom:4}}>
-                        👤 {rb.adults||1} adulto{(rb.adults||1)!==1?'s':''}{rb.children>0?` · ${rb.children} criança${rb.children!==1?'s':''}`:''} · {rb.rooms||1} quarto{(rb.rooms||1)!==1?'s':''}
-                      </Text>
-                    )}
-                    {(rb.rooms && rb.rooms > 1) && (
-                      <View style={{flexDirection:'row', alignItems:'center', gap:4, marginBottom:4}}>
-                        <View style={{backgroundColor:COLORS.blue+'18', paddingHorizontal:8, paddingVertical:3, borderRadius:6, flexDirection:'row', alignItems:'center', gap:4}}>
-                          <Icon name="home" size={11} color={COLORS.blue} strokeWidth={2.5}/>
-                          <Text style={{fontSize:11, fontWeight:'700', color:COLORS.blue}}>Reserva de {rb.rooms} quartos</Text>
+                    </TouchableOpacity>
+
+                    {/* Detalhes — só visíveis quando expandido */}
+                    {isOpen && (
+                      <View style={{marginTop:10, gap:4}}>
+                        <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText}}>{room?.name || 'Quarto'}</Text>
+                        <View style={{flexDirection:'row', gap:16}}>
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
+                        </View>
+                        {(rb.adults || rb.children > 0) && (
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>
+                            👤 {rb.adults||1} adulto{(rb.adults||1)!==1?'s':''}{rb.children>0?` · ${rb.children} criança${rb.children!==1?'s':''}`:''} · {rb.rooms||1} quarto{(rb.rooms||1)!==1?'s':''}
+                          </Text>
+                        )}
+                        {rb.specialRequest ? (
+                          <View style={{padding:8, backgroundColor:'#FEF9C3', borderRadius:8, borderLeftWidth:3, borderLeftColor:'#D97706'}}>
+                            <Text style={{fontSize:11, fontWeight:'700', color:'#92400E', marginBottom:1}}>Pedido especial</Text>
+                            <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.specialRequest}</Text>
+                          </View>
+                        ) : null}
+                        {rb.cancelReason && (
+                          <View style={{paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
+                            <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
+                              {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
+                            </Text>
+                            <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
+                          </View>
+                        )}
+                        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
+                          <View>
+                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
+                            {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
+                              <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
+                            )}
+                            {rb.status === 'confirmed_paid' && (
+                              <Text style={{fontSize:10, color:COLORS.green, fontWeight:'600', marginTop:2}}>✅ Pago na chegada</Text>
+                            )}
+                          </View>
+                          <View style={{flexDirection:'row', gap:8}}>
+                            {rb.status === 'pending' && (
+                              <>
+                                <TouchableOpacity
+                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                                  onPress={async () => {
+                                    setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'confirmed' }));
+                                    try {
+                                      await backendApi.confirmBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                      Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`);
+                                    } catch (err) {
+                                      setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                      Alert.alert('Erro', err?.message || 'Não foi possível confirmar.');
+                                    }
+                                  }}
+                                >
+                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
+                                  onPress={async () => {
+                                    setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'rejected' }));
+                                    try {
+                                      await backendApi.rejectBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                      Alert.alert('Recusado', `Reserva de ${rb.guestName} recusada.`);
+                                    } catch (err) {
+                                      setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                      Alert.alert('Erro', err?.message || 'Não foi possível recusar.');
+                                    }
+                                  }}
+                                >
+                                  <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                            {rb.status === 'confirmed_unpaid' && (
+                              <TouchableOpacity
+                                style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
+                                onPress={async () => {
+                                  setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'confirmed_paid' }));
+                                  try {
+                                    await backendApi.confirmBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                    Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`);
+                                  } catch (err) {
+                                    setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                    Alert.alert('Erro', err?.message || 'Não foi possível registar pagamento.');
+                                  }
+                                }}
+                              >
+                                <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>💵 Marcar Pago</Text>
+                              </TouchableOpacity>
+                            )}
+                            {(rb.status === 'confirmed' || rb.status === 'confirmed_paid') && (
+                              <TouchableOpacity
+                                style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
+                                onPress={async () => {
+                                  setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'cancelled' }));
+                                  try {
+                                    await backendApi.rejectBooking(rb.id, { businessId: rb.businessId }, accessToken);
+                                    Alert.alert('Cancelado', `Reserva de ${rb.guestName} cancelada.`);
+                                  } catch (err) {
+                                    setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
+                                    Alert.alert('Erro', err?.message || 'Não foi possível cancelar.');
+                                  }
+                                }}
+                              >
+                                <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
                         </View>
                       </View>
                     )}
-                    {rb.specialRequest ? (
-                      <View style={{marginBottom:4, padding:8, backgroundColor:'#FEF9C3', borderRadius:8, borderLeftWidth:3, borderLeftColor:'#D97706'}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:'#92400E', marginBottom:1}}>Pedido especial</Text>
-                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.specialRequest}</Text>
-                      </View>
-                    ) : null}
-                    {rb.cancelReason && (
-                      <View style={{marginTop:6, marginBottom:4, paddingHorizontal:10, paddingVertical:8, backgroundColor:statusConfig.color+'12', borderRadius:8, borderLeftWidth:3, borderLeftColor:statusConfig.color}}>
-                        <Text style={{fontSize:11, fontWeight:'700', color:statusConfig.color, marginBottom:2}}>
-                          {rb.status === 'rejected' ? 'Motivo da rejeição' : 'Motivo do cancelamento'}
-                        </Text>
-                        <Text style={{fontSize:12, color:COLORS.darkText}}>{rb.cancelReason}</Text>
-                      </View>
-                    )}
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
-                      <View>
-                        <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
-                        {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
-                          <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
-                        )}
-                        {rb.status === 'confirmed_paid' && (
-                          <Text style={{fontSize:10, color:COLORS.green, fontWeight:'600', marginTop:2}}>✅ Pago na chegada</Text>
-                        )}
-                      </View>
-                      <View style={{flexDirection:'row', gap:8}}>
-                        {rb.status === 'pending' && (
-                          <>
-                            <TouchableOpacity
-                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
-                              onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status: rb.payOnArrival ? 'confirmed_unpaid' : 'confirmed'} : b)); Alert.alert('Confirmado!', `Reserva de ${rb.guestName} confirmada.`); }}
-                            >
-                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Confirmar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:'#DC2626'}}
-                              onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('reject'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
-                            >
-                              <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>Recusar</Text>
-                            </TouchableOpacity>
-                          </>
-                        )}
-                        {rb.status === 'confirmed_unpaid' && (
-                          <TouchableOpacity
-                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, backgroundColor:COLORS.green}}
-                            onPress={() => { setRoomBookings(prev => prev.map(b => b.id===rb.id ? {...b, status:'confirmed_paid'} : b)); Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`); }}
-                          >
-                            <Text style={{color:COLORS.white, fontWeight:'700', fontSize:12}}>💵 Marcar Pago</Text>
-                          </TouchableOpacity>
-                        )}
-                        {(rb.status === 'confirmed' || rb.status === 'confirmed_paid') && (
-                          <TouchableOpacity
-                            style={{paddingVertical:6, paddingHorizontal:14, borderRadius:8, borderWidth:1.5, borderColor:'#DC2626'}}
-                            onPress={() => { setSelectedRoomBooking(rb); setCancelTarget('roomBooking'); setActionType('cancel'); setCancelReason(''); setShowRoomBookingsManager(false); setTimeout(() => setShowCancelReason(true), 50); }}
-                          >
-                            <Text style={{color:'#DC2626', fontWeight:'700', fontSize:12}}>Cancelar</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
                   </View>
                 );
               });
@@ -2727,7 +2953,7 @@ export function OwnerModule({
               <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={profS.headerTitle}>Tipos de Quarto</Text>
-            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', amenities: [], available: true }); setShowRoomForm(true); }}>
+            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); setShowRoomForm(true); }}>
               <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
@@ -2750,13 +2976,55 @@ export function OwnerModule({
                     </View>
                   </View>
                   <View style={editorS.itemActions}>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
-                      <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar</Text>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
+                      <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar Tipo</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover', `Remover "${room.name}"?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{ const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); }}])}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover Tipo', `Remover "${room.name}" e todos os seus quartos físicos?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress: async ()=>{ try { await backendApi.deleteRoom(room.id, accessToken); setHtRooms(prev => prev.filter(r => r.roomTypeId !== room.id)); const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); } catch(e){ Alert.alert('Erro', e?.message||'Não foi possível remover.'); }}}])}>
                       <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText,{color:COLORS.grayText}]}>Remover</Text>
                     </TouchableOpacity>
                   </View>
+                  {/* ── Quartos físicos deste tipo ── */}
+                  {(() => {
+                    const physRooms = htRooms.filter(r => r.roomTypeId === room.id);
+                    return (
+                      <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#F0EDE6', paddingTop: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            {loadingRooms ? 'A carregar...' : `Quartos físicos (${physRooms.length})`}
+                          </Text>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3, paddingHorizontal: 8, backgroundColor: '#EFF6FF', borderRadius: 8 }}
+                            onPress={() => setRoomPhysForm({ roomTypeId: room.id, number: '', floor: '1', notes: '', editId: null })}
+                          >
+                            <Icon name="plusCircle" size={12} color="#1565C0" strokeWidth={2.5} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#1565C0' }}>Adicionar quarto</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {!loadingRooms && physRooms.length === 0 && (
+                          <Text style={{ fontSize: 12, color: '#bbb', fontStyle: 'italic', paddingBottom: 4 }}>
+                            Nenhum quarto físico. Clique em Adicionar para criar.
+                          </Text>
+                        )}
+                        {physRooms.map(pr => {
+                          const dotColor = pr.status === 'CLEAN' ? '#22A06B' : pr.status === 'DIRTY' ? '#D97706' : pr.status === 'MAINTENANCE' ? '#DC2626' : '#6B7280';
+                          return (
+                            <View key={pr.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#F7F6F2' }}>
+                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginRight: 8 }} />
+                              <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#111' }}>Nº {pr.number}</Text>
+                              <Text style={{ fontSize: 12, color: '#888', marginRight: 10 }}>Piso {pr.floor ?? 1}</Text>
+                              <Text style={{ fontSize: 11, color: dotColor, fontWeight: '600', marginRight: 8 }}>{pr.status}</Text>
+                              <TouchableOpacity style={{ padding: 4, marginRight: 2 }} onPress={() => setRoomPhysForm({ roomTypeId: room.id, number: pr.number, floor: String(pr.floor ?? 1), notes: pr.notes || '', editId: pr.id })}>
+                                <Icon name="edit" size={13} color={COLORS.blue} strokeWidth={2} />
+                              </TouchableOpacity>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => deleteHtRoom(pr.id, pr.number)}>
+                                <Icon name="x" size={13} color={COLORS.grayText} strokeWidth={2} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    );
+                  })()}
                 </View>
               )) : (
                 <View style={editorS.emptyState}>
@@ -4342,7 +4610,7 @@ export function OwnerModule({
               <TouchableOpacity
                 style={profS.actionButton}
                 activeOpacity={0.7}
-                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+                onPress={() => setShowClaimFlow(true)}
               >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
@@ -5859,6 +6127,17 @@ export function OwnerModule({
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* ── CLAIM FLOW — Onboarding do Dono ────────────────────────────── */}
+      <ClaimFlow
+        visible={showClaimFlow}
+        onClose={() => setShowClaimFlow(false)}
+        onCreateNew={() => Alert.alert(
+          'Criar negócio',
+          'A funcionalidade de criação manual de negócio está disponível no painel principal. Sai do perfil e usa o botão "+" no dashboard.',
+        )}
+        accessToken={accessToken}
+      />
 
 
     </View>

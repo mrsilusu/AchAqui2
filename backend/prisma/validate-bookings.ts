@@ -39,12 +39,12 @@ async function main() {
   try {
     // Test 1: Verify both tables exist
     await test('Table "table_bookings" exists', async () => {
-      const count = await prisma.booking.count();
+      const count = await prisma.diTableBooking.count();
       return typeof count === 'number';
     });
 
     await test('Table "room_bookings" exists', async () => {
-      const count = await prisma.roomBooking.count();
+      const count = await prisma.htRoomBooking.count();
       return typeof count === 'number';
     });
 
@@ -60,7 +60,7 @@ async function main() {
 
     // Test 3: Query all table bookings
     await test('Query table bookings by business', async () => {
-      const bookings = await prisma.booking.findMany({
+      const bookings = await prisma.diTableBooking.findMany({
         where: { businessId: testBusiness.id },
       });
       console.log(`   Found ${bookings.length} table bookings`);
@@ -69,7 +69,7 @@ async function main() {
 
     // Test 4: Query all room bookings
     await test('Query room bookings by business', async () => {
-      const bookings = await prisma.roomBooking.findMany({
+      const bookings = await prisma.htRoomBooking.findMany({
         where: { businessId: testBusiness.id },
       });
       console.log(`   Found ${bookings.length} room bookings`);
@@ -79,8 +79,8 @@ async function main() {
     // Test 5: Dual-query simulation (what booking service does)
     await test('Merge bookings from both tables', async () => {
       const [tableBookings, roomBookings] = await Promise.all([
-        prisma.booking.findMany({ where: { businessId: testBusiness.id } }),
-        prisma.roomBooking.findMany({ where: { businessId: testBusiness.id } }),
+        prisma.diTableBooking.findMany({ where: { businessId: testBusiness.id } }),
+        prisma.htRoomBooking.findMany({ where: { businessId: testBusiness.id } }),
       ]);
 
       const merged = [
@@ -124,7 +124,7 @@ async function main() {
 
     // Test 8: Confirm operation (find in correct table)
     await test('Find booking by ID in table_bookings', async () => {
-      const booking = await prisma.booking.findFirst({
+      const booking = await prisma.diTableBooking.findFirst({
         where: { businessId: testBusiness.id },
       });
       if (!booking) {
@@ -132,7 +132,7 @@ async function main() {
         return true;
       }
 
-      const found = await prisma.booking.findUnique({
+      const found = await prisma.diTableBooking.findUnique({
         where: { id: booking.id },
       });
       console.log(`   Found: ${found?.id === booking.id}`);
@@ -140,7 +140,7 @@ async function main() {
     });
 
     await test('Find booking by ID in room_bookings', async () => {
-      const booking = await prisma.roomBooking.findFirst({
+      const booking = await prisma.htRoomBooking.findFirst({
         where: { businessId: testBusiness.id },
       });
       if (!booking) {
@@ -148,7 +148,7 @@ async function main() {
         return true;
       }
 
-      const found = await prisma.roomBooking.findUnique({
+      const found = await prisma.htRoomBooking.findUnique({
         where: { id: booking.id },
       });
       console.log(`   Found: ${found?.id === booking.id}`);
@@ -162,16 +162,16 @@ async function main() {
         const business = await prisma.business.findUnique({
           where: { id: testBusiness.id },
           include: {
-            bookings: true,
-            roomBookings: true,
+            diBookings: true,
+            htBookings: true,
           },
         });
 
         if (!business) return false;
 
-        const total = (business.bookings?.length || 0) + (business.roomBookings?.length || 0);
+        const total = (business.diBookings?.length || 0) + (business.htBookings?.length || 0);
         console.log(
-          `   Owner sees: ${business.bookings?.length || 0} table + ${business.roomBookings?.length || 0} room`,
+          `   Owner sees: ${business.diBookings?.length || 0} table + ${business.htBookings?.length || 0} room`,
         );
         return total > 0;
       },
