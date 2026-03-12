@@ -132,7 +132,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
             )}
             {(tab === 'departures' || tab === 'guests') && booking.status === 'CHECKED_IN' && (
               <>
-                <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio')} disabled={busy}>
+                <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio', booking)} disabled={busy}>
                   <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />
                   <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Folio</Text>
                 </TouchableOpacity>
@@ -192,7 +192,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAction = useCallback(async (bookingId, action) => {
+  const handleAction = useCallback(async (bookingId, action, bookingObj = null) => {
     const labels = { checkin: 'Check-In', checkout: 'Check-Out', noshow: 'No-Show', confirm: 'Confirmar' };
     const msgs   = {
       checkin:  'Confirmar check-in do hóspede?',
@@ -202,8 +202,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
     };
     // Folio não precisa de confirmação — abre directamente
     if (action === 'folio') {
-      const allBookings = [...(data.guests || []), ...(data.arrivals || []), ...(data.departures || [])];
-      const bk = allBookings.find(b => b.id === bookingId);
+      // Usar o booking passado directamente; fallback: procurar em data
+      const bk = bookingObj || [...(data.guests || []), ...(data.arrivals || []), ...(data.departures || [])].find(b => b.id === bookingId);
       if (bk) setFolioBooking(bk);
       return;
     }

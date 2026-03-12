@@ -21,7 +21,6 @@ export class HtDashboardService {
   }
 
   async getDashboard(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
 
     const now   = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);

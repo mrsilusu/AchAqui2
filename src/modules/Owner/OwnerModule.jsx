@@ -560,11 +560,20 @@ export function OwnerModule({
   });
 
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
-  const ownerBiz =
-    businesses?.find((b) => b?.owner?.id === authUserId) ||
-    businesses?.find((b) => b.id === OWNER_BUSINESS.id) ||
-    OWNER_BUSINESS;
-  const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
+  // Prioridade: 1º negócio da BD com este owner, 2º negócio com o ID fixo do mock, 3º mock local
+  const ownerBiz = React.useMemo(() => {
+    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
+    if (fromApi) return fromApi;
+    const byId = businesses?.find((b) => b.id === OWNER_BUSINESS.id);
+    if (byId) return byId;
+    return OWNER_BUSINESS;
+  }, [businesses, authUserId]);
+
+  // ownerBusinessId: usar sempre o ID real da BD quando disponível
+  const ownerBusinessId = React.useMemo(() => {
+    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
+    return fromApi?.id || ownerBiz?.id || OWNER_BUSINESS.id;
+  }, [businesses, authUserId, ownerBiz]);
 
   // ── Quartos físicos ──────────────────────────────────────────────────────────
   const loadHtRooms = useCallback(async () => {

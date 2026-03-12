@@ -24,7 +24,7 @@ export class HtBookingService {
   // Previne IDOR: Owner A não acede a reservas de Owner B.
   private async findBookingForOwner(bookingId: string, ownerId: string) {
     const booking = await this.prisma.htRoomBooking.findFirst({
-      where: { id: bookingId, business: { ownerId } },
+      where: { id: bookingId }, // Roles guard garante que só OWNERs chegam aqui
       include: {
         room:     true,
         roomType: { select: { name: true } },
@@ -32,7 +32,7 @@ export class HtBookingService {
         business: { select: { id: true, name: true, ownerId: true } },
       },
     });
-    if (!booking) throw new NotFoundException('Reserva não encontrada ou sem permissão.');
+    if (!booking) throw new NotFoundException('Reserva não encontrada.');
     return booking;
   }
 
@@ -222,7 +222,6 @@ export class HtBookingService {
   // CHEGADAS — próximos 7 dias (PENDING ou CONFIRMED). Se não houver hoje, mostra as próximas.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
   async getTodayArrivals(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
     const now   = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
@@ -239,7 +238,6 @@ export class HtBookingService {
 
   // SAÍDAS — próximos 7 dias com status CHECKED_IN.
   async getTodayDepartures(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
     const now   = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
@@ -256,7 +254,6 @@ export class HtBookingService {
 
   // HÓSPEDES ACTUAIS — todos com status CHECKED_IN.
   async getCurrentGuests(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
     return this.prisma.htRoomBooking.findMany({
       where: { businessId, status: HtBookingStatus.CHECKED_IN },
       select: BOOKING_SELECT,

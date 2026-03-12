@@ -522,6 +522,13 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
             </View>
 
             {/* ── Acções ── */}
+            {!canEdit && (
+              <View style={{ marginHorizontal: 16, marginTop: 12, backgroundColor: '#FFF8E1', borderRadius: 10, padding: 12, borderLeftWidth: 3, borderLeftColor: '#F59E0B' }}>
+                <Text style={{ fontSize: 13, color: '#92400E' }}>
+                  ⚠️ O folio só pode ser editado após o check-in do hóspede.
+                </Text>
+              </View>
+            )}
             {!isPaid && canEdit && (
               <TouchableOpacity style={fS.checkoutBtn} onPress={() => setShowCheckout(true)}>
                 <Icon name="checkCircle" size={18} color="#fff" strokeWidth={2.5} />
