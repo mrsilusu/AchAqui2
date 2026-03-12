@@ -568,6 +568,13 @@ export function OwnerModule({
 
   // ── Tipos de quarto — sincronizar de businesses prop + fallback API ─────────
   const loadRoomTypes = useCallback(async () => {
+    // DEBUG
+    console.log('[RoomTypes] authUserId:', authUserId);
+    console.log('[RoomTypes] ownerBiz.id:', ownerBiz?.id, '| name:', ownerBiz?.name);
+    console.log('[RoomTypes] ownerBiz.roomTypes:', JSON.stringify(ownerBiz?.roomTypes));
+    console.log('[RoomTypes] businesses total:', businesses?.length);
+    businesses?.forEach(b => console.log('  biz:', b.id, b.name, '| owner.id:', b?.owner?.id));
+
     // 1. Usar imediatamente os dados que já estão no prop businesses
     const bizRooms = ownerBiz?.roomTypes;
     if (Array.isArray(bizRooms) && bizRooms.length > 0) {
@@ -579,12 +586,13 @@ export function OwnerModule({
     if (!bid) return;
     try {
       const rooms = await backendApi.getRoomsByBusiness(bid);
+      console.log('[RoomTypes] API result bid=' + bid + ':', JSON.stringify(rooms));
       if (Array.isArray(rooms)) {
         setRoomTypes(rooms);
         OWNER_BUSINESS.roomTypes = rooms;
       }
-    } catch { /* sem tipos ainda */ }
-  }, [ownerBiz, ownerBusinessId]);
+    } catch (e) { console.warn('[RoomTypes] API error:', e?.message); }
+  }, [ownerBiz, ownerBusinessId, authUserId, businesses]);
 
   // Sincronizar sempre que o prop businesses actualizar (novo fetch do servidor)
   useEffect(() => {
