@@ -566,17 +566,35 @@ export function OwnerModule({
     OWNER_BUSINESS;
   const ownerBusinessId = ownerBiz?.id || OWNER_BUSINESS.id;
 
-  // ── Tipos de quarto — carregar do backend ────────────────────────────────────
+  // ── Tipos de quarto — sincronizar de businesses prop + fallback API ─────────
   const loadRoomTypes = useCallback(async () => {
-    if (!ownerBusinessId) return;
+    // 1. Usar imediatamente os dados que já estão no prop businesses
+    const bizRooms = ownerBiz?.roomTypes;
+    if (Array.isArray(bizRooms) && bizRooms.length > 0) {
+      setRoomTypes(bizRooms);
+      OWNER_BUSINESS.roomTypes = bizRooms;
+    }
+    // 2. Confirmar com chamada directa à BD (usa businessId real)
+    const bid = ownerBiz?.id || ownerBusinessId;
+    if (!bid) return;
     try {
-      const rooms = await backendApi.getRoomsByBusiness(ownerBusinessId);
+      const rooms = await backendApi.getRoomsByBusiness(bid);
       if (Array.isArray(rooms)) {
         setRoomTypes(rooms);
         OWNER_BUSINESS.roomTypes = rooms;
       }
     } catch { /* sem tipos ainda */ }
-  }, [ownerBusinessId]);
+  }, [ownerBiz, ownerBusinessId]);
+
+  // Sincronizar sempre que o prop businesses actualizar (novo fetch do servidor)
+  useEffect(() => {
+    if (authRole !== 'OWNER') return;
+    const bizRooms = ownerBiz?.roomTypes;
+    if (Array.isArray(bizRooms) && bizRooms.length > 0) {
+      setRoomTypes(bizRooms);
+      OWNER_BUSINESS.roomTypes = bizRooms;
+    }
+  }, [authRole, ownerBiz?.id, businesses]);
 
   useEffect(() => {
     if (authRole === 'OWNER' && ownerBusinessId) {
