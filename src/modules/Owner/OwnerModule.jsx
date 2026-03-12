@@ -1113,7 +1113,7 @@ export function OwnerModule({
     setIsRoomLoading(true);
 
     try {
-      const payload = {
+      const createPayload = {
         name: roomForm.name,
         description: roomForm.description || '',
         pricePerNight: parseFloat(roomForm.pricePerNight),
@@ -1123,27 +1123,23 @@ export function OwnerModule({
         amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
         businessId: ownerBusinessId,
       };
+      const updatePayload = {
+        name: roomForm.name,
+        description: roomForm.description || '',
+        pricePerNight: parseFloat(roomForm.pricePerNight),
+        maxGuests: parseInt(roomForm.maxGuests) || 1,
+        totalRooms: parseInt(roomForm.totalRooms) || 1,
+        available: roomForm.available !== false,
+        amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
+      };
 
       if (editingRoom) {
-        await backendApi.updateRoom(editingRoom.id, payload, accessToken);
-        setRoomTypes((prev) => {
-          const updated = prev.map((item) =>
-            item.id === editingRoom.id ? { ...item, ...payload } : item,
-          );
-          OWNER_BUSINESS.roomTypes = updated;
-          updateOwnerBiz({ roomTypes: updated });
-          return updated;
-        });
+        await backendApi.updateRoom(editingRoom.id, updatePayload, accessToken);
       } else {
-        const response = await backendApi.createRoom(payload, accessToken);
-        setRoomTypes((prev) => {
-          const updated = [...prev, response];
-          OWNER_BUSINESS.roomTypes = updated;
-          updateOwnerBiz({ roomTypes: updated });
-          return updated;
-        });
+        await backendApi.createRoom(createPayload, accessToken);
       }
 
+      await loadRoomTypes();
       setShowRoomForm(false);
       setEditingRoom(null);
       setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
@@ -1153,7 +1149,7 @@ export function OwnerModule({
     } finally {
       setIsRoomLoading(false);
     }
-  }, [roomForm, editingRoom, ownerBusinessId, accessToken]);
+  }, [roomForm, editingRoom, ownerBusinessId, accessToken, loadRoomTypes]);
 
   const handleDeleteRoom = useCallback(async (itemId) => {
     Alert.alert(
@@ -1167,12 +1163,7 @@ export function OwnerModule({
             setIsRoomLoading(true);
             try {
               await backendApi.deleteRoom(itemId, accessToken);
-              setRoomTypes((prev) => {
-                const updated = prev.filter((item) => item.id !== itemId);
-                OWNER_BUSINESS.roomTypes = updated;
-                updateOwnerBiz({ roomTypes: updated });
-                return updated;
-              });
+              await loadRoomTypes();
               Alert.alert('Sucesso', 'Quarto removido.');
             } catch (error) {
               Alert.alert('Erro', error?.message || 'Não foi possível remover o quarto.');
@@ -1184,7 +1175,7 @@ export function OwnerModule({
         },
       ]
     );
-  }, [accessToken]);
+  }, [accessToken, loadRoomTypes]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // BUSINESS INFO HANDLER (Secção 3 — MyBusiness)
@@ -2988,7 +2979,7 @@ export function OwnerModule({
                     <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
                       <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar Tipo</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover Tipo', `Remover "${room.name}" e todos os seus quartos físicos?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress: async ()=>{ try { await backendApi.deleteRoom(room.id, accessToken); setHtRooms(prev => prev.filter(r => r.roomTypeId !== room.id)); const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); } catch(e){ Alert.alert('Erro', e?.message||'Não foi possível remover.'); }}}])}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover Tipo', `Remover "${room.name}" e todos os seus quartos físicos?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress: async ()=>{ try { await backendApi.deleteRoom(room.id, accessToken); await loadRoomTypes(); setHtRooms(prev => prev.filter(r => r.roomTypeId !== room.id)); } catch(e){ Alert.alert('Erro', e?.message||'Não foi possível remover.'); }}}])}>
                       <Icon name="x" size={16} color={COLORS.grayText} strokeWidth={2} /><Text style={[editorS.itemActionText,{color:COLORS.grayText}]}>Remover</Text>
                     </TouchableOpacity>
                   </View>
