@@ -568,10 +568,6 @@ export function HomeModuleFull(props) {
       setActiveBusinessTab={setActiveBusinessTab}
       USER_PROFILE={USER_PROFILE}
       isBusinessMode={isBusinessMode}
-      authUser={props.authUser}
-      onLogin={props.onLogin}
-      onLogout={props.onLogout}
-      onOpenClaimFlow={props.onOpenClaimFlow}
     />
   );
   return null;
@@ -779,11 +775,6 @@ function ProfileTab({
   setActiveBusinessTab = () => {},
   USER_PROFILE = USER_PROFILE_DEFAULT,
   isBusinessMode = false,
-  // ── Auth real ──
-  authUser = null,          // { id, name, email, role } | null se não logado
-  onLogin = () => {},       // abre AuthModal
-  onLogout = () => {},      // termina sessão
-  onOpenClaimFlow = () => {}, // abre ClaimFlow (adicionar/reclamar negócio)
 }) {
   return (
 <View style={[profS.overlay, { 
@@ -799,32 +790,14 @@ function ProfileTab({
           </View>
 
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
-
-            {/* ── Não logado: CTA login ── */}
-            {!authUser && (
-              <View style={profAuthS.guestBox}>
-                <View style={profAuthS.guestAvatar}>
-                  <Icon name="user" size={40} color={COLORS.grayText} strokeWidth={1.5} />
-                </View>
-                <Text style={profAuthS.guestTitle}>Bem-vindo ao AcheiAqui</Text>
-                <Text style={profAuthS.guestDesc}>
-                  Entra na tua conta para guardar favoritos, adicionar negócios e muito mais.
-                </Text>
-                <TouchableOpacity style={profAuthS.loginBtn} onPress={onLogin} activeOpacity={0.85}>
-                  <Text style={profAuthS.loginBtnText}>Entrar / Criar conta</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             {/* Top Section: Avatar + Name + Stats */}
-            {!!authUser && (
             <View style={profS.topSection}>
               <View style={profS.avatarContainer}>
                 <View style={profS.avatarLarge}>
                   <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
                 </View>
               </View>
-              <Text style={profS.userName}>{authUser?.name || USER_PROFILE.name}</Text>
+              <Text style={profS.userName}>{USER_PROFILE.name}</Text>
               {/* Stats Badges */}
               <View style={profS.statsBadges}>
                 <View style={profS.statBadge}>
@@ -841,7 +814,6 @@ function ProfileTab({
                 </View>
               </View>
             </View>
-            )}
 
             {/* Action Buttons Grid */}
             <View style={profS.actionGrid}>
@@ -878,10 +850,7 @@ function ProfileTab({
               <TouchableOpacity
                 style={profS.actionButton}
                 activeOpacity={0.7}
-                onPress={() => {
-                  if (!authUser) { onLogin(); return; }
-                  onOpenClaimFlow();
-                }}
+                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
               >
                 <View style={profS.actionIcon}>
                   <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
@@ -1013,7 +982,7 @@ function ProfileTab({
             <View style={profS.divider} />
 
             {/* Business Mode Trigger — v2.7.0 FASE 3 */}
-            {!isBusinessMode && authUser?.role === 'OWNER' && (
+            {!isBusinessMode && (
               <View style={profS.section}>
                 <TouchableOpacity 
                   style={bizS.premiumCard}
@@ -1038,20 +1007,6 @@ function ProfileTab({
               </View>
             )}
 
-            {/* Logout */}
-            {!!authUser && (
-              <View style={[profS.section, {paddingTop: 0}]}>
-                <TouchableOpacity
-                  style={profAuthS.logoutBtn}
-                  onPress={onLogout}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="logOut" size={18} color={'#D32323'} strokeWidth={2} />
-                  <Text style={profAuthS.logoutBtnText}>Terminar sessão</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>
@@ -1060,37 +1015,3 @@ function ProfileTab({
   // ── NAV BAR ───────────────────────────────────────────────────────────────
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// profAuthS — Auth states inside ProfileTab
-// ─────────────────────────────────────────────────────────────────────────────
-const profAuthS = StyleSheet.create({
-  guestBox: {
-    alignItems: 'center', paddingHorizontal: 32, paddingVertical: 40,
-  },
-  guestAvatar: {
-    width: 88, height: 88, borderRadius: 44,
-    backgroundColor: COLORS.grayBg, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20, borderWidth: 2, borderColor: COLORS.grayLine,
-  },
-  guestTitle: {
-    fontSize: 22, fontWeight: '700', color: COLORS.darkText,
-    marginBottom: 10, textAlign: 'center', letterSpacing: -0.4,
-  },
-  guestDesc: {
-    fontSize: 14, color: COLORS.grayText, textAlign: 'center',
-    lineHeight: 20, marginBottom: 24,
-  },
-  loginBtn: {
-    backgroundColor: COLORS.red, borderRadius: 14,
-    paddingVertical: 14, paddingHorizontal: 36,
-    alignItems: 'center',
-  },
-  loginBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    paddingVertical: 14, borderRadius: 12,
-    borderWidth: 1.5, borderColor: '#FFCDD2', backgroundColor: '#FFF5F5',
-  },
-  logoutBtnText: { fontSize: 15, fontWeight: '600', color: '#D32323' },
-});

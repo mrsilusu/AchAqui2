@@ -172,7 +172,7 @@ function CalendarPicker({ visible, value, onConfirm, onCancel, label = 'Selecion
           <View style={calS.monthNav}>
             <TouchableOpacity onPress={prevMonth} style={calS.navBtn} activeOpacity={0.7}><Icon name="back" size={18} color="#111" strokeWidth={2.5}/></TouchableOpacity>
             <Text style={calS.monthTitle}>{MONTHS_PT[viewMonth]} {viewYear}</Text>
-            <TouchableOpacity onPress={nextMonth} style={calS.navBtn} activeOpacity={0.7}><Icon name="chevronRight" size={18} color="#111" strokeWidth={2.5}/></TouchableOpacity>
+            <TouchableOpacity onPress={nextMonth} style={calS.navBtn} activeOpacity={0.7}><Icon name="arrowRight" size={18} color="#111" strokeWidth={2.5}/></TouchableOpacity>
           </View>
           <View style={calS.weekRow}>{DAYS_PT.map(d => <Text key={d} style={calS.weekDay}>{d}</Text>)}</View>
           <View style={calS.grid}>
@@ -1345,7 +1345,7 @@ export function OwnerModule({
             </View>
 
             <View style={bizS.metricCard}>
-              <Icon name="checkCircle" size={24} color={COLORS.red} strokeWidth={2} />
+              <Icon name="check" size={24} color={COLORS.red} strokeWidth={2} />
               <Text style={bizS.metricValue}>{ownerMetrics.checkIns}</Text>
               <Text style={bizS.metricLabel}>Check-ins</Text>
               <Text style={[bizS.metricChange, ownerMetrics.checkInsChange > 0 && bizS.metricChangePositive]}>
@@ -1371,7 +1371,7 @@ export function OwnerModule({
               {authRole !== 'OWNER' ? (
                 <View style={bizS.actionCard}>
                   <View style={bizS.actionIcon}>
-                    <Icon name="shield" size={22} color={COLORS.red} strokeWidth={2} />
+                    <Icon name="verified" size={22} color={COLORS.red} strokeWidth={2} />
                   </View>
                   <View style={{flex:1}}>
                     <Text style={bizS.actionTitle}>Acesso restrito</Text>
@@ -1382,12 +1382,12 @@ export function OwnerModule({
                 <>
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 8, marginBottom: 10 }]}>Gastronomia e Vida Noturna</Text>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservasDining')}>
-                    <View style={bizS.actionIcon}><Icon name="grid" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={bizS.actionIcon}><Icon name="analytics" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}>
                       <Text style={bizS.actionTitle}>Gestão de Mesas</Text>
                       <Text style={bizS.actionDesc}>Mapa de mesas e turnos</Text>
                     </View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowReservationsModal(true)}>
                     <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
@@ -1395,7 +1395,7 @@ export function OwnerModule({
                       <Text style={bizS.actionTitle}>Reservas de Mesas</Text>
                       <Text style={bizS.actionDesc}>{businessReservations.filter((r) => r.status === 'pending').length} pendentes · {businessReservations.filter((r) => r.status === 'active').length} ativas</Text>
                     </View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   {OWNER_BUSINESS.modules?.gastronomy && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowMenuEditor(true)}>
@@ -1404,7 +1404,7 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>Editar Menu</Text>
                         <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.menuItems||[]).length} itens</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.retail && (
@@ -1414,19 +1414,19 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>Editar Inventário</Text>
                         <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.inventoryItems||[]).length} produtos</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Alojamento e Turismo</Text>
                   {OWNER_BUSINESS.modules?.accommodation && (
                     <TouchableOpacity style={[bizS.actionCard, { borderColor: '#1565C0' + '30', backgroundColor: '#EFF6FF' }]} activeOpacity={0.8} onPress={() => setShowDashboard(true)}>
-                      <View style={[bizS.actionIcon, { backgroundColor: '#1565C0' + '20' }]}><Icon name="barChart" size={22} color="#1565C0" strokeWidth={2} /></View>
+                      <View style={[bizS.actionIcon, { backgroundColor: '#1565C0' + '20' }]}><Icon name="analytics" size={22} color="#1565C0" strokeWidth={2} /></View>
                       <View style={{flex:1}}>
                         <Text style={[bizS.actionTitle, { color: '#1565C0' }]}>Dashboard PMS</Text>
                         <Text style={bizS.actionDesc}>Ocupação · Receção · Folio · Receita</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.accommodation && (
@@ -1436,17 +1436,17 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>Editar Tipos de Quarto</Text>
                         <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).length} tipos</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.accommodation && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomBookingsManager(true)}>
-                      <View style={bizS.actionIcon}><Icon name="reservation" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                      <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}>
                         <Text style={bizS.actionTitle}>Reservas de Quartos</Text>
                         <Text style={bizS.actionDesc}>{roomBookings.filter(rb=>rb.status==='pending').length} pendente{roomBookings.filter(rb=>rb.status==='pending').length!==1?'s':''} · {roomBookings.filter(rb=>rb.status==='confirmed').length} confirmada{roomBookings.filter(rb=>rb.status==='confirmed').length!==1?'s':''}</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.accommodation && (
@@ -1456,7 +1456,7 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>Políticas & Quartos</Text>
                         <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {(OWNER_BUSINESS.modules?.accommodation || OWNER_BUSINESS.modules?.tourism) && (
@@ -1466,13 +1466,13 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>Sincronização iCal</Text>
                         <Text style={bizS.actionDesc} numberOfLines={1}>{'Booking.com · Airbnb · Google Calendar'}</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Tours e Atividades', 'Gestão de tours será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="mapPin" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Tours e Atividades</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Comércio e Retalho</Text>
@@ -1480,23 +1480,23 @@ export function OwnerModule({
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowInventoryEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Editar Inventário</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.inventoryItems||[]).length} produtos</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoCodeModal(true)}>
                     <View style={bizS.actionIcon}><Icon name="tag" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Código Promocional</Text><Text style={bizS.actionDesc}>{'Ver códigos'}</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Preços', 'Configuração avançada de preços será adicionada em breve.') }>
                     <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Preços</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Código de Barras/SKU', 'Gestão de código de barras e SKU será adicionada em breve.') }>
                     <View style={bizS.actionIcon}><Icon name="certified" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Código de Barras/SKU</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Saúde e Bem-estar</Text>
@@ -1504,47 +1504,47 @@ export function OwnerModule({
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Disponibilidade</Text><Text style={bizS.actionDesc}>Horários de marcação</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.professional && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="portfolio" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Editar Serviços</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Fichas de Clientes', 'Gestão de fichas de clientes será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="user" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Fichas de Clientes</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Especialistas', 'Gestão de especialistas será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="users" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Especialistas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Educação e Formação</Text>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Cursos/Turmas', 'Funcionalidade prevista para próxima fase.') }>
                     <View style={bizS.actionIcon}><Icon name="briefcase" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Cursos/Turmas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Inscrições de Alunos', 'Funcionalidade prevista para próxima fase.') }>
-                    <View style={bizS.actionIcon}><Icon name="checkCircle" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Inscrições de Alunos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Horários de Aulas', 'Funcionalidade prevista para próxima fase.') }>
                     <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Horários de Aulas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Material Didático', 'Funcionalidade prevista para próxima fase.') }>
-                    <View style={bizS.actionIcon}><Icon name="fileText" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={bizS.actionIcon}><Icon name="folder" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Material Didático</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Serviços Profissionais</Text>
@@ -1552,47 +1552,47 @@ export function OwnerModule({
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowServicesOfferedEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Serviços Oferecidos</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.servicesOffered||[]).length} serviços no perfil</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.professional && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPortfolioEditor(true)}>
                       <View style={bizS.actionIcon}><Icon name="camera" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Portfólio</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.portfolio||[]).length} imagem{(OWNER_BUSINESS.portfolio||[]).length!==1?'ns':''}</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Emissão de Orçamentos', 'Emissão de orçamentos será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Emissão de Orçamentos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Contratos', 'Gestão de contratos será integrada neste módulo.') }>
-                    <View style={bizS.actionIcon}><Icon name="fileText" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={bizS.actionIcon}><Icon name="folder" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Contratos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Logística e Operações</Text>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Frota', 'Gestão de frota será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Frota</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Controlo de Armazém', 'Controlo de armazém será integrado neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="briefcase" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Controlo de Armazém</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Rastreamento de Cargas', 'Rastreamento de cargas será integrado neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Rastreamento de Cargas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Manutenção de Veículos', 'Manutenção de veículos será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Manutenção de Veículos</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Encomendas Personalizadas</Text>
@@ -1600,23 +1600,23 @@ export function OwnerModule({
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowCustomOrders(true)}>
                       <View style={bizS.actionIcon}><Icon name="star" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Encomendas Personalizadas</Text><Text style={bizS.actionDesc}>{0} pendentes</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Status de Produção', 'Acompanhar status de produção será integrado neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Status de Produção</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Orçamentos por Medida', 'Orçamentos por medida serão integrados neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Orçamentos por Medida</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Aprovação de Design', 'Aprovação de design será integrada neste módulo.') }>
-                    <View style={bizS.actionIcon}><Icon name="checkCircle" size={22} color={COLORS.red} strokeWidth={2} /></View>
+                    <View style={bizS.actionIcon}><Icon name="check" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Aprovação de Design</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <Text style={[bizS.sectionTitle, { fontSize: 14, marginTop: 16, marginBottom: 10 }]}>Entregas e Delivery</Text>
@@ -1624,25 +1624,25 @@ export function OwnerModule({
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowDeliveryConfig(true)}>
                       <View style={bizS.actionIcon}><Icon name="delivery" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Config de Entrega</Text><Text style={bizS.actionDesc}>{(OWNER_BUSINESS.deliveryAreas||[]).length} áreas</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   {OWNER_BUSINESS.modules?.delivery && (
                     <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowDeliveryOrders(true)}>
                       <View style={bizS.actionIcon}><Icon name="clock" size={22} color={COLORS.red} strokeWidth={2} /></View>
                       <View style={{flex:1}}><Text style={bizS.actionTitle}>Rastreamento de Entregas</Text><Text style={bizS.actionDesc}>{0} em curso</Text></View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Gestão de Estafetas', 'Gestão de estafetas será integrada neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="users" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Gestão de Estafetas</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                   <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => Alert.alert('Taxas de Entrega', 'Taxas de entrega serão integradas neste módulo.') }>
                     <View style={bizS.actionIcon}><Icon name="payment" size={22} color={COLORS.red} strokeWidth={2} /></View>
                     <View style={{flex:1}}><Text style={bizS.actionTitle}>Taxas de Entrega</Text><Text style={bizS.actionDesc}>Em preparação</Text></View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
 
                   <TouchableOpacity 
@@ -1659,7 +1659,7 @@ export function OwnerModule({
                       <Text style={bizS.actionTitle}>Ver como Cliente</Text>
                       <Text style={bizS.actionDesc}>Pré-visualizar seu perfil público</Text>
                     </View>
-                    <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
                 </>
               )}
@@ -1757,7 +1757,7 @@ export function OwnerModule({
                     <Text style={bizS.notifMessage}>{notif.message}</Text>
                     <Text style={bizS.notifTime}>{notif.time}</Text>
                   </View>
-                  <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} style={{marginLeft:8, alignSelf:'center'}} />
+                  <Icon name="arrowRight" size={16} color={COLORS.grayText} strokeWidth={2} style={{marginLeft:8, alignSelf:'center'}} />
                 </TouchableOpacity>
               ))}
               {ownerNotifications.length===0 && (
@@ -1783,7 +1783,7 @@ export function OwnerModule({
                     <Text style={bizS.infoLabel}>Nome do Negócio</Text>
                     <Text style={bizS.infoValue}>{OWNER_BUSINESS.name}</Text>
                   </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </View>
                 <View style={bizS.infoRow}>
                   <Icon name="mapPin" size={18} color={COLORS.grayText} strokeWidth={2} />
@@ -1791,7 +1791,7 @@ export function OwnerModule({
                     <Text style={bizS.infoLabel}>Endereço</Text>
                     <Text style={bizS.infoValue}>{OWNER_BUSINESS.address}</Text>
                   </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </View>
                 <View style={bizS.infoRow}>
                   <Icon name="phone" size={18} color={COLORS.grayText} strokeWidth={2} />
@@ -1799,7 +1799,7 @@ export function OwnerModule({
                     <Text style={bizS.infoLabel}>Telefone</Text>
                     <Text style={bizS.infoValue}>{OWNER_BUSINESS.phone}</Text>
                   </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </View>
                 <View style={bizS.infoRow}>
                   <Icon name="clock" size={18} color={COLORS.grayText} strokeWidth={2} />
@@ -1807,7 +1807,7 @@ export function OwnerModule({
                     <Text style={bizS.infoLabel}>Horário de Funcionamento</Text>
                     <Text style={bizS.infoValue}>{OWNER_BUSINESS.hours}</Text>
                   </View>
-                  <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                 </View>
               </View>
 
@@ -1825,7 +1825,7 @@ export function OwnerModule({
                   <Text style={bizS.actionTitle}>Gerir Comodidades</Text>
                   <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.amenities||[]).length} ativas</Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -1840,7 +1840,7 @@ export function OwnerModule({
                   <Text style={bizS.actionTitle}>Gerir Módulos Operacionais</Text>
                   <Text style={bizS.actionDesc}>{Object.values(OWNER_BUSINESS.modules||{}).filter(Boolean).length} ativos</Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
 
               <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPhotoUpload(true)}>
@@ -1851,7 +1851,7 @@ export function OwnerModule({
                   <Text style={bizS.actionTitle}>Adicionar Fotos</Text>
                   <Text style={bizS.actionDesc}>{(OWNER_BUSINESS.photos||[]).length} foto{(OWNER_BUSINESS.photos||[]).length !== 1 ? 's' : ''}</Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowPromoManager(true)}>
                 <View style={bizS.actionIcon}>
@@ -1863,7 +1863,7 @@ export function OwnerModule({
                     {'Ver promo  ões'}
                   </Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowSettings(true)}>
                 <View style={bizS.actionIcon}>
@@ -1873,7 +1873,7 @@ export function OwnerModule({
                   <Text style={bizS.actionTitle}>Configurações</Text>
                   <Text style={bizS.actionDesc}>Gerencie suas preferências</Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <View style={{height:40}} />
             </View>
@@ -3028,7 +3028,7 @@ export function OwnerModule({
                 </View>
               )) : (
                 <View style={editorS.emptyState}>
-                  <Icon name="home" size={64} color={COLORS.grayText} strokeWidth={1} />
+                  <Icon name="map" size={64} color={COLORS.grayText} strokeWidth={1} />
                   <Text style={editorS.emptyStateTitle}>Nenhum Tipo de Quarto</Text>
                   <Text style={editorS.emptyStateText}>Toque em + para adicionar o primeiro</Text>
                 </View>
@@ -3394,7 +3394,7 @@ export function OwnerModule({
                             setDeliveryOrders(updated); OWNER_BUSINESS.deliveryOrders = updated; setSelectedDeliveryOrder({...selectedDeliveryOrder, status: statusFlow[currentIdx + 1]});
                           }
                         }}>
-                          <Icon name="chevronRight" size={16} color={COLORS.white} strokeWidth={2.5} />
+                          <Icon name="arrowRight" size={16} color={COLORS.white} strokeWidth={2.5} />
                           <Text style={{fontSize:10, fontWeight:'700', color:COLORS.white, marginTop:2}}>Avançar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={{flex:1, paddingVertical:10, borderRadius:8, backgroundColor:'#D32F2F', alignItems:'center'}} onPress={() => {
@@ -3483,7 +3483,7 @@ export function OwnerModule({
                       </Text>
                       {isActive && (
                         <View style={bizS.moduleCheck}>
-                          <Icon name="checkCircle" size={20} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
+                          <Icon name="check" size={20} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
                         </View>
                       )}
                       {/* Actions preview */}
@@ -3561,7 +3561,7 @@ export function OwnerModule({
                           </Text>
                           {isSelected && (
                             <View style={bizS.amenityCheck}>
-                              <Icon name="checkCircle" size={16} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
+                              <Icon name="check" size={16} color={COLORS.green} strokeWidth={2} fill={COLORS.green} />
                             </View>
                           )}
                         </TouchableOpacity>
@@ -4561,7 +4561,7 @@ export function OwnerModule({
               {/* Stats Badges */}
               <View style={profS.statsBadges}>
                 <View style={profS.statBadge}>
-                  <Icon name="messageSquare" size={14} color={COLORS.darkText} strokeWidth={2} />
+                  <Icon name="bell" size={14} color={COLORS.darkText} strokeWidth={2} />
                   <Text style={profS.statBadgeText}>{USER_PROFILE.stats.reviewsWritten}</Text>
                 </View>
                 <View style={profS.statBadge}>
@@ -4603,7 +4603,7 @@ export function OwnerModule({
                 onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
               >
                 <View style={profS.actionIcon}>
-                  <Icon name="checkCircle" size={22} color={COLORS.darkText} strokeWidth={2} fill={COLORS.darkText} />
+                  <Icon name="check" size={22} color={COLORS.darkText} strokeWidth={2} fill={COLORS.darkText} />
                 </View>
                 <Text style={profS.actionLabel}>Check-in</Text>
               </TouchableOpacity>
@@ -4703,7 +4703,7 @@ export function OwnerModule({
               >
                 <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Preferências</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={profS.menuRow}
@@ -4712,7 +4712,7 @@ export function OwnerModule({
               >
                 <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Perfil</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={profS.menuRow}
@@ -4721,7 +4721,7 @@ export function OwnerModule({
               >
                 <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Ajuda e suporte</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={profS.menuRow}
@@ -4730,7 +4730,7 @@ export function OwnerModule({
               >
                 <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Configurações</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={profS.menuRow}
@@ -4739,7 +4739,7 @@ export function OwnerModule({
               >
                 <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
                 <Text style={profS.menuLabel}>Sobre AchAqui</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
@@ -4764,7 +4764,7 @@ export function OwnerModule({
                       <Text style={bizS.premiumTitle}>Gerir o meu Negócio</Text>
                       <Text style={bizS.premiumDesc}>Aceda ao Dashboard e gerencie seu negócio</Text>
                     </View>
-                    <Icon name="chevronRight" size={24} color={COLORS.white} strokeWidth={2.5} />
+                    <Icon name="arrowRight" size={24} color={COLORS.white} strokeWidth={2.5} />
                   </View>
                 </TouchableOpacity>
               </View>
@@ -5182,7 +5182,7 @@ export function OwnerModule({
                 activeOpacity={0.8}
                 onPress={() => Alert.alert('Galeria', 'Escolher da galeria (disponível na versão publicada)')}
               >
-                <Icon name="photo" size={18} color={COLORS.red} strokeWidth={2} />
+                <Icon name="camera" size={18} color={COLORS.red} strokeWidth={2} />
                 <Text style={photoS.addBtnText}>Escolher da Galeria</Text>
               </TouchableOpacity>
 
@@ -5236,7 +5236,7 @@ export function OwnerModule({
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkText, marginBottom: 2 }}>{platform.name}</Text>
                   <Text style={{ fontSize: 13, color: COLORS.grayText }}>{platform.desc}</Text>
                 </View>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
               </TouchableOpacity>
             ))}
 
@@ -5299,7 +5299,7 @@ export function OwnerModule({
                     {service}
                   </Text>
                   {ownerServicesOffered.includes(service) && (
-                    <Icon name="checkCircle" size={20} color={COLORS.red} strokeWidth={2} fill={COLORS.red} />
+                    <Icon name="check" size={20} color={COLORS.red} strokeWidth={2} fill={COLORS.red} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -5564,7 +5564,7 @@ export function OwnerModule({
                         <Text style={bizS.actionTitle}>{item.label}</Text>
                         <Text style={bizS.actionDesc} numberOfLines={1}>{item.desc}</Text>
                       </View>
-                      <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   ))}
                 </>
@@ -5603,7 +5603,7 @@ export function OwnerModule({
                       })() : (
                         <Text style={{fontSize:14, color:COLORS.grayText}}>Selecionar categoria...</Text>
                       )}
-                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={16} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                   </View>
 
@@ -5626,7 +5626,7 @@ export function OwnerModule({
                           ? `${(settingsInfo.subCategoryIds||[]).length} subcategoria${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''} seleccionada${(settingsInfo.subCategoryIds||[]).length !== 1 ? 's' : ''}`
                           : 'Adicionar subcategorias...'}
                       </Text>
-                      <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
+                      <Icon name="arrowRight" size={16} color={COLORS.grayText} strokeWidth={2} />
                     </TouchableOpacity>
                     {(settingsInfo.subCategoryIds||[]).length > 0 && (
                       <View style={{flexDirection:'row', flexWrap:'wrap', gap:6, marginTop:10}}>
