@@ -367,7 +367,7 @@ export function OwnerModule({
   const [editingService, setEditingService] = useState(null);
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', basePrice: '', duration: '', available: true });
   const [isServiceLoading, setIsServiceLoading] = useState(false);
-  const [roomTypes, setRoomTypes]       = useState(OWNER_BUSINESS.roomTypes || []);
+  const [roomTypes, setRoomTypes]       = useState(ownerBiz?.roomTypes || []);
   const [htRooms, setHtRooms]           = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [roomPhysForm, setRoomPhysForm] = useState(null); // null | { roomTypeId, number, floor, notes, editId }
@@ -594,6 +594,7 @@ export function OwnerModule({
   const saveHtRoom = useCallback(async () => {
     if (!roomPhysForm) return;
     if (!roomPhysForm.number?.trim()) { Alert.alert('Erro', 'O número do quarto é obrigatório.'); return; }
+    if (!ownerBusinessId) { Alert.alert('Erro', 'Negócio não identificado. Guarda primeiro as informações básicas.'); return; }
     try {
       if (roomPhysForm.editId) {
         await backendApi.updateHtRoom(roomPhysForm.editId, {
@@ -756,7 +757,18 @@ export function OwnerModule({
     setOwnerNotifications(normalized);
   }, [authRole, liveNotifications]);
 
+  // ── Sincronizar roomTypes com os dados reais do ownerBiz (da API) ──────────
   useEffect(() => {
+    if (!ownerBiz) return;
+    // Usar roomTypes da API se existirem
+    if (ownerBiz.roomTypes?.length) {
+      setRoomTypes(ownerBiz.roomTypes);
+    }
+    // Carregar quartos físicos da BD ao montar
+    loadHtRooms();
+  }, [ownerBiz?.id]); // só re-executa quando muda o negócio
+
+    useEffect(() => {
     if (authRole !== 'OWNER' || !Array.isArray(liveBookings) || liveBookings.length === 0) {
       return;
     }
@@ -5532,29 +5544,45 @@ export function OwnerModule({
               {settingsSection === 'account' && 'Conta'}
             </Text>
             {settingsSection && (
-              <TouchableOpacity activeOpacity={0.7} onPress={() => {
+              <TouchableOpacity activeOpacity={0.7} onPress={async () => {
                 if (settingsSection === 'info') {
-                  OWNER_BUSINESS.name = settingsInfo.name;
-                  OWNER_BUSINESS.address = settingsInfo.address;
-                  OWNER_BUSINESS.neighborhood = settingsInfo.neighborhood;
-                  OWNER_BUSINESS.phone = settingsInfo.phone;
-                  updateOwnerBiz({
-                    name: settingsInfo.name,
+                  if (!settingsInfo.name?.trim()) {
+                    Alert.alert('Campo obrigatório', 'O nome do negócio é obrigatório.');
+                    setIsUpdatingSettings(false);
+                    return;
+                  }
+                  const payload = {
+                    name: settingsInfo.name.trim(),
                     category: settingsInfo.category,
-                    subcategory: settingsInfo.subcategory,
-                    primaryCategoryId: settingsInfo.primaryCategoryId,
-                    subCategoryIds: settingsInfo.subCategoryIds || [],
-                    address: settingsInfo.address,
-                    neighborhood: settingsInfo.neighborhood,
-                    phone: settingsInfo.phone,
-                    website: settingsInfo.website,
                     description: settingsInfo.description,
-                    price: settingsInfo.price,
-                    businessType: settingsInfo.businessType,
-                    businessTypeCustom: settingsInfo.businessTypeCustom.trim(),
+                    metadata: {
+                      phone: settingsInfo.phone,
+                      website: settingsInfo.website,
+                      address: settingsInfo.address,
+                      neighborhood: settingsInfo.neighborhood,
+                    },
                     latitude: settingsInfo.latitude,
                     longitude: settingsInfo.longitude,
-                  });
+                  };
+                  try {
+                    if (!ownerBiz) {
+                      // Criar novo negócio na BD
+                      const newBusiness = await backendApi.createBusiness(payload, accessToken);
+                      // Adicionar à lista global para aparecer no Home
+                      if (onRefreshOwnerData) await onRefreshOwnerData();
+                      Alert.alert('✅ Negócio criado!', 'O teu negócio foi registado e já aparece na plataforma.');
+                      setShowSettings(false);
+                    } else {
+                      // Actualizar negócio existente
+                      await backendApi.updateBusinessInfo(ownerBusinessId, payload, accessToken);
+                      updateOwnerBiz(payload);
+                      Alert.alert('✅ Guardado', 'Informações actualizadas com sucesso.');
+                    }
+                  } catch (err) {
+                    Alert.alert('Erro', err?.message || 'Não foi possível guardar. Tenta novamente.');
+                    setIsUpdatingSettings(false);
+                    return;
+                  }
                 }
                 if (settingsSection === 'profile') {
                   const cleanHighlights = ownerHighlights.filter(h => h.replace(/"/g,'').trim());
@@ -5589,44 +5617,50 @@ export function OwnerModule({
 
               {/* ── MEDIDOR DE PROGRESSO DO PERFIL ── */}
               {!settingsSection && (() => {
-                const checks = [
-                  Boolean(settingsInfo.name),
-                  Boolean(settingsInfo.phone),
-                  Boolean(settingsInfo.address),
-                  Boolean(settingsInfo.description),
-                  Boolean(settingsInfo.category),
-                  Boolean(settingsInfo.website),
-                  Object.values(settingsHours).some(h => h.active),
-                  ownerHighlights.length > 0,
-                  ownerPhotos.length > 0,
-                  Boolean(settingsInfo.latitude && settingsInfo.longitude),
+                const criteria = [
+                  { label: 'Nome do negócio',        done: Boolean(settingsInfo.name?.trim()),        section: 'info' },
+                  { label: 'Categoria principal',     done: Boolean(settingsInfo.primaryCategoryId),   section: 'info' },
+                  { label: 'Morada',                  done: Boolean(settingsInfo.address?.trim()),     section: 'info' },
+                  { label: 'Telefone de contacto',    done: Boolean(settingsInfo.phone?.trim()),       section: 'info' },
+                  { label: 'Descrição do negócio',    done: Boolean(settingsInfo.description?.trim()), section: 'info' },
+                  { label: 'Horários de funcionamento', done: Object.values(settingsHours).some(h => h.active), section: 'hours' },
+                  { label: 'Fotos do negócio',        done: ownerPhotos.length > 0,                   section: 'profile' },
+                  { label: 'Website ou rede social',  done: Boolean(settingsInfo.website?.trim()),     section: 'info' },
                 ];
-                const filled  = checks.filter(Boolean).length;
-                const total   = checks.length;
-                const pct     = Math.round((filled / total) * 100);
-                const color   = pct < 40 ? '#E53935' : pct < 75 ? '#FB8C00' : '#43A047';
+                const filled = criteria.filter(c => c.done).length;
+                const pct    = Math.round((filled / criteria.length) * 100);
+                const color  = pct < 40 ? '#E53935' : pct < 80 ? '#FB8C00' : '#43A047';
+                const missing = criteria.filter(c => !c.done);
                 return (
                   <View style={{ marginBottom: 20, backgroundColor: '#F7F7F8', borderRadius: 14, padding: 16 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <Text style={{ fontSize: 14, fontWeight: '700', color: '#111' }}>Perfil do negócio</Text>
                       <Text style={{ fontSize: 14, fontWeight: '800', color }}>{pct}% completo</Text>
                     </View>
-                    <View style={{ height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden' }}>
+                    <View style={{ height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
                       <View style={{ height: 8, width: `${pct}%`, backgroundColor: color, borderRadius: 4 }} />
                     </View>
-                    {pct < 100 && (
-                      <Text style={{ fontSize: 12, color: '#8A8A8A', marginTop: 8 }}>
-                        {pct < 40
-                          ? 'Preenche as informações básicas para aparecer nos resultados.'
-                          : pct < 75
-                          ? 'Estás a meio caminho! Adiciona mais detalhes para atrair mais clientes.'
-                          : 'Quase lá! Completa o perfil para máxima visibilidade.'}
-                      </Text>
-                    )}
-                    {pct === 100 && (
-                      <Text style={{ fontSize: 12, color: '#43A047', marginTop: 8, fontWeight: '600' }}>
+                    {pct === 100 ? (
+                      <Text style={{ fontSize: 12, color: '#43A047', fontWeight: '600' }}>
                         ✓ Perfil completo — máxima visibilidade garantida!
                       </Text>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#111', marginBottom: 6 }}>
+                          O que falta preencher:
+                        </Text>
+                        {missing.map(c => (
+                          <TouchableOpacity
+                            key={c.label}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}
+                            onPress={() => setSettingsSection(c.section)}
+                          >
+                            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+                            <Text style={{ fontSize: 12, color: '#555', flex: 1 }}>{c.label}</Text>
+                            <Icon name="arrowRight" size={12} color={COLORS.grayText} strokeWidth={2} />
+                          </TouchableOpacity>
+                        ))}
+                      </>
                     )}
                   </View>
                 );

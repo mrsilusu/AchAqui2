@@ -136,6 +136,8 @@ export const backendApi = {
     apiRequest(`/bookings/${bookingId}/reject`, { method: 'PATCH', body: payload, accessToken }),
   updateBusinessStatus: (businessId, payload, accessToken) =>
     apiRequest(`/businesses/${businessId}/status`, { method: 'PATCH', body: payload, accessToken }),
+  createBusiness: (payload, accessToken) =>
+    apiRequest('/businesses', { method: 'POST', body: payload, accessToken }),
   updateBusiness: (businessId, payload, accessToken) =>
     apiRequest(`/businesses/${businessId}`, { method: 'PATCH', body: payload, accessToken }),
   updateBusinessInfo: (businessId, payload, accessToken) =>

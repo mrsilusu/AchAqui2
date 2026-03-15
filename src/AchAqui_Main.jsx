@@ -384,6 +384,17 @@ function AppContent() {
   const refreshOwnerData = useCallback(async () => {
     if (!authSession.accessToken || !authSession.isOwner) return;
 
+    // Recarregar lista de negócios (inclui o novo negócio criado)
+    try {
+      const response = await backendApi.getBusinesses();
+      const fromApi = (Array.isArray(response) ? response : [])
+        .map(normalizeBusiness)
+        .filter(Boolean);
+      const apiIds = new Set(fromApi.map(b => b.id));
+      const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
+      setBusinesses([...fromApi, ...mocksNotInApi]);
+    } catch { /* manter lista actual */ }
+
     await liveSync.reloadAll();
     try {
       const response = await backendApi.getOwnerDashboard(authSession.accessToken);
@@ -623,6 +634,7 @@ function AppContent() {
             <AdminModule
               accessToken={authSession.accessToken}
               onExit={() => {}}
+              onLogout={handleLogout}
               insets={insets}
             />
           )}
