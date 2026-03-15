@@ -470,8 +470,10 @@ function AppContent() {
       const targetBusinessId =
         explicitBusinessId ||
         ownerBusinessFromSession?.id ||
-        OWNER_BUSINESS.id;
+        null;
 
+      // Sem negócio associado -- não actualizar nada
+      if (!targetBusinessId) return prev;
       return prev.map((b) => (b.id === targetBusinessId ? { ...b, ...fields } : b));
     });
   }, [authSession.user?.id]);
@@ -482,7 +484,6 @@ function AppContent() {
       expires: p.endDate || '', code: p.type === 'percent' ? `${p.discount}%OFF` : `${p.discount}KZ`,
     }));
     const activePromo = updatedPromotions.find(p => p.active);
-    OWNER_BUSINESS.promo = activePromo ? activePromo.title : null;
     updateOwnerBiz({ deals, promo: activePromo ? activePromo.title : null });
   }, [updateOwnerBiz]);
 
@@ -648,7 +649,7 @@ function AppContent() {
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
-              authUser={authSession.user}
+              authUser={authSession.accessToken ? authSession.user : null}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
             />
@@ -670,6 +671,7 @@ function AppContent() {
               onMarkNotificationRead={liveSync.markNotificationRead}
               onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
               authRole={authSession.user?.role || 'CLIENT'}
+              authEmail={authSession.user?.email || ''}
               authUserId={authSession.user?.id || null}
               accessToken={authSession.accessToken}
               onRefreshOwnerData={refreshOwnerData}

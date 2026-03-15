@@ -245,6 +245,7 @@ export function OwnerModule({
   onMarkNotificationRead = () => {},
   onMarkAllNotificationsRead = () => {},
   authRole = 'CLIENT',
+  authEmail = '',
   ownerMetrics: ownerMetricsProp = null,
   accessToken = null,
   authUserId = null,
@@ -483,13 +484,21 @@ export function OwnerModule({
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState(null);
   const [settingsInfo, setSettingsInfo] = useState({
-    name: OWNER_BUSINESS.name, category: OWNER_BUSINESS.category,
-    subcategory: 'Pizza, Massa, Italiana', primaryCategoryId: OWNER_BUSINESS.primaryCategoryId || 'restaurants',
-    subCategoryIds: OWNER_BUSINESS.subCategoryIds || ['food', 'nightlife'], businessType: 'food', businessTypeCustom: '',
-    phone: OWNER_BUSINESS.phone, website: 'https://pizzariabelavista.ao',
-    description: 'A melhor pizza italiana de Luanda, com ingredientes frescos e massa artesanal.',
-    price: '··', address: OWNER_BUSINESS.address, neighborhood: OWNER_BUSINESS.neighborhood || 'Talatona, Luanda',
-    latitude: -8.8388, longitude: 13.2894,
+    name: ownerBiz?.name || '',
+    category: ownerBiz?.category || '',
+    subcategory: ownerBiz?.subcategory || '',
+    primaryCategoryId: ownerBiz?.primaryCategoryId || '',
+    subCategoryIds: ownerBiz?.subCategoryIds || [],
+    businessType: ownerBiz?.businessType || '',
+    businessTypeCustom: '',
+    phone: ownerBiz?.metadata?.phone || '',
+    website: ownerBiz?.metadata?.website || '',
+    description: ownerBiz?.description || '',
+    price: ownerBiz?.price || '',
+    address: ownerBiz?.address || '',
+    neighborhood: ownerBiz?.neighborhood || '',
+    latitude: ownerBiz?.latitude || null,
+    longitude: ownerBiz?.longitude || null,
   });
   const [ownerHighlights, setOwnerHighlights] = useState(OWNER_BUSINESS.highlights || ['"Pizza autêntica"', '"Ambiente familiar"']);
   const [ownerPortfolio, setOwnerPortfolio] = useState(OWNER_BUSINESS.portfolio || []);
@@ -520,7 +529,7 @@ export function OwnerModule({
     payment: ['Multicaixa Express', 'TPA', 'Dinheiro'],
   });
   const [settingsVisibility, setSettingsVisibility] = useState({ isPublic: true, showAddress: true, showPhone: true });
-  const [settingsAccount, setSettingsAccount] = useState({ email: 'dono@pizzariabelavista.ao', language: 'pt' });
+  const [settingsAccount, setSettingsAccount] = useState({ email: authEmail || '', language: 'pt' });
   const [ownerPhotos, setOwnerPhotos] = useState(OWNER_BUSINESS.photos || []);
   const [businessNotifications, setBusinessNotifications] = useState(BUSINESS_NOTIFICATIONS);
   const [showNotifDetail, setShowNotifDetail] = useState(false);
@@ -562,18 +571,14 @@ export function OwnerModule({
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
   // Prioridade: 1º negócio da BD com este owner, 2º negócio com o ID fixo do mock, 3º mock local
   const ownerBiz = React.useMemo(() => {
-    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
-    if (fromApi) return fromApi;
-    const byId = businesses?.find((b) => b.id === OWNER_BUSINESS.id);
-    if (byId) return byId;
-    return OWNER_BUSINESS;
+    if (!authUserId) return null;
+    return businesses?.find((b) => b?.owner?.id === authUserId) || null;
   }, [businesses, authUserId]);
 
-  // ownerBusinessId: usar sempre o ID real da BD quando disponível
+  // ownerBusinessId: null se não tiver negócio real na BD
   const ownerBusinessId = React.useMemo(() => {
-    const fromApi = businesses?.find((b) => b?.owner?.id === authUserId);
-    return fromApi?.id || ownerBiz?.id || OWNER_BUSINESS.id;
-  }, [businesses, authUserId, ownerBiz]);
+    return ownerBiz?.id || null;
+  }, [ownerBiz]);
 
   // ── Quartos físicos ──────────────────────────────────────────────────────────
   const loadHtRooms = useCallback(async () => {
@@ -643,8 +648,8 @@ export function OwnerModule({
 
     if (Object.keys(metadataPatch).length > 0) {
       const currentMetadata =
-        ownerBiz?.metadata && typeof ownerBiz.metadata === 'object'
-          ? ownerBiz.metadata
+        ownerBiz?.metadata && typeof ownerBiz?.metadata === 'object'
+          ? ownerBiz?.metadata
           : {};
       payload.metadata = { ...currentMetadata, ...metadataPatch };
     }
@@ -679,7 +684,7 @@ export function OwnerModule({
 
     const previousStatus =
       businessStatusOverride ||
-      (ownerBiz.isOpen ? 'open' : 'closed');
+      (ownerBiz?.isOpen ? 'open' : 'closed');
     const nextStatus = isOpen ? 'open' : 'closed';
     setIsUpdatingBusinessStatus(true);
     setBusinessStatusOverride(nextStatus);
@@ -696,7 +701,7 @@ export function OwnerModule({
     } finally {
       setIsUpdatingBusinessStatus(false);
     }
-  }, [ownerBusinessId, accessToken, businessStatusOverride, ownerBiz.isOpen, updateOwnerBiz]);
+  }, [ownerBusinessId, accessToken, businessStatusOverride, ownerBiz?.isOpen, updateOwnerBiz]);
 
   const captarLocalizacao = useCallback(async () => {
     setLocationLoading(true);
@@ -1262,8 +1267,45 @@ export function OwnerModule({
   }, [accessToken]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────
+
+
+
   return (
     <View style={{ flex: 1 }}>
+
+      {/* ── ONBOARDING: sem negócio associado ─────────────────────────────── */}
+      {!ownerBiz && !showSettings && (
+        <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
+          <View style={profS.header}>
+            <TouchableOpacity style={profS.backBtn} onPress={onExitOwnerMode}>
+              <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <View style={{ width: 32 }} />
+          </View>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 48, marginBottom: 24 }}>🏢</Text>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: COLORS.darkText, textAlign: 'center', marginBottom: 12 }}>
+              Ainda não tens um negócio
+            </Text>
+            <Text style={{ fontSize: 15, color: COLORS.grayText, textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
+              Regista o teu negócio na plataforma AchAqui para começares a receber clientes e reservas.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.red, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 32, alignItems: 'center', width: '100%' }}
+              activeOpacity={0.85}
+              onPress={() => { setShowSettings(true); setSettingsSection('info'); }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Registar o meu negócio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 16, padding: 12 }} onPress={onExitOwnerMode}>
+              <Text style={{ fontSize: 14, color: COLORS.grayText }}>Voltar a explorar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ── DASHBOARD NORMAL: com negócio associado ───────────────────────── */}
+      {ownerBiz && (
         <View style={[profS.overlay, { 
           top: insets.top,
           bottom: (insets.bottom || 0) + 58.5
@@ -1290,11 +1332,11 @@ export function OwnerModule({
           <View style={bizS.businessHeader}>
             <View style={bizS.businessHeaderTop}>
               <View style={{flex:1}}>
-                <Text style={bizS.businessName}>{ownerBiz.name || OWNER_BUSINESS.name}</Text>
+                <Text style={bizS.businessName}>{ownerBiz?.name || ''}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', gap:6, marginTop:4}}>
                   <Icon name="mapPin" size={12} color={COLORS.grayText} strokeWidth={2} />
-                  <Text style={bizS.businessAddress}>{ownerBiz.category || OWNER_BUSINESS.category}</Text>
-                  {ownerBiz.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
+                  <Text style={bizS.businessAddress}>{ownerBiz?.category || ''}</Text>
+                  {ownerBiz?.verified && <Icon name="certified" size={14} color={COLORS.green} strokeWidth={2} />}
                 </View>
               </View>
             </View>
@@ -1305,21 +1347,21 @@ export function OwnerModule({
                 <Text style={bizS.statusValue}>
                   {isUpdatingBusinessStatus
                     ? 'A atualizar...'
-                    : businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)
+                    : businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz?.isOpen)
                       ? 'Aberto'
                       : 'Fechado'}
                 </Text>
               </View>
               <TouchableOpacity
-                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchActive]}
+                style={[bizS.statusSwitch, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz?.isOpen)) && bizS.statusSwitchActive]}
                 onPress={() => {
-                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen);
+                  const currentlyOpen = businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz?.isOpen);
                   setBusinessOpen(!currentlyOpen);
                 }}
                 activeOpacity={0.7}
                 disabled={isUpdatingBusinessStatus}
               >
-                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz.isOpen)) && bizS.statusSwitchKnobActive]} />
+                <View style={[bizS.statusSwitchKnob, (businessStatusOverride === 'open' || (businessStatusOverride === null && ownerBiz?.isOpen)) && bizS.statusSwitchKnobActive]} />
               </TouchableOpacity>
             </View>
           </View>
@@ -1650,7 +1692,7 @@ export function OwnerModule({
                     activeOpacity={0.8}
                     onPress={() => {
                       if (ownerBiz) {
-                        onViewBusiness?.({ ...ownerBiz, roomTypes: roomTypes?.length ? roomTypes : (ownerBiz.roomTypes || []) });
+                        onViewBusiness?.({ ...ownerBiz, roomTypes: roomTypes?.length ? roomTypes : (ownerBiz?.roomTypes || []) });
                       }
                     }}
                   >
@@ -1882,6 +1924,7 @@ export function OwnerModule({
           </View>
         </ScrollView>
       </View>
+      )}
 
       {/* ── APP LAYER: OWNERRESERVASDINING — substitui Modal pageSheet ─────── */}
       {activeAppLayer === 'ownerReservasDining' && (
@@ -5543,6 +5586,51 @@ export function OwnerModule({
 
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={{padding:16}}>
+
+              {/* ── MEDIDOR DE PROGRESSO DO PERFIL ── */}
+              {!settingsSection && (() => {
+                const checks = [
+                  Boolean(settingsInfo.name),
+                  Boolean(settingsInfo.phone),
+                  Boolean(settingsInfo.address),
+                  Boolean(settingsInfo.description),
+                  Boolean(settingsInfo.category),
+                  Boolean(settingsInfo.website),
+                  Object.values(settingsHours).some(h => h.active),
+                  ownerHighlights.length > 0,
+                  ownerPhotos.length > 0,
+                  Boolean(settingsInfo.latitude && settingsInfo.longitude),
+                ];
+                const filled  = checks.filter(Boolean).length;
+                const total   = checks.length;
+                const pct     = Math.round((filled / total) * 100);
+                const color   = pct < 40 ? '#E53935' : pct < 75 ? '#FB8C00' : '#43A047';
+                return (
+                  <View style={{ marginBottom: 20, backgroundColor: '#F7F7F8', borderRadius: 14, padding: 16 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#111' }}>Perfil do negócio</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color }}>{pct}% completo</Text>
+                    </View>
+                    <View style={{ height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden' }}>
+                      <View style={{ height: 8, width: `${pct}%`, backgroundColor: color, borderRadius: 4 }} />
+                    </View>
+                    {pct < 100 && (
+                      <Text style={{ fontSize: 12, color: '#8A8A8A', marginTop: 8 }}>
+                        {pct < 40
+                          ? 'Preenche as informações básicas para aparecer nos resultados.'
+                          : pct < 75
+                          ? 'Estás a meio caminho! Adiciona mais detalhes para atrair mais clientes.'
+                          : 'Quase lá! Completa o perfil para máxima visibilidade.'}
+                      </Text>
+                    )}
+                    {pct === 100 && (
+                      <Text style={{ fontSize: 12, color: '#43A047', marginTop: 8, fontWeight: '600' }}>
+                        ✓ Perfil completo — máxima visibilidade garantida!
+                      </Text>
+                    )}
+                  </View>
+                );
+              })()}
 
               {/* ── MENU PRINCIPAL ── */}
               {!settingsSection && (
