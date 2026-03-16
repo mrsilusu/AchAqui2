@@ -45,7 +45,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   Image, ImageBackground, TextInput,
-  Dimensions, Keyboard, Alert,
+  StyleSheet, Dimensions, Keyboard, Alert,
 } from 'react-native';
 
 import {
@@ -568,6 +568,9 @@ export function HomeModuleFull(props) {
       setActiveBusinessTab={setActiveBusinessTab}
       USER_PROFILE={USER_PROFILE}
       isBusinessMode={isBusinessMode}
+      authUser={props.authUser || null}
+      onOpenAuth={props.onOpenAuth || (() => {})}
+      onLogout={props.onLogout || (() => {})}
     />
   );
   return null;
@@ -759,6 +762,8 @@ function FeaturedTab({
   );
 }
 
+
+
 // ── PROFILE TAB ───────────────────────────────────────────────────────────────
 const USER_PROFILE_DEFAULT = {
   id: 'user_001', name: 'João Silva', email: 'joao.silva@email.ao',
@@ -775,243 +780,375 @@ function ProfileTab({
   setActiveBusinessTab = () => {},
   USER_PROFILE = USER_PROFILE_DEFAULT,
   isBusinessMode = false,
+  authUser = null,
+  onOpenAuth = () => {},
+  onLogout = () => {},
 }) {
+  const isLoggedIn = Boolean(authUser);
+  const isOwner    = authUser?.role === 'OWNER';
+
   return (
-<View style={[profS.overlay, { 
+<View style={[profS.overlay, {
           top: insets.top,
           bottom: (insets.bottom || 0) + 58.5
         }]}>
-          {/* Header with close button */}
+          {/* Header */}
           <View style={profS.header}>
-            <TouchableOpacity style={profS.backBtn} onPress={()=>onSetActiveNavTab('home')}>
+            <TouchableOpacity style={profS.backBtn} onPress={() => onSetActiveNavTab('home')}>
               <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
-            <View style={{width:32}} />
+            <View style={{ width: 32 }} />
           </View>
 
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
-            {/* Top Section: Avatar + Name + Stats */}
-            <View style={profS.topSection}>
-              <View style={profS.avatarContainer}>
-                <View style={profS.avatarLarge}>
-                  <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
-                </View>
-              </View>
-              <Text style={profS.userName}>{USER_PROFILE.name}</Text>
-              {/* Stats Badges */}
-              <View style={profS.statsBadges}>
-                <View style={profS.statBadge}>
-                  <Icon name="messageSquare" size={14} color={COLORS.darkText} strokeWidth={2} />
-                  <Text style={profS.statBadgeText}>{USER_PROFILE.stats.reviewsWritten}</Text>
-                </View>
-                <View style={profS.statBadge}>
-                  <Icon name="camera" size={14} color={COLORS.darkText} strokeWidth={2} />
-                  <Text style={profS.statBadgeText}>{USER_PROFILE.stats.photosUploaded}</Text>
-                </View>
-                <View style={profS.statBadge}>
-                  <Icon name="users" size={14} color={COLORS.darkText} strokeWidth={2} />
-                  <Text style={profS.statBadgeText}>0</Text>
-                </View>
-              </View>
-            </View>
 
-            {/* Action Buttons Grid */}
-            <View style={profS.actionGrid}>
-              <TouchableOpacity
-                style={profS.actionButton}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Avaliações', 'Abra um negócio para avaliar.')}
-              >
-                <View style={profS.actionIcon}>
-                  <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
+            {/* ── GUEST: não logado ───────────────────────────────────────── */}
+            {!isLoggedIn && (
+              <View style={guestS.wrap}>
+                {/* Avatar placeholder */}
+                <View style={guestS.avatarWrap}>
+                  <View style={profS.avatarLarge}>
+                    <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
+                  </View>
                 </View>
-                <Text style={profS.actionLabel}>Avaliação</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.actionButton}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Fotos e vídeos', 'Abra um negócio para adicionar conteúdo.')}
-              >
-                <View style={profS.actionIcon}>
-                  <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
-                </View>
-                <Text style={profS.actionLabel}>Fotos e vídeos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.actionButton}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
-              >
-                <View style={profS.actionIcon}>
-                  <Icon name="checkCircle" size={22} color={COLORS.darkText} strokeWidth={2} fill={COLORS.darkText} />
-                </View>
-                <Text style={profS.actionLabel}>Check-in</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.actionButton}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
-              >
-                <View style={profS.actionIcon}>
-                  <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
-                </View>
-                <Text style={profS.actionLabel}>Adicionar negócio</Text>
-              </TouchableOpacity>
-            </View>
 
-            <View style={profS.divider} />
+                <Text style={guestS.title}>Bem-vindo ao AchAqui</Text>
+                <Text style={guestS.subtitle}>
+                  Inicia sessão para guardar favoritos, fazer reservas e gerir o teu negócio.
+                </Text>
 
-            {/* Visualizados Recentemente - com fotos reais */}
-            <View style={profS.section}>
-              <Text style={profS.sectionTitle}>Visualizados recentemente</Text>
-              {businesses.filter(b => bookmarkedIds.includes(b.id)).slice(0, 5).map((business) => (
-                <TouchableOpacity 
-                  key={business.id} 
-                  style={profS.recentlyViewedCard}
-                  activeOpacity={0.7}
-                  onPress={()=>{ onSetActiveNavTab('home'); onSelectBusiness(business); }}
+                {/* Botão principal: Entrar */}
+                <TouchableOpacity
+                  style={guestS.loginBtn}
+                  activeOpacity={0.85}
+                  onPress={() => onOpenAuth('login')}
                 >
-                  <View style={profS.recentlyViewedPhoto}>
-                    {business.photos?.[0] ? (
-                      <Image source={{ uri: business.photos[0] }} style={profS.recentlyViewedPhotoImage} resizeMode="cover" />
-                    ) : business.icon ? (
-                      <Text style={profS.recentlyViewedIcon}>{business.icon}</Text>
-                    ) : (
-                      <View style={{width:'100%',height:'100%',backgroundColor:COLORS.grayBg}} />
-                    )}
-                  </View>
-                  <View style={profS.recentlyViewedInfo}>
-                    <Text style={profS.recentlyViewedName}>{business.name}</Text>
-                    <Text style={profS.recentlyViewedAddress}>{business.address || business.subcategory}</Text>
-                    <Text style={profS.recentlyViewedMeta}>{business.subcategory} • {business.distanceText}</Text>
-                  </View>
-                  <Icon name="bookmark" size={22} color={COLORS.darkText} strokeWidth={2} fill={bookmarkedIds.includes(business.id) ? COLORS.darkText : 'none'} />
+                  <Icon name="user" size={18} color={COLORS.white} strokeWidth={2.5} />
+                  <Text style={guestS.loginBtnTxt}>Entrar na conta</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
 
-            <View style={profS.divider} />
-
-            {/* Contribuições */}
-            <View style={profS.section}>
-              <Text style={profS.sectionTitle}>Contribuições</Text>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Avaliações', 'Aqui ficará o histórico das suas avaliações.')}
-              >
-                <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Avaliações</Text>
-                <Text style={profS.menuCount}>{USER_PROFILE.stats.reviewsWritten}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Negócios adicionados', 'Funcionalidade disponível em breve.')}
-              >
-                <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Negócios adicionados</Text>
-                <Text style={profS.menuCount}>0</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={profS.divider} />
-
-            {/* Sua Atividade */}
-            <View style={profS.section}>
-              <Text style={profS.sectionTitle}>Sua atividade</Text>
-              <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={()=>Alert.alert('Reservas','Histórico de reservas.')}>
-                <Icon name="calendar" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Reservas</Text>
-                <Text style={profS.menuCount}>3</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={profS.divider} />
-
-            {/* Conta */}
-            <View style={profS.section}>
-              <Text style={profS.sectionTitle}>Conta</Text>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Preferências', 'Configuração de preferências disponível em breve.')}
-              >
-                <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Preferências</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Perfil', 'Edição de perfil será disponibilizada nesta secção.')}
-              >
-                <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Perfil</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Ajuda e suporte', 'Centro de ajuda será integrado em breve.')}
-              >
-                <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Ajuda e suporte</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Configurações', 'Configurações avançadas serão adicionadas em breve.')}
-              >
-                <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Configurações</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={profS.menuRow}
-                activeOpacity={0.7}
-                onPress={() => Alert.alert('Sobre AchAqui', 'AchAqui v2. Informações detalhadas em breve.')}
-              >
-                <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
-                <Text style={profS.menuLabel}>Sobre AchAqui</Text>
-                <Icon name="chevronRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={profS.divider} />
-
-            {/* Business Mode Trigger — v2.7.0 FASE 3 */}
-            {!isBusinessMode && (
-              <View style={profS.section}>
-                <TouchableOpacity 
-                  style={bizS.premiumCard}
-                  activeOpacity={0.8}
-                  onPress={()=>{
-                    onSetActiveNavTab('home');
-                    setActiveBusinessTab('dashboard');
-                    onToggleOwnerMode();
-                  }}
+                {/* Botão secundário: Criar conta */}
+                <TouchableOpacity
+                  style={guestS.registerBtn}
+                  activeOpacity={0.85}
+                  onPress={() => onOpenAuth('register')}
                 >
-                  <View style={bizS.premiumCardContent}>
-                    <View style={bizS.premiumIcon}>
-                      <Text style={{fontSize:32}}>👑</Text>
-                    </View>
-                    <View style={{flex:1}}>
-                      <Text style={bizS.premiumTitle}>Gerir o meu Negócio</Text>
-                      <Text style={bizS.premiumDesc}>Aceda ao Dashboard e gerencie seu negócio</Text>
-                    </View>
-                    <Icon name="chevronRight" size={24} color={COLORS.white} strokeWidth={2.5} />
-                  </View>
+                  <Text style={guestS.registerBtnTxt}>Criar conta</Text>
                 </TouchableOpacity>
+
+                {/* Divisor */}
+                <View style={guestS.dividerRow}>
+                  <View style={guestS.dividerLine} />
+                  <Text style={guestS.dividerTxt}>ou continua a explorar</Text>
+                  <View style={guestS.dividerLine} />
+                </View>
+
+                {/* Acções rápidas mesmo sem login */}
+                <View style={profS.actionGrid}>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => { onSetActiveNavTab('home'); }}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="search" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Explorar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => onOpenAuth('login')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Avaliação</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => onOpenAuth('login')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Fotos e vídeos</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => onOpenAuth('register', 'OWNER')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Adicionar negócio</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ height: 32 }} />
               </View>
             )}
 
-            <View style={{ height: 40 }} />
+            {/* ── LOGADO ──────────────────────────────────────────────────── */}
+            {isLoggedIn && (
+              <>
+                {/* Avatar + Nome + Stats */}
+                <View style={profS.topSection}>
+                  <View style={profS.avatarContainer}>
+                    <View style={profS.avatarLarge}>
+                      <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
+                    </View>
+                  </View>
+                  <Text style={profS.userName}>{authUser.name || USER_PROFILE.name}</Text>
+                  <View style={profS.statsBadges}>
+                    <View style={profS.statBadge}>
+                      <Icon name="bell" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>{USER_PROFILE.stats.reviewsWritten}</Text>
+                    </View>
+                    <View style={profS.statBadge}>
+                      <Icon name="camera" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>{USER_PROFILE.stats.photosUploaded}</Text>
+                    </View>
+                    <View style={profS.statBadge}>
+                      <Icon name="users" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>0</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Acções rápidas */}
+                <View style={profS.actionGrid}>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Avaliações', 'Abra um negócio para avaliar.')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Avaliação</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Fotos e vídeos', 'Abra um negócio para adicionar conteúdo.')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Fotos e vídeos</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="check" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Check-in</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.actionButton} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
+                  >
+                    <View style={profS.actionIcon}>
+                      <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </View>
+                    <Text style={profS.actionLabel}>Adicionar negócio</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={profS.divider} />
+
+                {/* Visualizados recentemente */}
+                <View style={profS.section}>
+                  <Text style={profS.sectionTitle}>Visualizados recentemente</Text>
+                  {businesses.filter(b => bookmarkedIds.includes(b.id)).slice(0, 5).map((business) => (
+                    <TouchableOpacity
+                      key={business.id}
+                      style={profS.recentlyViewedCard}
+                      activeOpacity={0.7}
+                      onPress={() => { onSetActiveNavTab('home'); onSelectBusiness(business); }}
+                    >
+                      <View style={profS.recentlyViewedPhoto}>
+                        {business.photos?.[0]
+                          ? <Image source={{ uri: business.photos[0] }} style={profS.recentlyViewedPhotoImage} resizeMode="cover" />
+                          : business.icon
+                            ? <Text style={profS.recentlyViewedIcon}>{business.icon}</Text>
+                            : <View style={{ width: '100%', height: '100%', backgroundColor: COLORS.grayBg }} />
+                        }
+                      </View>
+                      <View style={profS.recentlyViewedInfo}>
+                        <Text style={profS.recentlyViewedName}>{business.name}</Text>
+                        <Text style={profS.recentlyViewedAddress}>{business.address || business.subcategory}</Text>
+                        <Text style={profS.recentlyViewedMeta}>{business.subcategory} • {business.distanceText}</Text>
+                      </View>
+                      <Icon name="bookmark" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={profS.divider} />
+
+                {/* Contribuições */}
+                <View style={profS.section}>
+                  <Text style={profS.sectionTitle}>Contribuições</Text>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Avaliações', 'Aqui ficará o histórico das suas avaliações.')}
+                  >
+                    <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Avaliações</Text>
+                    <Text style={profS.menuCount}>{USER_PROFILE.stats.reviewsWritten}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Negócios adicionados', 'Funcionalidade disponível em breve.')}
+                  >
+                    <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Negócios adicionados</Text>
+                    <Text style={profS.menuCount}>0</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={profS.divider} />
+
+                {/* Sua atividade */}
+                <View style={profS.section}>
+                  <Text style={profS.sectionTitle}>Sua atividade</Text>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Reservas', 'Histórico de reservas.')}
+                  >
+                    <Icon name="calendar" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Reservas</Text>
+                    <Text style={profS.menuCount}>3</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={profS.divider} />
+
+                {/* Conta */}
+                <View style={profS.section}>
+                  <Text style={profS.sectionTitle}>Conta</Text>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Preferências', 'Configuração de preferências disponível em breve.')}
+                  >
+                    <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Preferências</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Perfil', 'Edição de perfil disponível em breve.')}
+                  >
+                    <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Perfil</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Ajuda e suporte', 'Centro de ajuda disponível em breve.')}
+                  >
+                    <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Ajuda e suporte</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Configurações', 'Configurações avançadas disponíveis em breve.')}
+                  >
+                    <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Configurações</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={profS.menuRow} activeOpacity={0.7}
+                    onPress={() => Alert.alert('Sobre AchAqui', 'AchAqui v2.')}
+                  >
+                    <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Sobre AchAqui</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={profS.divider} />
+
+                {/* Modo Dono — só para OWNER */}
+                {isOwner && !isBusinessMode && (
+                  <View style={profS.section}>
+                    <TouchableOpacity
+                      style={bizS.premiumCard}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        onSetActiveNavTab('home');
+                        setActiveBusinessTab('dashboard');
+                        onToggleOwnerMode();
+                      }}
+                    >
+                      <View style={bizS.premiumCardContent}>
+                        <View style={bizS.premiumIcon}>
+                          <Text style={{ fontSize: 32 }}>👑</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={bizS.premiumTitle}>Gerir o meu Negócio</Text>
+                          <Text style={bizS.premiumDesc}>Aceda ao Dashboard e gerencie o seu negócio</Text>
+                        </View>
+                        <Icon name="arrowRight" size={24} color={COLORS.white} strokeWidth={2.5} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Logout */}
+                <View style={profS.section}>
+                  <TouchableOpacity
+                    style={guestS.logoutBtn}
+                    activeOpacity={0.8}
+                    onPress={() => Alert.alert(
+                      'Terminar sessão',
+                      'Tens a certeza que queres sair?',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: 'Sair', style: 'destructive', onPress: onLogout },
+                      ]
+                    )}
+                  >
+                    <Icon name="x" size={18} color="#B00020" strokeWidth={2.5} />
+                    <Text style={guestS.logoutTxt}>Terminar sessão</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ height: 40 }} />
+              </>
+            )}
           </ScrollView>
         </View>
-
-
   // ── NAV BAR ───────────────────────────────────────────────────────────────
   );
 }
+
+// guestS — Estilos da vista de convidado no ProfileTab
+const guestS = StyleSheet.create({
+  wrap:          { paddingHorizontal: 24, paddingTop: 8 },
+  avatarWrap:    { alignItems: 'center', marginBottom: 20, marginTop: 8 },
+  title:         { fontSize: 24, fontWeight: '700', color: '#111111', textAlign: 'center', marginBottom: 8, letterSpacing: -0.4 },
+  subtitle:      { fontSize: 14, color: '#8A8A8A', textAlign: 'center', lineHeight: 20, marginBottom: 28 },
+  loginBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#D32323', borderRadius: 14, paddingVertical: 15,
+    marginBottom: 10,
+  },
+  loginBtnTxt:   { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  registerBtn: {
+    borderWidth: 1.5, borderColor: '#D32323', borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center', marginBottom: 24,
+  },
+  registerBtnTxt: { color: '#D32323', fontSize: 15, fontWeight: '700' },
+  dividerRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  dividerLine:   { flex: 1, height: 1, backgroundColor: '#EBEBEB' },
+  dividerTxt:    { fontSize: 12, color: '#8A8A8A', fontWeight: '500' },
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderWidth: 1.5, borderColor: '#FFCDD2', borderRadius: 14,
+    paddingVertical: 14, backgroundColor: '#FFF5F5',
+  },
+  logoutTxt:     { color: '#B00020', fontSize: 15, fontWeight: '700' },
+});

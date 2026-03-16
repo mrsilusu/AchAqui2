@@ -19,8 +19,8 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, TextInput, Alert, RefreshControl,
+  View, Alert, Text, StyleSheet, TouchableOpacity, ScrollView,
+  ActivityIndicator, TextInput, RefreshControl,
 } from 'react-native';
 import { Icon, COLORS } from '../../core/AchAqui_Core';
 import { apiRequest } from '../../lib/backendApi';
@@ -43,7 +43,7 @@ const CLAIM_STATUS = {
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
-export function AdminModule({ accessToken, onExit, insets }) {
+export function AdminModule({ accessToken, onExit, onLogout = () => {}, insets }) {
   const [activeTab, setActiveTab] = useState('dashboard');
 
   return (
@@ -57,7 +57,20 @@ export function AdminModule({ accessToken, onExit, insets }) {
           <Text style={s.headerTitle}>AcheiAqui</Text>
           <Text style={s.headerSub}>Painel Admin</Text>
         </View>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity
+          style={s.exitBtn}
+          onPress={() => Alert.alert(
+            'Terminar sessão',
+            'Tens a certeza que queres sair?',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Sair', style: 'destructive', onPress: onLogout },
+            ]
+          )}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon name="power" size={20} color={COLORS.white} strokeWidth={2} />
+        </TouchableOpacity>
       </View>
 
       {/* Tab Bar */}

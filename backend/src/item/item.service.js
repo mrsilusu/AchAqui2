@@ -674,12 +674,8 @@ var ItemService = function () {
                                 })];
                         case 2:
                             roomType = _m.sent();
-                            total = (_k = dto.totalRooms) !== null && _k !== void 0 ? _k : 1;
-                            floor = (_l = dto.floor) !== null && _l !== void 0 ? _l : 1;
-                            return [4 /*yield*/, this.createPhysicalRooms(dto.businessId, roomType.id, total, floor)];
-                        case 3:
-                            _m.sent();
                             return [2 /*return*/, roomType];
+                        case 3:
                     }
                 });
             });

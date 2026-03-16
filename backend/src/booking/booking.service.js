@@ -275,7 +275,16 @@ var BookingService = function () {
                                 userId: userId,
                                 businessId: dto.businessId,
                             };
-                            roomBookingData = __assign(__assign({}, bookingData), { guestName: (_d = dto.guestName) !== null && _d !== void 0 ? _d : user.name, guestPhone: (_e = dto.guestPhone) !== null && _e !== void 0 ? _e : null, adults: (_f = dto.adults) !== null && _f !== void 0 ? _f : 1, children: (_g = dto.children) !== null && _g !== void 0 ? _g : 0, rooms: (_h = dto.rooms) !== null && _h !== void 0 ? _h : 1, totalPrice: (_j = dto.totalPrice) !== null && _j !== void 0 ? _j : null, notes: (_k = dto.notes) !== null && _k !== void 0 ? _k : null, roomTypeId: (_l = dto.roomTypeId) !== null && _l !== void 0 ? _l : null });
+                            var calculatedPrice = (_j = dto.totalPrice) !== null && _j !== void 0 ? _j : null;
+                            if (!calculatedPrice && dto.roomTypeId) {
+                                var roomType = await this.prisma.htRoomType.findUnique({ where: { id: dto.roomTypeId }, select: { pricePerNight: true } });
+                                if (roomType && roomType.pricePerNight) {
+                                    var nights = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                                    var qty = (_h = dto.rooms) !== null && _h !== void 0 ? _h : 1;
+                                    calculatedPrice = roomType.pricePerNight * nights * qty;
+                                }
+                            }
+                            roomBookingData = __assign(__assign({}, bookingData), { guestName: (_d = dto.guestName) !== null && _d !== void 0 ? _d : user.name, guestPhone: (_e = dto.guestPhone) !== null && _e !== void 0 ? _e : null, adults: (_f = dto.adults) !== null && _f !== void 0 ? _f : 1, children: (_g = dto.children) !== null && _g !== void 0 ? _g : 0, rooms: (_h = dto.rooms) !== null && _h !== void 0 ? _h : 1, totalPrice: calculatedPrice, notes: (_k = dto.notes) !== null && _k !== void 0 ? _k : null, roomTypeId: (_l = dto.roomTypeId) !== null && _l !== void 0 ? _l : null });
                             if (!(bookingType === create_booking_dto_1.BookingTypeDto.ROOM)) return [3 /*break*/, 4];
                             return [4 /*yield*/, this.prisma.htRoomBooking.create({
                                     data: roomBookingData,

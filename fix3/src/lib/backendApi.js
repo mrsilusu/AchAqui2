@@ -120,8 +120,9 @@ export async function apiRequest(path, { method = 'GET', body, accessToken } = {
 
 export const backendApi = {
   getBusinesses: () => apiRequest('/businesses'),
-  signIn: (payload) => apiRequest('/auth/signin', { method: 'POST', body: payload }),
-  signUp: (payload) => apiRequest('/auth/signup', { method: 'POST', body: payload }),
+  signIn:  (payload) => apiRequest('/auth/signin',  { method: 'POST', body: payload }),
+  signUp:  (payload) => apiRequest('/auth/signup',  { method: 'POST', body: payload }),
+  logout:  (payload) => apiRequest('/auth/logout',  { method: 'POST', body: payload }),
   refresh: (payload) => apiRequest('/auth/refresh', { method: 'POST', body: payload }),
   getMe: (accessToken) => apiRequest('/auth/me', { accessToken }),
   updateOwnerSettings: (payload, accessToken) =>
@@ -215,7 +216,7 @@ export const backendApi = {
   getHtDashboard: (businessId, accessToken) =>
     apiRequest(`/ht/dashboard?businessId=${businessId}`, { accessToken }),
 
-  // ─── HT — Quartos físicos (CRUD individual)
+  // ─── HT — Quartos físicos ───────────────────────────────────────────────────
   getHtRooms: (businessId, accessToken) =>
     apiRequest(`/ht/rooms?businessId=${businessId}`, { accessToken }),
   createHtRoom: (payload, accessToken) =>

@@ -720,6 +720,11 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
           ) : filtered.map(rb => {
             const room   = roomTypes?.find(r => r.id === rb.roomTypeId);
             const status = STATUS_CONFIG[rb.status] || { label: rb.status, color: COLORS.grayText, bg: COLORS.grayBg };
+            // Calcular preço se totalPrice estiver a zero/null
+            const displayPrice = rb.totalPrice || (() => {
+              if (!room?.pricePerNight || !rb.nights) return 0;
+              return room.pricePerNight * rb.nights * (rb.rooms || 1);
+            })();
             const isOpen = !!expanded[rb.id];
             return (
               <View key={rb.id} style={[hS.bookingCard, { backgroundColor: status.bg, borderColor: status.color + '40' }]}>
@@ -759,7 +764,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                       </View>
                     ) : null}
                     <View style={hS.bookingFooter}>
-                      <Text style={hS.bookingTotal}>{(rb.totalPrice || 0).toLocaleString()} Kz</Text>
+                      <Text style={hS.bookingTotal}>{displayPrice.toLocaleString()} Kz</Text>
                       {rb.status === 'pending' && (
                         <View style={hS.bookingActions}>
                           <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
@@ -772,7 +777,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                       )}
                       {rb.status === 'confirmed_unpaid' && (
                         <TouchableOpacity style={hS.approveBtn}
-                          onPress={() => Alert.alert('Marcar Pago', `${(rb.totalPrice || 0).toLocaleString()} Kz`, [
+                          onPress={() => Alert.alert('Marcar Pago', `${displayPrice.toLocaleString()} Kz`, [
                             { text: 'Cancelar' },
                             { text: 'Confirmar Pagamento', onPress: () => onStatusChange(rb.id, 'confirmed_paid') },
                           ])}>

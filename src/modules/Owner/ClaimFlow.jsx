@@ -248,7 +248,7 @@ export function ClaimFlow({ visible, onClose, onCreateNew, accessToken }) {
           }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon name="arrowLeft" size={20} color={COLORS.darkText} strokeWidth={2} />
+          <Icon name="arrow" size={20} color={COLORS.darkText} strokeWidth={2} />
         </TouchableOpacity>
 
         <Text style={s.headerTitle}>
@@ -375,7 +375,7 @@ export function ClaimFlow({ visible, onClose, onCreateNew, accessToken }) {
                     setStep(STEPS.REPORT);
                   }}
                 >
-                  <Icon name="flag" size={18} color={COLORS.darkText} strokeWidth={2} />
+                  <Icon name="info" size={18} color={COLORS.darkText} strokeWidth={2} />
                   <Text style={s.secondaryBtnText}>Reportar ao admin</Text>
                 </TouchableOpacity>
               </View>
@@ -465,7 +465,7 @@ export function ClaimFlow({ visible, onClose, onCreateNew, accessToken }) {
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
                   <>
-                    <Icon name="send" size={16} color={COLORS.white} strokeWidth={2} />
+                    <Icon name="share" size={16} color={COLORS.white} strokeWidth={2} />
                     <Text style={s.submitBtnText}>Submeter pedido</Text>
                   </>
                 )}
@@ -597,7 +597,7 @@ export function ClaimFlow({ visible, onClose, onCreateNew, accessToken }) {
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
                   <>
-                    <Icon name="flag" size={16} color={COLORS.white} strokeWidth={2} />
+                    <Icon name="info" size={16} color={COLORS.white} strokeWidth={2} />
                     <Text style={s.submitBtnText}>Enviar relatório</Text>
                   </>
                 )}

@@ -37,6 +37,7 @@ import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
+import { AuthModal } from './modules/Auth/AuthModal';
 import { useBusinessFilters }   from './hooks/useBusinessFilters';
 import { useMetaAnimation }     from './hooks/useMetaAnimation';
 import { useAuthSession } from './hooks/useAuthSession';
@@ -383,6 +384,17 @@ function AppContent() {
   const refreshOwnerData = useCallback(async () => {
     if (!authSession.accessToken || !authSession.isOwner) return;
 
+    // Recarregar lista de negócios (inclui o novo negócio criado)
+    try {
+      const response = await backendApi.getBusinesses();
+      const fromApi = (Array.isArray(response) ? response : [])
+        .map(normalizeBusiness)
+        .filter(Boolean);
+      const apiIds = new Set(fromApi.map(b => b.id));
+      const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
+      setBusinesses([...fromApi, ...mocksNotInApi]);
+    } catch { /* manter lista actual */ }
+
     await liveSync.reloadAll();
     try {
       const response = await backendApi.getOwnerDashboard(authSession.accessToken);
@@ -450,6 +462,9 @@ function AppContent() {
   // ── Business detail ────────────────────────────────────────────────────────
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalTab, setAuthModalTab]   = useState('login');
+  const [authModalRole, setAuthModalRole] = useState('CLIENT');
   const selectedBusiness = selectedBusinessId ? businesses.find(b => b.id === selectedBusinessId) ?? null : null;
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
@@ -466,8 +481,10 @@ function AppContent() {
       const targetBusinessId =
         explicitBusinessId ||
         ownerBusinessFromSession?.id ||
-        OWNER_BUSINESS.id;
+        null;
 
+      // Sem negócio associado -- não actualizar nada
+      if (!targetBusinessId) return prev;
       return prev.map((b) => (b.id === targetBusinessId ? { ...b, ...fields } : b));
     });
   }, [authSession.user?.id]);
@@ -478,7 +495,6 @@ function AppContent() {
       expires: p.endDate || '', code: p.type === 'percent' ? `${p.discount}%OFF` : `${p.discount}KZ`,
     }));
     const activePromo = updatedPromotions.find(p => p.active);
-    OWNER_BUSINESS.promo = activePromo ? activePromo.title : null;
     updateOwnerBiz({ deals, promo: activePromo ? activePromo.title : null });
   }, [updateOwnerBiz]);
 
@@ -490,7 +506,35 @@ function AppContent() {
     });
   }, []);
 
-  const handleBusinessPress = useCallback((b) => {
+  // ── Auth handlers ─────────────────────────────────────────────────────────
+  const handleOpenAuth = useCallback((tab = 'login', role = 'CLIENT') => {
+    setAuthModalTab(tab);
+    setAuthModalRole(role);
+    setShowAuthModal(true);
+  }, []);
+
+  const handleAuthSuccess = useCallback(async (session) => {
+    setShowAuthModal(false);
+    await authSession.saveSession(session);
+    if (session?.user?.role === 'OWNER') {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
+    }
+  }, [authSession]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      if (authSession.accessToken) {
+        await backendApi.logout({ refreshToken: authSession.refreshToken }).catch(() => {});
+      }
+    } finally {
+      await authSession.saveSession(null);
+      setIsBusinessMode(false);
+      setActiveNavTab('home');
+    }
+  }, [authSession]);
+
+    const handleBusinessPress = useCallback((b) => {
     meta.swipeProgress.setValue(0);
     setSelectedBusinessId(b.id);
     setShowDetail(true);
@@ -590,6 +634,7 @@ function AppContent() {
             <AdminModule
               accessToken={authSession.accessToken}
               onExit={() => {}}
+              onLogout={handleLogout}
               insets={insets}
             />
           )}
@@ -616,6 +661,9 @@ function AppContent() {
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
+              authUser={authSession.accessToken ? authSession.user : null}
+              onOpenAuth={handleOpenAuth}
+              onLogout={handleLogout}
             />
           )}
 
@@ -635,6 +683,7 @@ function AppContent() {
               onMarkNotificationRead={liveSync.markNotificationRead}
               onMarkAllNotificationsRead={liveSync.markAllNotificationsRead}
               authRole={authSession.user?.role || 'CLIENT'}
+              authEmail={authSession.user?.email || ''}
               authUserId={authSession.user?.id || null}
               accessToken={authSession.accessToken}
               onRefreshOwnerData={refreshOwnerData}
@@ -647,6 +696,15 @@ function AppContent() {
           {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
+
+            {/* ── AUTH MODAL ─────────────────────────────────────── */}
+      <AuthModal
+        visible={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
+        initialTab={authModalTab}
+        initialRole={authModalRole}
+      />
 
       {/* ── SORT MODAL ──────────────────────────────── */}
       <Modal visible={filters.showSortModal} transparent animationType="fade" onRequestClose={() => filters.setShowSortModal(false)}>
