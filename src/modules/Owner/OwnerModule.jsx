@@ -602,7 +602,7 @@ export function OwnerModule({
       if (roomPhysForm.editId) {
         await backendApi.updateHtRoom(roomPhysForm.editId, {
           number: roomPhysForm.number.trim(),
-          floor:  parseInt(roomPhysForm.floor) || 1,
+          floor:  (roomPhysForm.floor !== '' && roomPhysForm.floor !== null && roomPhysForm.floor !== undefined ? parseInt(roomPhysForm.floor) : 0),
           notes:  roomPhysForm.notes || null,
         }, accessToken);
       } else {
@@ -610,7 +610,7 @@ export function OwnerModule({
           businessId: ownerBusinessId,
           roomTypeId: roomPhysForm.roomTypeId,
           number:     roomPhysForm.number.trim(),
-          floor:      parseInt(roomPhysForm.floor) || 1,
+          floor:      (roomPhysForm.floor !== '' && roomPhysForm.floor !== null && roomPhysForm.floor !== undefined ? parseInt(roomPhysForm.floor) : 0),
           notes:      roomPhysForm.notes || null,
         }, accessToken);
       }
