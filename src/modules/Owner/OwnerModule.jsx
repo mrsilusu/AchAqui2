@@ -602,7 +602,7 @@ export function OwnerModule({
       if (roomPhysForm.editId) {
         await backendApi.updateHtRoom(roomPhysForm.editId, {
           number: roomPhysForm.number.trim(),
-          floor:  (roomPhysForm.floor !== '' && roomPhysForm.floor !== null && roomPhysForm.floor !== undefined ? parseInt(roomPhysForm.floor) : 0),
+          floor:  parseInt(roomPhysForm.floor) || 1,
           notes:  roomPhysForm.notes || null,
         }, accessToken);
       } else {
@@ -610,7 +610,7 @@ export function OwnerModule({
           businessId: ownerBusinessId,
           roomTypeId: roomPhysForm.roomTypeId,
           number:     roomPhysForm.number.trim(),
-          floor:      (roomPhysForm.floor !== '' && roomPhysForm.floor !== null && roomPhysForm.floor !== undefined ? parseInt(roomPhysForm.floor) : 0),
+          floor:      parseInt(roomPhysForm.floor) || 1,
           notes:      roomPhysForm.notes || null,
         }, accessToken);
       }
@@ -2885,6 +2885,7 @@ export function OwnerModule({
               );
               return filtered.map(rb => {
                 const room = roomTypes.find(r => r.id === rb.roomTypeId);
+                const rbPrice = rb.totalPrice || (room?.pricePerNight && rb.nights ? room.pricePerNight * rb.nights * (rb.rooms || 1) : 0);
                 const statusConfig = {
                   pending:          { label:'Pendente',          color:'#D97706', bg:'#FFFBEB' },
                   confirmed:        { label:'Confirmada',        color:COLORS.green, bg:'#F0FDF4' },
@@ -2944,7 +2945,7 @@ export function OwnerModule({
                         )}
                         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:8, paddingTop:8, borderTopWidth:1, borderTopColor:statusConfig.color+'20'}}>
                           <View>
-                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{(rb.totalPrice||0).toLocaleString()} Kz</Text>
+                            <Text style={{fontSize:14, fontWeight:'700', color:COLORS.darkText}}>{rbPrice.toLocaleString()} Kz</Text>
                             {rb.payOnArrival && rb.status !== 'confirmed_paid' && (
                               <Text style={{fontSize:10, color:COLORS.blue, fontWeight:'600', marginTop:2}}>💵 Pagar na chegada</Text>
                             )}
@@ -2994,7 +2995,7 @@ export function OwnerModule({
                                   setRoomStatusOverrides(prev => ({ ...prev, [rb.id]: 'confirmed_paid' }));
                                   try {
                                     await backendApi.confirmBooking(rb.id, { businessId: rb.businessId }, accessToken);
-                                    Alert.alert('Pagamento Registado! ✅', `Pagamento de ${(rb.totalPrice||0).toLocaleString()} Kz recebido de ${rb.guestName}.`);
+                                    Alert.alert('Pagamento Registado! ✅', `Pagamento de ${rbPrice.toLocaleString()} Kz recebido de ${rb.guestName}.`);
                                   } catch (err) {
                                     setRoomStatusOverrides(prev => { const n={...prev}; delete n[rb.id]; return n; });
                                     Alert.alert('Erro', err?.message || 'Não foi possível registar pagamento.');
