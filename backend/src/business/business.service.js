@@ -146,6 +146,9 @@ var BusinessService = function () {
                         select: { id: true, name: true },
                     },
                     htRoomTypes: {
+                        where: {
+                            htRooms: { some: {} },
+                        },
                         select: {
                             id: true, name: true, description: true,
                             pricePerNight: true, maxGuests: true,

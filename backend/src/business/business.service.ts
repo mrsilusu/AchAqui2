@@ -80,11 +80,13 @@ export class BusinessService {
           select: { id: true, name: true },
         },
         htRoomTypes: {
+          where: { rooms: { some: {} } },
           select: {
             id: true, name: true, description: true,
             pricePerNight: true, maxGuests: true,
             totalRooms: true, available: true,
             amenities: true, photos: true,
+            _count: { select: { rooms: true } },
           },
         },
       },
@@ -121,11 +123,13 @@ export class BusinessService {
           select: { id: true, name: true },
         },
         htRoomTypes: {
+          where: { rooms: { some: {} } },
           select: {
             id: true, name: true, description: true,
             pricePerNight: true, maxGuests: true,
             totalRooms: true, available: true,
             amenities: true, photos: true,
+            _count: { select: { rooms: true } },
           },
         },
       },

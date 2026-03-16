@@ -41,6 +41,7 @@ import {
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
+import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -160,7 +161,8 @@ export function getPriceLabel(room) {
  * SEGURANÇA: bookedRanges só no ownerRoom (dados privados)
  */
 export function getRealAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings = [], excludeId = null) {
-  const total = roomPublic?.totalRooms || 1;
+  // Prioridade: quartos físicos reais > totalRooms do tipo > 1
+  const total = roomPublic?.physicalRoomsCount || roomPublic?.totalRooms || 1;
   const cIn   = parseDate(checkIn);
   const cOut  = parseDate(checkOut);
   if (!cIn || !cOut || cOut <= cIn) return { available: total, manualBlocked: 0, bookingBlocked: 0, total };
@@ -316,15 +318,39 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const [guestPhone, setGuestPhone]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
+  const [apiAvailability, setApiAvailability] = useState(null); // { available, physicalRooms, occupied }
+  const [checkingAvail, setCheckingAvail] = useState(false);
 
   const nights = countNights(checkIn, checkOut);
-  const minAvailData = (checkIn && checkOut && room && ownerRoom)
-    ? getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
-    : { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+
+  // Verificar disponibilidade via API quando datas são seleccionadas
+  useEffect(() => {
+    if (!checkIn || !checkOut || !room?.id || !business?.id) { setApiAvailability(null); return; }
+    const toISO = (str) => {
+      if (!str) return null;
+      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
+      return new Date(str).toISOString();
+    };
+    setCheckingAvail(true);
+    backendApi.getAvailability(business.id, room.id, toISO(checkIn), toISO(checkOut))
+      .then(data => { setApiAvailability(data); setCheckingAvail(false); })
+      .catch(() => { setApiAvailability(null); setCheckingAvail(false); });
+  }, [checkIn, checkOut, room?.id, business?.id]);
+
+  // Disponibilidade: API tem prioridade, fallback para cálculo local
+  const minAvailData = (() => {
+    if (apiAvailability !== null) {
+      return { minAvailable: apiAvailability.available, bottleneckDate: null };
+    }
+    if (checkIn && checkOut && room && ownerRoom) {
+      return getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings);
+    }
+    return { minAvailable: room?.physicalRoomsCount || room?.totalRooms || 1, bottleneckDate: null };
+  })();
 
   const { minAvailable, bottleneckDate } = minAvailData;
   const effectiveQty   = Math.min(roomQty, Math.max(1, minAvailable));
-  const isUnavailable  = checkIn && checkOut && minAvailable === 0;
+  const isUnavailable  = checkIn && checkOut && !checkingAvail && minAvailable === 0;
   const maxGuests      = (room?.maxGuests || 2) * effectiveQty;
 
   const { subtotal, breakdown } = (nights > 0 && room)
@@ -337,10 +363,20 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const taxAmt     = Math.round(subtotal * effectiveQty * taxRate / 100);
   const grandTotal = subtotal * effectiveQty + taxAmt;
 
-  // Sugestão de data seguinte
-  const nextDate = (isUnavailable && room && ownerRoom)
-    ? findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings)
-    : null;
+  // Sugestão de data seguinte -- funciona com e sem ownerRoom
+  const nextDate = (() => {
+    if (!isUnavailable || !room || !checkIn) return null;
+    // API retorna nextAvailableDate directamente
+    if (apiAvailability?.nextAvailableDate) return apiAvailability.nextAvailableDate;
+    if (apiAvailability) {
+      // Fallback: checkout + 1 dia
+      const dOut = new Date(checkOut || checkIn);
+      dOut.setDate(dOut.getDate() + 1);
+      return fmtDate(dOut);
+    }
+    if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings);
+    return null;
+  })();
 
   // Reset ao fechar
   useEffect(() => {
@@ -436,10 +472,15 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               {/* Indisponível */}
-              {isUnavailable && (
+              {checkingAvail && checkIn && checkOut && (
+                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: COLORS.grayText }}>A verificar disponibilidade...</Text>
+                </View>
+              )}
+              {isUnavailable && !checkingAvail && (
                 <View style={hS.unavailBox}>
                   <Text style={hS.unavailTitle}>🔴 Indisponível nestas datas</Text>
-                  {nextDate && (
+                  {nextDate ? (
                     <TouchableOpacity onPress={() => {
                       const d = parseDate(nextDate);
                       const out = new Date(d.getTime() + (nights || 1) * 86400000);
@@ -449,6 +490,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                         Ver disponibilidade a partir de {nextDate} →
                       </Text>
                     </TouchableOpacity>
+                  ) : (
+                    <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 4 }}>
+                      Sem datas disponíveis próximas. Tenta outras datas.
+                    </Text>
                   )}
                 </View>
               )}
@@ -1063,11 +1108,24 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           [{ text: 'OK' }],
         );
       } catch (err) {
-        Alert.alert(
-          'Erro ao Reservar',
-          err?.message || 'Não foi possível criar a reserva. Verifica a tua ligação.',
-          [{ text: 'OK' }],
-        );
+        const rawMsg = err?.message || '';
+        let parsed = rawMsg;
+        // Extrair message do JSON se vier como string JSON
+        try { const j = JSON.parse(rawMsg); parsed = j.message || rawMsg; } catch {}
+        const isUnavail = parsed.includes('Não há quartos') || parsed.includes('quartos físicos');
+        if (isUnavail) {
+          Alert.alert(
+            '🔴 Indisponível nestas datas',
+            'Todos os quartos deste tipo estão ocupados para as datas seleccionadas. Escolhe outras datas.',
+            [{ text: 'OK' }],
+          );
+        } else {
+          Alert.alert(
+            'Erro ao Reservar',
+            parsed || 'Não foi possível criar a reserva. Verifica a tua ligação.',
+            [{ text: 'OK' }],
+          );
+        }
       }
     } else {
       // Fallback local (modo dono a testar, ou sem sessão)

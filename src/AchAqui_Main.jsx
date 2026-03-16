@@ -226,7 +226,10 @@ function normalizeBusiness(rawBusiness) {
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
-    roomTypes: (rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || []),
+    roomTypes: ((rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || [])).map(rt => ({
+      ...rt,
+      physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
+    })),
     metadata: meta,
     owner: rawBusiness.owner || null,
   };
