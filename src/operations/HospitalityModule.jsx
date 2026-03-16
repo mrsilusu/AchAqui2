@@ -1114,19 +1114,27 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   return (
     <View style={hS.container}>
       {/* ── HEADER ─────────────────────────────────────────────────── */}
-      <View style={hS.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
-          <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
+      <View style={[hS.header, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
+            <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
+          </View>
+          {isOwner && (
+            <View style={hS.ownerBadge}>
+              <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
+              <Text style={hS.ownerBadgeText}>Activo</Text>
+            </View>
+          )}
         </View>
         {isOwner && (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
-              <Icon name="bar-chart-2" size={16} color={COLORS.white} strokeWidth={2} />
+              <Icon name="analytics" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Dashboard</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#22A06B' }]} onPress={() => setShowReception(true)}>
-              <Icon name="home" size={16} color={COLORS.white} strokeWidth={2} />
+              <Icon name="map" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Receção</Text>
             </TouchableOpacity>
             <TouchableOpacity style={hS.ownerActionBtn} onPress={() => setShowBookingsManager(true)}>
@@ -1138,10 +1146,6 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
               <Icon name="calendar" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Reservas</Text>
             </TouchableOpacity>
-            <View style={hS.ownerBadge}>
-              <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
-              <Text style={hS.ownerBadgeText}>Gestão</Text>
-            </View>
           </View>
         )}
       </View>

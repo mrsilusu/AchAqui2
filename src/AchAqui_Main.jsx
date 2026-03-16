@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 
 import {
   Icon, COLORS, AppProvider,
@@ -180,11 +181,11 @@ function normalizeBusiness(rawBusiness) {
     ...base,
     id: rawBusiness.id,
     name: rawBusiness.name || base.name || 'Negócio',
-    category: rawBusiness.category || base.category || meta.category || 'Serviços',
-    subcategory: base.subcategory || meta.subcategory || rawBusiness.category || 'Serviços',
-    businessType: base.businessType || meta.businessType || 'professional',
-    primaryCategoryId: base.primaryCategoryId || meta.primaryCategoryId || 'professional',
-    subCategoryIds: base.subCategoryIds || meta.subCategoryIds || ['professional'],
+    category: rawBusiness.category || meta.category || base.category || 'Serviços',
+    subcategory: meta.subcategory || rawBusiness.category || base.subcategory || 'Serviços',
+    businessType: rawBusiness.businessType || meta.businessType || base.businessType || '',
+    primaryCategoryId: rawBusiness.primaryCategoryId || meta.primaryCategoryId || base.primaryCategoryId || '',
+    subCategoryIds: rawBusiness.subCategoryIds || meta.subCategoryIds || base.subCategoryIds || [],
     icon: base.icon || meta.icon || '🏢',
     rating: base.rating || meta.rating || 4.8,
     reviews: base.reviews || meta.reviews || 0,
@@ -454,6 +455,7 @@ function AppContent() {
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('denied');
+  const [userLocation, setUserLocation] = useState(null); // { latitude, longitude }
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
@@ -549,16 +551,54 @@ function AppContent() {
     }).catch(() => {});
   }, [meta.swipeProgress]);
 
-  const requestLocationPermission = () => {
-    Alert.alert('Permitir Localização', 'AchAqui precisa da sua localização.', [
-      { text: 'Não Permitir', onPress: () => setLocationPermission('denied')  },
-      { text: 'Permitir',     onPress: () => setLocationPermission('granted') },
-    ]);
+  // Haversine -- distância em km entre dois pontos GPS
+  const haversineKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      }
+    } catch {
+      setLocationPermission('denied');
+    }
+  };
+
+  // Pedir localização ao arrancar
   useEffect(() => {
+    (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      }
+      setLocationPermission(status);
+    })();
+  }, []);
+
+    useEffect(() => {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
   }, []);
+
+  // Recalcular distâncias quando a localização do utilizador muda
+  useEffect(() => {
+    if (!userLocation) return;
+    setBusinesses(prev => prev.map(b => {
+      if (!b.latitude || !b.longitude) return b;
+      const km = haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude);
+      const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
+      return { ...b, distance: km, distanceText };
+    }));
+  }, [userLocation]);
 
   useEffect(() => {
     let cancelled = false;
