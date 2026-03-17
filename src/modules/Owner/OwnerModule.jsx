@@ -1155,7 +1155,8 @@ export function OwnerModule({
     setIsRoomLoading(true);
 
     try {
-      const payload = {
+      // businessId só vai no create -- o PATCH não aceita (DTO rejeita propriedades desconhecidas)
+      const basePayload = {
         name: roomForm.name,
         description: roomForm.description || '',
         pricePerNight: parseFloat(roomForm.pricePerNight),
@@ -1163,11 +1164,13 @@ export function OwnerModule({
         totalRooms: parseInt(roomForm.totalRooms) || 1,
         available: roomForm.available !== false,
         amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
-        businessId: ownerBusinessId,
       };
+      const payload = editingRoom
+        ? basePayload
+        : { ...basePayload, businessId: ownerBusinessId };
 
       if (editingRoom) {
-        await backendApi.updateRoom(editingRoom.id, payload, accessToken);
+        await backendApi.updateRoom(editingRoom.id, basePayload, accessToken);
         setRoomTypes((prev) => {
           const updated = prev.map((item) =>
             item.id === editingRoom.id ? { ...item, ...payload } : item,
