@@ -130,6 +130,8 @@ export const backendApi = {
   getBookings: (accessToken) => apiRequest('/bookings', { accessToken }),
   createBooking: (payload, accessToken) =>
     apiRequest('/bookings', { method: 'POST', body: payload, accessToken }),
+  updateBooking: (bookingId, payload, accessToken) =>
+    apiRequest(`/bookings/${bookingId}`, { method: 'PATCH', body: payload, accessToken }),
   confirmBooking: (bookingId, payload, accessToken) =>
     apiRequest(`/bookings/${bookingId}/confirm`, { method: 'PATCH', body: payload, accessToken }),
   rejectBooking: (bookingId, payload, accessToken) =>
@@ -234,6 +236,28 @@ export const backendApi = {
     apiRequest(`/ht/rooms/${roomId}`, { method: 'PATCH', body: payload, accessToken }),
   deleteHtRoom: (roomId, accessToken) =>
     apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
+
+  // ─── HT — Perfil de Hóspede (Sprint 4)
+  getHtGuests: (businessId, accessToken, search = '') =>
+    apiRequest(`/ht/guests?businessId=${encodeURIComponent(businessId)}&search=${encodeURIComponent(search)}`, { accessToken }),
+  getHtGuest: (guestId, businessId, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  createHtGuest: (payload, accessToken) =>
+    apiRequest('/ht/guests', { method: 'POST', body: payload, accessToken }),
+  updateHtGuest: (guestId, businessId, payload, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: payload, accessToken }),
+  linkHtGuestToBooking: (guestId, bookingId, businessId, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}/link-booking`, { method: 'POST', body: { bookingId, businessId }, accessToken }),
+
+  // ─── HT — Prolongar estadia / Alterar quarto (Sprint 6)
+  htExtendStay: (bookingId, newEndDate, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/extend`, { method: 'PATCH', body: { newEndDate }, accessToken }),
+  htChangeRoom: (bookingId, newRoomId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/change-room`, { method: 'PATCH', body: { newRoomId }, accessToken }),
+
+  // ─── HT — Housekeeping
+  completeHousekeepingTask: (taskId, accessToken) =>
+    apiRequest(`/ht/housekeeping/${taskId}/complete`, { method: 'PATCH', body: {}, accessToken }),
 
   // ─── HT — Receção / PMS (Sprint 1)
   getHtArrivals: (businessId, accessToken) =>

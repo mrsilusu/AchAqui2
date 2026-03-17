@@ -64,6 +64,18 @@ export class BookingController {
 
   // SEGURANÇA: rejectByOwner valida internamente que booking.business.ownerId === currentUserId.
   // Um Owner A não consegue cancelar reservas de Owner B mesmo conhecendo o bookingId.
+  // Editar datas / tipo de quarto de uma reserva (OWNER only)
+  @Patch(':id')
+  @Roles(UserRole.OWNER)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  updateBooking(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { startDate?: string; endDate?: string; roomTypeId?: string },
+  ) {
+    return this.bookingService.updateByOwner(id, req.user.userId, body);
+  }
+
   @Patch(':id/reject')
   @Roles(UserRole.OWNER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })

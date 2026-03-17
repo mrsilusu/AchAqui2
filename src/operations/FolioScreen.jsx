@@ -305,10 +305,17 @@ function ReceiptModal({ visible, receipt, onClose }) {
         </View>
 
         <ScrollView contentContainerStyle={fS.receiptBody}>
-          {/* Cabeçalho */}
+          {/* Cabeçalho fiscal */}
           <View style={fS.receiptBusiness}>
             <Text style={fS.receiptBusinessName}>{receipt.business?.name}</Text>
-            <Text style={fS.receiptNum}>Nº {receipt.receiptNumber}</Text>
+            {receipt.business?.address && (
+              <Text style={fS.receiptMeta}>{receipt.business.address}</Text>
+            )}
+            {receipt.business?.vatNumber && (
+              <Text style={fS.receiptMeta}>NIF: {receipt.business.vatNumber}</Text>
+            )}
+            <View style={fS.receiptDivider} />
+            <Text style={fS.receiptNum}>Recibo Nº {receipt.receiptNumber}</Text>
             <Text style={fS.receiptDate}>Emitido: {fmtDate(receipt.issuedAt)}</Text>
           </View>
 
@@ -316,7 +323,13 @@ function ReceiptModal({ visible, receipt, onClose }) {
           <View style={fS.receiptSection}>
             <Text style={fS.receiptSectionTitle}>Hóspede</Text>
             <Text style={fS.receiptLine}>{receipt.guest?.name}</Text>
+            {receipt.guest?.phone && <Text style={fS.receiptMeta}>Tel: {receipt.guest.phone}</Text>}
             {receipt.guest?.email && <Text style={fS.receiptMeta}>{receipt.guest.email}</Text>}
+            {receipt.guest?.documentNumber && (
+              <Text style={fS.receiptMeta}>
+                {receipt.guest.documentType || 'Doc'}: {receipt.guest.documentNumber}
+              </Text>
+            )}
           </View>
 
           <View style={fS.receiptSection}>
@@ -356,7 +369,12 @@ function ReceiptModal({ visible, receipt, onClose }) {
             </View>
           </View>
 
-          <Text style={fS.receiptFooter}>Obrigado pela sua preferência</Text>
+          <View style={fS.receiptFiscalFooter}>
+            <Text style={fS.receiptFooter}>Obrigado pela sua preferência</Text>
+            <Text style={fS.receiptFiscalNote}>
+              {"Este documento não substitui fatura fiscal.\nPara emissão de fatura contacte o estabelecimento."}
+            </Text>
+          </View>
         </ScrollView>
       </View>
     </Modal>
@@ -654,5 +672,8 @@ const fS = StyleSheet.create({
   receiptTotalRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   receiptTotalLabel:   { fontSize: 15, fontWeight: '800', color: '#111' },
   receiptTotalVal:     { fontSize: 20, fontWeight: '800', color: '#111', letterSpacing: -0.5 },
-  receiptFooter:       { textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 32, fontStyle: 'italic' },
+  receiptFooter:       { textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 8, fontStyle: 'italic' },
+  receiptFiscalFooter: { marginTop: 24, alignItems: 'center' },
+  receiptFiscalNote:   { textAlign: 'center', fontSize: 10, color: '#bbb', marginTop: 6, lineHeight: 15 },
+  receiptDivider:      { height: 1, backgroundColor: '#E5E7EB', marginVertical: 8 },
 });

@@ -1,11 +1,398 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Modal, Alert, ActivityIndicator, RefreshControl,
+  ScrollView, Modal, Alert, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { FolioScreen } from './FolioScreen';
+
+// ─── Modal: Prolongar estadia ─────────────────────────────────────────────────
+function ExtendStayModal({ visible, booking, onConfirm, onClose }) {
+  const [newDate, setNewDate] = useState('');
+  const [isOpen, setIsOpen]  = useState(false);
+  if (!booking) return null;
+  const curOut = booking.endDate ? new Date(booking.endDate) : new Date();
+  const minOut = new Date(curOut); minOut.setDate(minOut.getDate() + 1);
+  const minStr = `${String(minOut.getDate()).padStart(2,'0')}/${String(minOut.getMonth()+1).padStart(2,'0')}/${minOut.getFullYear()}`;
+
+  const toISO = (str) => {
+    if (!str) return null;
+    const [d, m, y] = str.split('/').map(Number);
+    return new Date(Date.UTC(y, m-1, d, 12, 0, 0)).toISOString();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={rpS.sheet}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>Prolongar Estadia</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <Text style={rpS.sub}>
+            Saída actual: {fmt(booking.endDate)}
+            Selecciona a nova data de saída:
+          </Text>
+          <CalendarPickerSimple
+            value={newDate}
+            minDate={minStr}
+            isOpen={isOpen}
+            onToggle={() => setIsOpen(o => !o)}
+            onChange={v => { setNewDate(v); setIsOpen(false); }}
+          />
+          <TouchableOpacity
+            style={[rpS.skipBtn, { backgroundColor: newDate ? '#22A06B' : '#E5E7EB', marginTop: 16 }]}
+            onPress={() => newDate && onConfirm(toISO(newDate))}
+            disabled={!newDate}
+          >
+            <Text style={[rpS.skipBtnText, { color: newDate ? '#fff' : '#888', fontWeight: '700' }]}>
+              Confirmar Nova Saída
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Modal: Alterar quarto ─────────────────────────────────────────────────────
+function ChangeRoomModal({ visible, booking, rooms, onConfirm, onClose }) {
+  if (!booking) return null;
+  const available = (rooms || []).filter(r =>
+    r.status === 'CLEAN' && r.roomType?.id === booking.roomTypeId && r.id !== booking.roomId
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={rpS.sheet}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>Alterar Quarto</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          {available.length === 0 ? (
+            <View style={rpS.empty}>
+              <Text style={rpS.emptyText}>Sem quartos limpos disponíveis do mesmo tipo.</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={rpS.sub}>Selecciona o novo quarto:</Text>
+              <ScrollView style={{ maxHeight: 300 }}>
+                {available.map(r => (
+                  <TouchableOpacity key={r.id} style={rpS.roomRow} onPress={() => onConfirm(r.id)}>
+                    <View style={rpS.roomInfo}>
+                      <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                      {r.floor != null && <Text style={rpS.roomFloor}>Piso {r.floor}</Text>}
+                    </View>
+                    <View style={rpS.roomBadge}>
+                      <View style={rpS.cleanDot} />
+                      <Text style={rpS.cleanLabel}>Livre</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── CalendarPicker simples para os modais ────────────────────────────────────
+function CalendarPickerSimple({ value, minDate, isOpen, onToggle, onChange }) {
+  const parseD = (str) => {
+    if (!str) return new Date();
+    if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(y, m-1, d); }
+    return new Date(str);
+  };
+  const fmtD = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  const base   = value ? parseD(value) : minDate ? parseD(minDate) : new Date();
+  const [month, setMonth] = useState(new Date(base.getFullYear(), base.getMonth(), 1));
+  const minObj = minDate ? parseD(minDate) : null;
+  const today  = new Date();
+
+  const year = month.getFullYear(), m = month.getMonth();
+  const first = new Date(year, m, 1).getDay();
+  const days  = new Date(year, m+1, 0).getDate();
+  const cells = Array(first).fill(null).concat(Array.from({length: days}, (_, i) => i+1));
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = Array.from({length: cells.length/7}, (_, i) => cells.slice(i*7, i*7+7));
+
+  return (
+    <View>
+      <TouchableOpacity style={rpS.dateInput} onPress={onToggle}>
+        <Text style={value ? rpS.dateInputVal : rpS.dateInputPH}>{value || 'Seleccionar data'}</Text>
+        <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} color={COLORS.grayText} strokeWidth={2} />
+      </TouchableOpacity>
+      {isOpen && (
+        <View style={rpS.calCard}>
+          <View style={rpS.calNav}>
+            <TouchableOpacity onPress={() => setMonth(new Date(year, m-1, 1))}>
+              <Icon name="back" size={16} color={COLORS.darkText} strokeWidth={2} />
+            </TouchableOpacity>
+            <Text style={rpS.calMonth}>{MONTHS[m]} {year}</Text>
+            <TouchableOpacity onPress={() => setMonth(new Date(year, m+1, 1))}>
+              <Icon name="chevronRight" size={16} color={COLORS.darkText} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+          <View style={{flexDirection:'row',justifyContent:'space-around',marginBottom:4}}>
+            {DAYS.map(d => <Text key={d} style={rpS.calDayH}>{d}</Text>)}
+          </View>
+          {weeks.map((wk, wi) => (
+            <View key={wi} style={{flexDirection:'row',justifyContent:'space-around',marginBottom:2}}>
+              {wk.map((day, di) => {
+                if (!day) return <View key={di} style={rpS.calEmpty} />;
+                const d = new Date(year, m, day);
+                const disabled = (minObj && d < minObj) || d < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const sel = value === fmtD(d);
+                return (
+                  <TouchableOpacity key={di}
+                    style={[rpS.calDay, sel && rpS.calDaySel, disabled && rpS.calDayDis]}
+                    disabled={disabled}
+                    onPress={() => onChange(fmtD(d))}>
+                    <Text style={[rpS.calDayT, sel && {color:'#fff'}, disabled && {color:'#ccc'}]}>{day}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Modal: Perfil de Hóspede ─────────────────────────────────────────────────
+function GuestProfileModal({ visible, businessId, accessToken, prefilledName, prefilledPhone, onLink, onClose }) {
+  const [tab, setTab]         = useState('search'); // 'search' | 'create'
+  const [search, setSearch]   = useState('');
+  const [guests, setGuests]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm]       = useState({
+    fullName: prefilledName || '', phone: prefilledPhone || '',
+    email: '', documentType: 'BI', documentNumber: '',
+    nationality: 'Angolana', preferences: '', isVip: false,
+  });
+
+  const doSearch = async () => {
+    if (!search.trim()) return;
+    setLoading(true);
+    try {
+      const res = await backendApi.getHtGuests(businessId, accessToken, search);
+      setGuests(Array.isArray(res) ? res : []);
+    } catch { setGuests([]); }
+    finally { setLoading(false); }
+  };
+
+  const doCreate = async () => {
+    if (!form.fullName.trim()) { Alert.alert('Erro', 'Nome obrigatório.'); return; }
+    setLoading(true);
+    try {
+      const guest = await backendApi.createHtGuest({ ...form, businessId }, accessToken);
+      onLink(guest);
+    } catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível criar o perfil.'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={[rpS.sheet, { maxHeight: '90%' }]}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>Perfil de Hóspede</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Tabs */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+            {[['search','Pesquisar'],['create','Novo']].map(([k,l]) => (
+              <TouchableOpacity key={k}
+                style={[rpS.skipBtn, { flex: 1, marginTop: 0, backgroundColor: tab === k ? '#1565C0' : '#F7F7F8' }]}
+                onPress={() => setTab(k)}>
+                <Text style={[rpS.skipBtnText, { color: tab === k ? '#fff' : '#555' }]}>{l}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {tab === 'search' ? (
+            <>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                <TextInput
+                  style={[rpS.dateInput, { flex: 1, marginTop: 0 }]}
+                  placeholder="Nome, telefone ou documento..."
+                  value={search}
+                  onChangeText={setSearch}
+                  onSubmitEditing={doSearch}
+                  returnKeyType="search"
+                />
+                <TouchableOpacity
+                  style={[rpS.skipBtn, { marginTop: 0, paddingHorizontal: 16, backgroundColor: '#1565C0' }]}
+                  onPress={doSearch}>
+                  <Text style={[rpS.skipBtnText, { color: '#fff' }]}>Buscar</Text>
+                </TouchableOpacity>
+              </View>
+              {loading ? <ActivityIndicator color={COLORS.blue} style={{ marginTop: 16 }} /> : (
+                <ScrollView style={{ maxHeight: 280 }}>
+                  {guests.length === 0 && search.trim() ? (
+                    <Text style={[rpS.emptyText, { textAlign: 'left', marginTop: 8 }]}>
+                      Sem resultados. Cria um novo perfil.
+                    </Text>
+                  ) : guests.map(g => (
+                    <TouchableOpacity key={g.id} style={rpS.roomRow} onPress={() => onLink(g)}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={rpS.roomNum}>{g.fullName}</Text>
+                        <Text style={rpS.roomFloor}>
+                          {g.phone || g.email || ''}
+                          {g.isVip ? ' · ⭐ VIP' : ''}
+                        </Text>
+                      </View>
+                      <Icon name="chevronRight" size={14} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </>
+          ) : (
+            <ScrollView style={{ maxHeight: 340 }}>
+              {[
+                ['fullName','Nome completo *','text'],
+                ['phone','Telefone','phone-pad'],
+                ['email','Email','email-address'],
+                ['documentType','Tipo de Documento (BI/Passaporte)','text'],
+                ['documentNumber','Nº de Documento','text'],
+                ['nationality','Nacionalidade','text'],
+                ['preferences','Preferências','text'],
+              ].map(([key, label, kbt]) => (
+                <View key={key} style={{ marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, color: '#888', marginBottom: 4, fontWeight: '600' }}>{label}</Text>
+                  <TextInput
+                    style={rpS.dateInput}
+                    value={form[key]}
+                    onChangeText={v => setForm(f => ({...f, [key]: v}))}
+                    keyboardType={kbt}
+                  />
+                </View>
+              ))}
+              <TouchableOpacity
+                style={[rpS.skipBtn, { backgroundColor: '#22A06B', marginTop: 4 }]}
+                onPress={doCreate}
+                disabled={loading}>
+                {loading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={[rpS.skipBtnText, { color: '#fff', fontWeight: '700' }]}>Criar Perfil</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Modal de selecção de quarto para check-in ────────────────────────────────
+function RoomPickerModal({ visible, rooms, roomTypeId, onSelect, onSkip, onClose }) {
+  // Filtra apenas quartos CLEAN do tipo correcto
+  const available = (rooms || []).filter(r =>
+    r.status === 'CLEAN' && r.roomType?.id === roomTypeId
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={rpS.sheet}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>Atribuir Quarto</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          {available.length === 0 ? (
+            <View style={rpS.empty}>
+              <Text style={rpS.emptyText}>Sem quartos limpos disponíveis para este tipo.</Text>
+              <TouchableOpacity style={rpS.skipBtn} onPress={onSkip}>
+                <Text style={rpS.skipBtnText}>Continuar sem atribuir quarto</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <Text style={rpS.sub}>Selecciona o quarto para este hóspede:</Text>
+              <ScrollView style={{ maxHeight: 320 }}>
+                {available.map(r => (
+                  <TouchableOpacity key={r.id} style={rpS.roomRow} onPress={() => onSelect(r.id)}>
+                    <View style={rpS.roomInfo}>
+                      <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                      {r.floor != null && (
+                        <Text style={rpS.roomFloor}>Piso {r.floor}</Text>
+                      )}
+                    </View>
+                    <View style={rpS.roomBadge}>
+                      <View style={rpS.cleanDot} />
+                      <Text style={rpS.cleanLabel}>Livre</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={rpS.skipBtn} onPress={onSkip}>
+                <Text style={rpS.skipBtnText}>Atribuir automaticamente</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const rpS = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet:      { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+                padding: 20, paddingBottom: 32 },
+  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  title:      { fontSize: 16, fontWeight: '700', color: '#111' },
+  sub:        { fontSize: 13, color: '#666', marginBottom: 12 },
+  empty:      { alignItems: 'center', paddingVertical: 20 },
+  emptyText:  { fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 16 },
+  roomRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  roomInfo:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  roomNum:    { fontSize: 15, fontWeight: '700', color: '#111' },
+  roomFloor:  { fontSize: 12, color: '#888' },
+  roomBadge:  { flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  cleanDot:   { width: 7, height: 7, borderRadius: 4, backgroundColor: '#22A06B' },
+  cleanLabel: { fontSize: 12, fontWeight: '600', color: '#22A06B' },
+  skipBtn:    { marginTop: 16, alignItems: 'center', paddingVertical: 12,
+                backgroundColor: '#F7F7F8', borderRadius: 8 },
+  skipBtnText:{ fontSize: 13, fontWeight: '600', color: '#555' },
+  // CalendarPickerSimple
+  dateInput:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#F7F7F8',
+                borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', marginTop: 8 },
+  dateInputVal:{ fontSize: 13, fontWeight: '600', color: '#111' },
+  dateInputPH: { fontSize: 13, color: '#888' },
+  calCard:    { marginTop: 8, backgroundColor: '#fff', borderRadius: 10,
+                borderWidth: 1, borderColor: '#E5E7EB', padding: 10 },
+  calNav:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calMonth:   { fontSize: 14, fontWeight: '700', color: '#111' },
+  calDayH:    { width: 32, textAlign: 'center', fontSize: 10, fontWeight: '700', color: '#888' },
+  calEmpty:   { width: 32, height: 32 },
+  calDay:     { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  calDaySel:  { backgroundColor: '#D32323' },
+  calDayDis:  { opacity: 0.3 },
+  calDayT:    { fontSize: 13, color: '#111', fontWeight: '500' },
+});
 
 const STATUS = {
   PENDING:     { label: 'Pendente',   color: '#D97706', bg: '#FFFBEB' },
@@ -61,7 +448,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           <View style={[rS.badge, { backgroundColor: st.bg }]}>
             <Text style={[rS.badgeText, { color: st.color }]}>{st.label}</Text>
           </View>
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={15} color={COLORS.grayText} strokeWidth={2} />
+          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={15} color={COLORS.grayText} strokeWidth={2} />
         </View>
       </TouchableOpacity>
 
@@ -130,11 +517,23 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                 )}
               </>
             )}
-            {(tab === 'departures' || tab === 'guests') && booking.status === 'CHECKED_IN' && (
+            {booking.status === 'CHECKED_IN' && (
               <>
                 <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio', booking)} disabled={busy}>
                   <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />
                   <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Folio</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[rS.btn, { backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#86EFAC' }]} onPress={() => onAction(booking.id, 'guestprofile', booking)} disabled={busy}>
+                  <Icon name="user" size={14} color="#16A34A" strokeWidth={2} />
+                  <Text style={[rS.btnText, { color: '#16A34A', fontWeight: '600' }]}>Perfil</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[rS.btn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]} onPress={() => onAction(booking.id, 'extend', booking)} disabled={busy}>
+                  <Icon name="calendar" size={14} color="#7C3AED" strokeWidth={2} />
+                  <Text style={[rS.btnText, { color: '#7C3AED', fontWeight: '600' }]}>+Dias</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[rS.btn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA' }]} onPress={() => onAction(booking.id, 'changeroom', booking)} disabled={busy}>
+                  <Icon name="map" size={14} color="#D97706" strokeWidth={2} />
+                  <Text style={[rS.btnText, { color: '#D97706', fontWeight: '600' }]}>Quarto</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'checkout')} disabled={busy}>
                   {busy ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -161,6 +560,12 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
   const [refreshing, setRefreshing]     = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [folioBooking, setFolioBooking] = useState(null);
+  // Atribuição manual de quarto
+  const [physicalRooms, setPhysicalRooms] = useState([]);
+  const [roomPicker, setRoomPicker]       = useState(null);
+  const [extendModal, setExtendModal]     = useState(null);
+  const [changeModal, setChangeModal]     = useState(null);
+  const [guestModal, setGuestModal]       = useState(null); // booking
   const alive = useRef(true);
 
   useEffect(() => {
@@ -172,10 +577,11 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
     if (!businessId || !accessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const [a, d, g] = await Promise.all([
+      const [a, d, g, rooms] = await Promise.all([
         backendApi.getHtArrivals(businessId, accessToken),
         backendApi.getHtDepartures(businessId, accessToken),
         backendApi.getHtCurrentGuests(businessId, accessToken),
+        backendApi.getHtRooms(businessId, accessToken).catch(() => []),
       ]);
       if (!alive.current) return;
       setData({
@@ -183,6 +589,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         departures: Array.isArray(d) ? d : [],
         guests:     Array.isArray(g) ? g : [],
       });
+      setPhysicalRooms(Array.isArray(rooms) ? rooms : []);
     } catch (e) {
       if (alive.current) Alert.alert('Erro ao carregar', e?.message || 'Não foi possível carregar os dados da receção.');
     } finally {
@@ -208,6 +615,31 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       return;
     }
 
+    // Check-in: mostrar picker de quarto
+    if (action === 'checkin') {
+      const bk = bookingObj || [...(data.arrivals || [])].find(b => b.id === bookingId);
+      setRoomPicker({ bookingId, roomTypeId: bk?.roomTypeId || null });
+      return;
+    }
+    // Perfil de hóspede
+    if (action === 'guestprofile') {
+      const bk = bookingObj || [...(data.arrivals||[]), ...(data.guests||[]), ...(data.departures||[])].find(b => b.id === bookingId);
+      if (bk) setGuestModal(bk);
+      return;
+    }
+    // Prolongar estadia: abrir modal de data
+    if (action === 'extend') {
+      const bk = bookingObj || [...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
+      if (bk) setExtendModal(bk);
+      return;
+    }
+    // Alterar quarto: abrir modal de selecção
+    if (action === 'changeroom') {
+      const bk = bookingObj || [...(data.guests || [])].find(b => b.id === bookingId);
+      if (bk) setChangeModal(bk);
+      return;
+    }
+
     Alert.alert(labels[action], msgs[action], [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -216,7 +648,6 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         onPress: async () => {
           setActionLoading(bookingId);
           try {
-            if (action === 'checkin')  await backendApi.htCheckIn(bookingId, {}, accessToken);
             if (action === 'checkout') await backendApi.htCheckOut(bookingId, accessToken);
             if (action === 'noshow')   await backendApi.htNoShow(bookingId, accessToken);
             if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, accessToken);
@@ -229,7 +660,50 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         },
       },
     ]);
-  }, [accessToken, businessId, load]);
+  }, [accessToken, businessId, load, data]);
+
+  // Executar check-in com roomId opcional (vazio = auto-assign no backend)
+  const doCheckIn = useCallback(async (bookingId, roomId = null) => {
+    setRoomPicker(null);
+    setActionLoading(bookingId);
+    try {
+      const payload = roomId ? { roomId } : {};
+      await backendApi.htCheckIn(bookingId, payload, accessToken);
+      await load(true);
+    } catch (e) {
+      Alert.alert('Erro no Check-In', e?.message || 'Operação falhou. Tenta novamente.');
+    } finally {
+      if (alive.current) setActionLoading(null);
+    }
+  }, [accessToken, load]);
+
+  const doExtend = useCallback(async (bookingId, newEndDate) => {
+    setExtendModal(null);
+    setActionLoading(bookingId);
+    try {
+      await backendApi.htExtendStay(bookingId, newEndDate, accessToken);
+      await load(true);
+      Alert.alert('Estadia Prolongada', 'A nova data de saída foi registada.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível prolongar a estadia.');
+    } finally {
+      if (alive.current) setActionLoading(null);
+    }
+  }, [accessToken, load]);
+
+  const doChangeRoom = useCallback(async (bookingId, newRoomId) => {
+    setChangeModal(null);
+    setActionLoading(bookingId);
+    try {
+      await backendApi.htChangeRoom(bookingId, newRoomId, accessToken);
+      await load(true);
+      Alert.alert('Quarto Alterado', 'O hóspede foi movido para o novo quarto.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível alterar o quarto.');
+    } finally {
+      if (alive.current) setActionLoading(null);
+    }
+  }, [accessToken, load]);
 
   const list = data[tab] || [];
   const today = new Date();
@@ -342,6 +816,51 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
           onClose={() => { setFolioBooking(null); load(true); }}
         />
       )}
+
+      {/* Modal de selecção de quarto para check-in */}
+      {roomPicker && (
+        <RoomPickerModal
+          visible={!!roomPicker}
+          rooms={physicalRooms}
+          roomTypeId={roomPicker.roomTypeId}
+          onSelect={(roomId) => doCheckIn(roomPicker.bookingId, roomId)}
+          onSkip={() => doCheckIn(roomPicker.bookingId, null)}
+          onClose={() => setRoomPicker(null)}
+        />
+      )}
+      {/* Modal perfil de hóspede */}
+      <GuestProfileModal
+        visible={!!guestModal}
+        businessId={businessId}
+        accessToken={accessToken}
+        prefilledName={guestModal?.guestName}
+        prefilledPhone={guestModal?.guestPhone}
+        onLink={async (guest) => {
+          if (guestModal) {
+            try {
+              await backendApi.linkHtGuestToBooking(guest.id, guestModal.id, businessId, accessToken);
+              Alert.alert('Perfil Ligado', `${guest.fullName} ligado a esta reserva.`);
+            } catch {}
+          }
+          setGuestModal(null);
+        }}
+        onClose={() => setGuestModal(null)}
+      />
+      {/* Modal prolongar estadia */}
+      <ExtendStayModal
+        visible={!!extendModal}
+        booking={extendModal}
+        onConfirm={(newEndDate) => doExtend(extendModal.id, newEndDate)}
+        onClose={() => setExtendModal(null)}
+      />
+      {/* Modal alterar quarto */}
+      <ChangeRoomModal
+        visible={!!changeModal}
+        booking={changeModal}
+        rooms={physicalRooms}
+        onConfirm={(newRoomId) => doChangeRoom(changeModal.id, newRoomId)}
+        onClose={() => setChangeModal(null)}
+      />
     </Modal>
   );
 }

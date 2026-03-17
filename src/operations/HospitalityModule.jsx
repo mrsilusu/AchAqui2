@@ -41,6 +41,7 @@ import {
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
+import { HousekeepingScreen } from './HousekeepingScreen';
 import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -772,16 +773,35 @@ function ICalSyncCard({ icalLink, onLinkChange, icalStatus, onSync }) {
 // OWNER: BOOKINGS MANAGER — SF_H3
 // SEGURANÇA: só renderiza quando isOwner === true (verificado no pai)
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
-  const [filter, setFilter] = useState('all');
+function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditBooking }) {
+  const [filter, setFilter]   = useState('all');
   const [expanded, setExpanded] = useState({});
-  const FILTERS = [['all','Todas'],['pending','Pendentes'],['confirmed','Confirmadas'],['confirmed_unpaid','Aguarda Pag.'],['cancelled','Canceladas']];
+  const [editModal, setEditModal] = useState(null); // booking a editar
+  const FILTERS = [
+    ['all','Todas'],
+    ['today','Hoje'],
+    ['pending','Pendentes'],
+    ['confirmed','Confirmadas'],
+    ['confirmed_unpaid','Aguarda Pag.'],
+    ['CHECKED_IN','Em Casa'],
+    ['CHECKED_OUT','Checkout'],
+    ['cancelled','Canceladas'],
+  ];
 
-  const filtered = bookings.filter(rb =>
-    filter === 'all' ? true :
-    filter === 'cancelled' ? (rb.status === 'cancelled' || rb.status === 'rejected') :
-    rb.status === filter
-  );
+  const todayStr = (() => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  })();
+
+  const filtered = bookings.filter(rb => {
+    if (filter === 'all') return true;
+    if (filter === 'today') {
+      // Reservas com check-in OU check-out hoje
+      return rb.checkIn === todayStr || rb.checkOut === todayStr;
+    }
+    if (filter === 'cancelled') return rb.status === 'cancelled' || rb.status === 'rejected';
+    return rb.status === filter;
+  });
 
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -837,7 +857,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                     <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
                       <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
-                    <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.grayText} />
+                    <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={16} color={COLORS.grayText} strokeWidth={2} />
                   </View>
                 </TouchableOpacity>
 
@@ -860,13 +880,22 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                     ) : null}
                     <View style={hS.bookingFooter}>
                       <Text style={hS.bookingTotal}>{displayPrice.toLocaleString()} Kz</Text>
-                      {rb.status === 'pending' && (
+                      {(rb.status === 'pending' || rb.status === 'confirmed' || rb.status === 'PENDING' || rb.status === 'CONFIRMED') && (
                         <View style={hS.bookingActions}>
-                          <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
-                            <Text style={hS.rejectBtnText}>Rejeitar</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
-                            <Text style={hS.approveBtnText}>Confirmar</Text>
+                          {(rb.status === 'pending' || rb.status === 'PENDING') && (
+                            <>
+                              <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
+                                <Text style={hS.rejectBtnText}>Rejeitar</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
+                                <Text style={hS.approveBtnText}>Confirmar</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                          <TouchableOpacity
+                            style={[hS.approveBtn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]}
+                            onPress={() => setEditModal(rb)}>
+                            <Text style={[hS.approveBtnText, { color: '#7C3AED' }]}>✏️ Editar</Text>
                           </TouchableOpacity>
                         </View>
                       )}
@@ -886,6 +915,105 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
             );
           })}
         </ScrollView>
+      </View>
+
+      {/* Modal editar reserva */}
+      {editModal && (
+        <EditBookingModal
+          visible={!!editModal}
+          booking={editModal}
+          roomTypes={roomTypes}
+          onSave={(id, changes) => { onEditBooking && onEditBooking(id, changes); setEditModal(null); }}
+          onClose={() => setEditModal(null)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// ─── Modal de edição de reserva ───────────────────────────────────────────────
+function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
+  const [checkIn,  setCheckIn]  = useState(booking?.checkIn  || '');
+  const [checkOut, setCheckOut] = useState(booking?.checkOut || '');
+  const [roomTypeId, setRoomTypeId] = useState(booking?.roomTypeId || '');
+  const [activeField, setActiveField] = useState(null);
+
+  const countN = (ci, co) => {
+    if (!ci || !co) return 0;
+    const parse = (s) => { const [d,m,y] = s.split('/').map(Number); return new Date(y,m-1,d); };
+    return Math.round((parse(co) - parse(ci)) / 86400000);
+  };
+
+  const toISO = (str) => {
+    if (!str) return null;
+    const [d,m,y] = str.split('/').map(Number);
+    return new Date(Date.UTC(y, m-1, d, 12, 0, 0)).toISOString();
+  };
+
+  const nights = countN(checkIn, checkOut);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 20 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111' }}>Editar Reserva</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 4 }}>CHECK-IN</Text>
+          <CalendarPicker
+            label="" value={checkIn}
+            isOpen={activeField === 'checkin'}
+            onToggle={() => setActiveField(f => f === 'checkin' ? null : 'checkin')}
+            onChange={v => { setCheckIn(v); if (checkOut && countN(v, checkOut) <= 0) setCheckOut(''); setActiveField('checkout'); }}
+          />
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 4, marginTop: 10 }}>CHECK-OUT</Text>
+          <CalendarPicker
+            label="" value={checkOut} minDate={checkIn}
+            isOpen={activeField === 'checkout'}
+            onToggle={() => setActiveField(f => f === 'checkout' ? null : 'checkout')}
+            onChange={v => { setCheckOut(v); setActiveField(null); }}
+          />
+
+          {nights > 0 && (
+            <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 8 }}>
+              {nights} noite{nights !== 1 ? 's' : ''}
+            </Text>
+          )}
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginTop: 12, marginBottom: 4 }}>TIPO DE QUARTO</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            {(roomTypes || []).map(rt => (
+              <TouchableOpacity
+                key={rt.id}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8,
+                  backgroundColor: roomTypeId === rt.id ? '#D32323' : '#F7F7F8',
+                  borderWidth: 1, borderColor: roomTypeId === rt.id ? '#D32323' : '#E5E7EB',
+                }}
+                onPress={() => setRoomTypeId(rt.id)}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: roomTypeId === rt.id ? '#fff' : '#555' }}>
+                  {rt.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={{ backgroundColor: '#D32323', borderRadius: 10, paddingVertical: 14, alignItems: 'center' }}
+            onPress={() => onSave(booking.id, {
+              startDate: toISO(checkIn),
+              endDate:   toISO(checkOut),
+              roomTypeId,
+            })}
+            disabled={!checkIn || !checkOut || nights <= 0}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>Guardar Alterações</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -924,6 +1052,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [showHousekeeping, setShowHousekeeping] = useState(false);
+  const [dashboardReloadTrigger, setDashboardReloadTrigger] = useState(0);
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
   // Limpos automaticamente quando o Realtime confirma o novo status
@@ -934,18 +1064,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   //   1. Supabase Realtime (liveBookings do backend) — produção
   //   2. ownerRoomBookingsProp (estado elevado no Main) — desenvolvimento local
   //   3. localBookings (fallback isolado, sem Main)
-  const LOCAL_MOCK_BOOKINGS = [
-    { id: 'rb_1', businessId: business?.id, roomTypeId: '1',
-      guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
-      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
-      adults: 2, children: 0, rooms: 1, totalPrice: 60000, status: 'confirmed' },
-    { id: 'rb_2', businessId: business?.id, roomTypeId: '1',
-      guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
-      checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
-      adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
-  ];
-
-  const [localBookings, setLocalBookings] = useState(LOCAL_MOCK_BOOKINGS);
+  // [FIX] Mock removido -- dados vêm sempre da API (apiBookings) ou estado partilhado (sharedBookings)
+  const [localBookings, setLocalBookings] = useState([]);
 
   // Converte liveBookings (formato API) para o formato interno do HospitalityModule
   const apiBookings = useMemo(() => {
@@ -1096,6 +1216,26 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     updateOwnerBiz({ icalLink: val });
   }, [updateOwnerBiz]);
 
+  // ── Enriquecer ownerRooms com ranges do iCal (bidirecional) ──────────────
+  // Os ranges do iCal (Booking.com/Airbnb) são adicionados ao bookedRanges
+  // de cada tipo de quarto para que a disponibilidade local os considere.
+  const ownerRoomsWithIcal = useMemo(() => {
+    if (!icalStatus?.ranges?.length) return ownerRooms;
+    const result = { ...ownerRooms };
+    Object.keys(result).forEach(roomId => {
+      const room = result[roomId];
+      const existing = room.bookedRanges || [];
+      // Evitar duplicados: só adicionar ranges do iCal que não existem já
+      const icalRanges = icalStatus.ranges.filter(ir =>
+        !existing.some(er => er.start === ir.start && er.end === ir.end)
+      );
+      if (icalRanges.length > 0) {
+        result[roomId] = { ...room, bookedRanges: [...existing, ...icalRanges] };
+      }
+    });
+    return result;
+  }, [ownerRooms, icalStatus]);
+
   // ── Abertura de booking modal ─────────────────────────────────────────────
   // Verificar disponibilidade via API para todos os rooms quando datas mudam
   useEffect(() => {
@@ -1128,6 +1268,16 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setBookingRoom(room);
     setShowBookingModal(true);
   }, []);
+
+  // Editar datas/tipo de reserva existente (do BookingsManager)
+  const handleEditBooking = useCallback(async (bookingId, changes) => {
+    try {
+      await backendApi.updateBooking(bookingId, changes, ctx?.accessToken);
+      Alert.alert('Reserva Actualizada', 'As alterações foram guardadas.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível actualizar a reserva.');
+    }
+  }, [ctx?.accessToken]);
 
   // ── Confirmar reserva ────────────────────────────────────────────────────
   // Se onCreateBooking está disponível (cliente autenticado via backendApi),
@@ -1248,7 +1398,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     rb.businessId === business?.id &&
     (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
   );
-  const pendingCount = activeBookings.filter(rb => rb.status === 'pending').length;
+  const pendingCount = activeBookings.filter(rb =>
+    rb.status === 'pending' || rb.status === 'PENDING'
+  ).length;
 
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
@@ -1298,6 +1450,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
               )}
               <Icon name="calendar" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Reservas</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#7C3AED' }]} onPress={() => setShowHousekeeping(true)}>
+              <Icon name="star" size={16} color={COLORS.white} strokeWidth={2} />
+              <Text style={hS.ownerActionBtnText}>Limpeza</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1357,7 +1513,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       <View style={hS.roomsSection}>
         <Text style={hS.sectionTitle}>Tipos de Quarto</Text>
         {filteredRooms.map(room => {
-          const ownerRoom    = ownerRooms[room.id] || null;
+          const ownerRoom    = ownerRoomsWithIcal[room.id] || null;
           const nights       = countNights(checkIn, checkOut);
           const { subtotal } = nights > 0
             ? calcStayPrice({ ...room, seasonalRates: ownerRoom?.seasonalRates, weekendMultiplier: ownerRoom?.weekendMultiplier || room.weekendMultiplier }, checkIn, checkOut)
@@ -1456,7 +1612,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <BookingModal
           visible={showBookingModal}
           room={bookingRoom}
-          ownerRoom={ownerRooms[bookingRoom?.id] || null}
+          ownerRoom={ownerRoomsWithIcal[bookingRoom?.id] || null}
           business={business}
           activeBookings={activeBookings}
           onClose={() => setShowBookingModal(false)}
@@ -1466,18 +1622,30 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
       {isOwner && showDashboard && (
         <DashboardPMS
-          businessId={ownerBusinessPrivate?.id}
+          businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
           onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
           onClose={() => setShowDashboard(false)}
+          reloadTrigger={dashboardReloadTrigger}
         />
       )}
       {isOwner && showReception && (
         <ReceptionScreen
-          businessId={ownerBusinessPrivate?.id}
+          businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
-          roomTypes={ownerBusinessPrivate?.roomTypes || []}
-          onClose={() => setShowReception(false)}
+          roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+          onClose={() => {
+            setShowReception(false);
+            setDashboardReloadTrigger(t => t + 1);
+            setShowDashboard(true);
+          }}
+        />
+      )}
+      {isOwner && showHousekeeping && (
+        <HousekeepingScreen
+          businessId={ownerBusinessPrivate?.id || business?.id}
+          accessToken={ctx?.accessToken}
+          onClose={() => setShowHousekeeping(false)}
         />
       )}
       {isOwner && showBookingsManager && (
@@ -1485,6 +1653,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           bookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onStatusChange={handleStatusChange}
+          onEditBooking={handleEditBooking}
           onClose={() => setShowBookingsManager(false)}
         />
       )}

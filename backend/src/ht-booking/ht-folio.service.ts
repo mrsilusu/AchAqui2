@@ -62,6 +62,9 @@ export class HtFolioService {
           where:   { removedAt: null },
           orderBy: { addedAt: 'asc' },
         },
+        guestProfile: {
+          select: { documentType: true, documentNumber: true, nationality: true },
+        },
       },
     });
     if (!booking) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
@@ -214,23 +217,36 @@ export class HtFolioService {
       });
     });
 
+    // Buscar config PMS para dados fiscais (NIF, prefixo de fatura)
+    const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+      where: { businessId: booking.businessId },
+      select: { vatNumber: true, invoicePrefix: true },
+    }).catch(() => null);
+
     // Gerar recibo
-    const receipt = this.generateReceipt(updated, booking.folio);
+    const receipt = this.generateReceipt(updated, booking.folio, pmsConfig);
     return { booking: updated, receipt };
   }
 
   // ─── Gerar dados do recibo ────────────────────────────────────────────────
-  private generateReceipt(booking: any, items: any[]) {
+  private generateReceipt(booking: any, items: any[], pmsConfig?: { vatNumber?: string | null; invoicePrefix?: string | null } | null) {
     const nights = Math.max(1, Math.round(
       (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
     ));
     return {
       receiptNumber: `REC-${Date.now()}`,
       issuedAt:      new Date().toISOString(),
-      business:      booking.business,
+      business: {
+        ...booking.business,
+        vatNumber:     pmsConfig?.vatNumber     || null,
+        invoicePrefix: pmsConfig?.invoicePrefix || null,
+      },
       guest: {
-        name:  booking.guestName || booking.user?.name,
-        email: booking.user?.email,
+        name:           booking.guestName  || booking.user?.name,
+        email:          booking.user?.email,
+        phone:          booking.guestPhone || null,
+        documentType:   booking.guestProfile?.documentType   || null,
+        documentNumber: booking.guestProfile?.documentNumber || null,
       },
       stay: {
         room:      booking.room?.number,
