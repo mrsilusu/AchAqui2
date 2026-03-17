@@ -457,7 +457,7 @@ function AppContent() {
   }, []);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
-  const [locationPermission, setLocationPermission] = useState('denied');
+  const [locationPermission, setLocationPermission] = useState('loading');
   const [userLocation, setUserLocation] = useState(null); // { latitude, longitude }
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
@@ -547,13 +547,8 @@ function AppContent() {
     // Sempre buscar quartos da BD — actualiza se existirem, no-op se não
     backendApi.getRoomsByBusiness(b.id).then(rooms => {
       if (Array.isArray(rooms)) {
-        // Mapear physicalRoomsCount igual ao normalizeBusiness
-        const mapped = rooms.map(rt => ({
-          ...rt,
-          physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
-        }));
         setBusinesses(prev => prev.map(biz =>
-          biz.id === b.id ? { ...biz, roomTypes: mapped } : biz
+          biz.id === b.id ? { ...biz, roomTypes: rooms } : biz
         ));
       }
     }).catch(() => {});
@@ -568,29 +563,88 @@ function AppContent() {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
+  // Ref para guardar a subscription do watch -- permite parar e reiniciar
+  const locationWatchRef = React.useRef(null);
+
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
       if (status === 'granted') {
+        // Posição imediata
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        // Iniciar watch se ainda não está activo
+        if (!locationWatchRef.current) {
+          locationWatchRef.current = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+            (l) => setUserLocation({ latitude: l.coords.latitude, longitude: l.coords.longitude })
+          );
+        }
       }
     } catch {
       setLocationPermission('denied');
     }
   };
 
-  // Pedir localização ao arrancar
+  // Localização: pede permissão ao arrancar + watch contínuo para actualizar com deslocação
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
-        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    let subscription = null;
+
+    const startLocation = async () => {
+      try {
+        // Verificar permissão actual
+        let { status } = await Location.getForegroundPermissionsAsync();
+
+        // Pedir permissão em qualquer estado que não seja 'granted'
+        // 'undetermined' = primeira vez | 'denied' pode ser re-pedido em Expo Go
+        if (status !== 'granted') {
+          const result = await Location.requestForegroundPermissionsAsync();
+          status = result.status;
+        }
+
+        setLocationPermission(status);
+
+        if (status !== 'granted') return;
+
+        // Posição inicial imediata
+        const initial = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }).catch(() => null);
+        if (initial) {
+          setUserLocation({
+            latitude:  initial.coords.latitude,
+            longitude: initial.coords.longitude,
+          });
+        }
+
+        // Watch contínuo — actualiza distâncias conforme o utilizador se desloca
+        // distanceInterval: 50m -- só dispara se o utilizador andar mais de 50 metros
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy:         Location.Accuracy.Balanced,
+            distanceInterval: 50,    // metros mínimos entre updates
+            timeInterval:     30000, // máximo a cada 30 segundos
+          },
+          (loc) => {
+            setUserLocation({
+              latitude:  loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+          }
+        );
+        locationWatchRef.current = subscription;
+      } catch {
+        setLocationPermission('denied');
       }
-      setLocationPermission(status);
-    })();
+    };
+
+    startLocation();
+
+    // Cleanup: parar o watch quando o componente desmonta
+    return () => {
+      if (subscription) subscription.remove();
+    };
   }, []);
 
     useEffect(() => {

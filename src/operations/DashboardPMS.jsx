@@ -20,8 +20,9 @@ import { backendApi } from '../lib/backendApi';
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
   CLEAN:       { label: 'Livre',        color: '#22A06B', bg: '#F0FDF4' },
+  OCCUPIED:    { label: 'Ocupado',      color: '#1565C0', bg: '#EFF6FF' },
   DIRTY:       { label: 'Sujo',         color: '#D97706', bg: '#FFFBEB' },
-  CLEANING:    { label: 'A limpar',     color: '#1565C0', bg: '#EFF6FF' },
+  CLEANING:    { label: 'A limpar',     color: '#6B7280', bg: '#F9FAFB' },
   MAINTENANCE: { label: 'Manutenção',   color: '#DC2626', bg: '#FEF2F2' },
   INSPECTING:  { label: 'Inspecção',    color: '#7C3AED', bg: '#F5F3FF' },
 };
@@ -51,8 +52,9 @@ function MetricCard({ icon, label, value, color, sub }) {
 
 // ─── Card de quarto ───────────────────────────────────────────────────────────
 function RoomCard({ room }) {
-  const st = ROOM_STATUS[room.status] || ROOM_STATUS.CLEAN;
+  // Quarto com hóspede activo exibe "Ocupado" independentemente do status físico
   const hasGuest = !!room.guest;
+  const st = hasGuest ? ROOM_STATUS.OCCUPIED : (ROOM_STATUS[room.status] || ROOM_STATUS.CLEAN);
 
   return (
     <View style={[dS.roomCard, { borderLeftColor: st.color }]}>
@@ -164,9 +166,10 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 </View>
                 <View style={dS.occupancyLegend}>
                   {[
-                    { label: 'Livres',     n: data?.roomStats?.clean ?? 0,       color: '#22A06B' },
-                    { label: 'Sujos',      n: data?.roomStats?.dirty ?? 0,       color: '#D97706' },
-                    { label: 'Manut.',     n: data?.roomStats?.maintenance ?? 0, color: '#DC2626' },
+                    { label: 'Livres',    n: data?.roomStats?.clean ?? 0,       color: '#22A06B' },
+                    { label: 'Ocupados',  n: data?.roomStats?.occupied ?? 0,    color: '#1565C0' },
+                    { label: 'Sujos',     n: data?.roomStats?.dirty ?? 0,       color: '#D97706' },
+                    { label: 'Manut.',    n: data?.roomStats?.maintenance ?? 0, color: '#DC2626' },
                   ].map(l => (
                     <View key={l.label} style={dS.legendItem}>
                       <View style={[dS.legendDot, { backgroundColor: l.color }]} />

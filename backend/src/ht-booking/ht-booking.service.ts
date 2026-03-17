@@ -79,13 +79,28 @@ export class HtBookingService {
 
     const previousStatus = booking.status;
 
+    // Se não veio roomId explícito, atribuir automaticamente um quarto CLEAN do tipo correcto.
+    // Sem esta atribuição, o HtRoom nunca fica marcado como ocupado no dashboard.
+    let resolvedRoomId = dto.roomId ?? booking.roomId ?? null;
+    if (!resolvedRoomId && booking.roomTypeId) {
+      const autoRoom = await this.prisma.htRoom.findFirst({
+        where: {
+          businessId: booking.businessId,
+          roomTypeId: booking.roomTypeId,
+          status: 'CLEAN',
+        },
+        orderBy: { number: 'asc' },
+      });
+      if (autoRoom) resolvedRoomId = autoRoom.id;
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
           status:      HtBookingStatus.CHECKED_IN,
           checkedInAt: new Date(),
-          roomId:      dto.roomId ?? booking.roomId,
+          roomId:      resolvedRoomId,
           guestName:   dto.guestName  ?? booking.guestName,
           guestPhone:  dto.guestPhone ?? booking.guestPhone,
           version:     { increment: 1 },
@@ -97,12 +112,11 @@ export class HtBookingService {
           business: { select: { id: true, name: true } },
         },
       });
-      if (dto.roomId) {
-        await tx.htRoom.update({
-          where: { id: dto.roomId },
-          data: { status: 'CLEAN', version: { increment: 1 } },
-        });
-      }
+      // Marcar o quarto físico como OCCUPIED (via CLEAN com booking activo)
+      // O status mantém-se CLEAN -- a ocupação é inferida pelas reservas CHECKED_IN no dashboard.
+      // Nada a fazer aqui para o status do room -- o dashboard já faz:
+      // occupied = rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0)
+      // O que importa é que resolvedRoomId esteja na reserva para o join funcionar.
       return updatedBooking;
     });
 

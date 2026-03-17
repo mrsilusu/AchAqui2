@@ -97,10 +97,12 @@ export class HtDashboardService {
     ]);
 
     // Calcular estados dos quartos
+    // occupied: quarto CLEAN com reserva CHECKED_IN activa (roomId associado à reserva)
+    // clean (livre): quarto CLEAN sem reservas activas
     const roomStats = {
       total:       rooms.length,
-      clean:       rooms.filter(r => r.status === 'CLEAN').length,
       occupied:    rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0).length,
+      clean:       rooms.filter(r => r.status === 'CLEAN' && r.bookings.length === 0).length,
       dirty:       rooms.filter(r => r.status === 'DIRTY').length,
       cleaning:    rooms.filter(r => r.status === 'CLEANING').length,
       maintenance: rooms.filter(r => r.status === 'MAINTENANCE').length,
