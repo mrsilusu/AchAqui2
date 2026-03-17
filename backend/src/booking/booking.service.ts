@@ -427,11 +427,18 @@ export class BookingService {
         },
       }),
     ]);
-    const available = Math.max(0, physicalRooms - overlapping);
+    // Se não há quartos físicos configurados, usar totalRooms do tipo como capacidade.
+    // Isso evita bloquear reservas quando o dono ainda não configurou os quartos físicos.
+    const effectiveCapacity = physicalRooms > 0
+      ? physicalRooms
+      : 0; // 0 aqui sinaliza "sem quartos físicos" -- o frontend trata este caso
+    const available = physicalRooms > 0
+      ? Math.max(0, physicalRooms - overlapping)
+      : 0; // sem quartos físicos -> não sabemos a capacidade real
 
     // Calcular próxima data disponível se ocupado
     let nextAvailableDate: string | null = null;
-    if (available === 0) {
+    if (available === 0 && physicalRooms > 0) {
       // Encontrar a última reserva activa que se sobrepõe e sugerir após o seu checkout
       const lastBooking = await this.prisma.htRoomBooking.findFirst({
         where: {
@@ -444,8 +451,9 @@ export class BookingService {
         select: { endDate: true },
       });
       if (lastBooking) {
+        // O endDate é o dia do checkout — o quarto fica livre nesse mesmo dia.
+        // Ex: reserva 10→12, checkout dia 12, próximo hóspede pode entrar dia 12.
         const next = new Date(lastBooking.endDate);
-        next.setDate(next.getDate() + 1);
         // Verificar se nessa data já há disponibilidade
         const nextEnd = new Date(next.getTime() + nights * 24 * 60 * 60 * 1000);
         const nextOccupied = await this.prisma.htRoomBooking.count({

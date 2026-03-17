@@ -194,6 +194,14 @@ export const backendApi = {
     apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
   
 
+  // ─── DISPONIBILIDADE PÚBLICA (sem auth) ──────────────────────────────────────
+  // Verifica quartos disponíveis para um tipo de quarto nas datas pedidas.
+  // Retorna: { available, physicalRooms, occupied, nextAvailableDate }
+  getAvailability: (businessId, roomTypeId, startDate, endDate) =>
+    apiRequest(
+      `/bookings/availability?businessId=${encodeURIComponent(businessId)}&roomTypeId=${encodeURIComponent(roomTypeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    ),
+
   // ─── HT — Folio + Checkout Financeiro (Sprint 3)
   getHtFolio: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/folio`, { accessToken }),

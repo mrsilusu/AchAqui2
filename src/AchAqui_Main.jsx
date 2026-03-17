@@ -547,8 +547,13 @@ function AppContent() {
     // Sempre buscar quartos da BD — actualiza se existirem, no-op se não
     backendApi.getRoomsByBusiness(b.id).then(rooms => {
       if (Array.isArray(rooms)) {
+        // Mapear physicalRoomsCount igual ao normalizeBusiness
+        const mapped = rooms.map(rt => ({
+          ...rt,
+          physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
+        }));
         setBusinesses(prev => prev.map(biz =>
-          biz.id === b.id ? { ...biz, roomTypes: rooms } : biz
+          biz.id === b.id ? { ...biz, roomTypes: mapped } : biz
         ));
       }
     }).catch(() => {});

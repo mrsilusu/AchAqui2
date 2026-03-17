@@ -240,27 +240,41 @@ function parseIcalText(text) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CALENDAR PICKER — componente independente com estado próprio
 // ─────────────────────────────────────────────────────────────────────────────
-export function CalendarPicker({ value, onChange, label, minDate }) {
-  const [open, setOpen]   = useState(false);
+// CalendarPicker — sempre inline, sempre full-width, controlo do pai via isOpen+onToggle
+// Não usa position:absolute -- sem sobreposições, sem cortes
+export function CalendarPicker({ value, onChange, label, minDate, isOpen, onToggle }) {
   const [month, setMonth] = useState(() => {
     const base = value ? parseDate(value) : minDate ? parseDate(minDate) : new Date();
-    return new Date(base.getFullYear(), base.getMonth(), 1);
+    const d = (base && !isNaN(base.getTime())) ? base : new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
   });
+
+  // Quando minDate muda (ex: após seleccionar check-in), avançar o mês se necessário
+  useEffect(() => {
+    if (!minDate) return;
+    const min = parseDate(minDate);
+    if (!min || isNaN(min.getTime())) return;
+    setMonth(prev => {
+      const minMonth = new Date(min.getFullYear(), min.getMonth(), 1);
+      return prev < minMonth ? minMonth : prev;
+    });
+  }, [minDate]);
+
   const { year, month: m, weeks } = buildCalendar(month);
-  const today       = new Date();
-  const minDateObj  = minDate ? parseDate(minDate) : null;
+  const today      = new Date();
+  const minDateObj = minDate ? parseDate(minDate) : null;
 
   return (
-    <View style={hS.calWrap}>
+    <View>
       {label && <Text style={hS.calLabel}>{label}</Text>}
-      <TouchableOpacity style={hS.calTrigger} onPress={() => setOpen(o => !o)}>
+      <TouchableOpacity style={hS.calTrigger} onPress={onToggle}>
         <Text style={value ? hS.calValue : hS.calPlaceholder}>
           {value || 'Selecionar data'}
         </Text>
-        <Icon name={open ? 'chevronDown' : 'chevronRight'} size={14} color={COLORS.grayText} strokeWidth={2} />
+        <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} color={COLORS.grayText} strokeWidth={2} />
       </TouchableOpacity>
 
-      {open && (
+      {isOpen && (
         <View style={hS.calCard}>
           <View style={hS.calNav}>
             <TouchableOpacity style={hS.calNavBtn} onPress={() => setMonth(new Date(year, m - 1, 1))}>
@@ -278,17 +292,17 @@ export function CalendarPicker({ value, onChange, label, minDate }) {
             <View key={wi} style={hS.calDayRow}>
               {week.map((day, di) => {
                 if (!day) return <View key={di} style={hS.calDayEmpty} />;
-                const thisDate   = new Date(year, m, day);
-                const dateStr    = fmtDate(thisDate);
-                const isPast     = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const thisDate    = new Date(year, m, day);
+                const dateStr     = fmtDate(thisDate);
+                const isPast      = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                 const isBeforeMin = minDateObj ? thisDate <= minDateObj : false;
-                const isDisabled = isPast || isBeforeMin;
-                const isSelected = value === dateStr;
+                const isDisabled  = isPast || isBeforeMin;
+                const isSelected  = value === dateStr;
                 return (
                   <TouchableOpacity key={di}
                     style={[hS.calDay, isSelected && hS.calDaySelected, isDisabled && hS.calDayPast]}
                     disabled={isDisabled}
-                    onPress={() => { onChange(dateStr); setOpen(false); }}>
+                    onPress={() => { onChange(dateStr); }}>
                     <Text style={[hS.calDayText, isSelected && hS.calDayTextSelected, isDisabled && hS.calDayTextPast]}>
                       {day}
                     </Text>
@@ -318,6 +332,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const [guestPhone, setGuestPhone]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
+  const [activeDateFieldModal, setActiveDateFieldModal] = useState(null); // 'checkin'|'checkout'|null
   const [apiAvailability, setApiAvailability] = useState(null); // { available, physicalRooms, occupied }
   const [checkingAvail, setCheckingAvail] = useState(false);
 
@@ -340,11 +355,25 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   // Disponibilidade: API tem prioridade, fallback para cálculo local
   const minAvailData = (() => {
     if (apiAvailability !== null) {
+      // physicalRooms=0: tipo sem quartos físicos configurados.
+      // Para o dono (ownerRoom presente): permitir, usa totalRooms como capacidade.
+      // Para o cliente: bloquear -- não devia ter chegado aqui (filtro Regra 1),
+      // mas se chegou (backend antigo sem physicalRoomsCount), proteger.
+      if (apiAvailability.physicalRooms === 0) {
+        if (ownerRoom) {
+          return { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+        }
+        // Cliente sem quartos físicos -> bloquear com minAvailable=0
+        return { minAvailable: 0, bottleneckDate: null };
+      }
+      // physicalRooms>0: a resposta é fiável -- usar available directamente
       return { minAvailable: apiAvailability.available, bottleneckDate: null };
     }
+    // API não respondeu (erro/timeout): fallback para cálculo local
     if (checkIn && checkOut && room && ownerRoom) {
       return getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings);
     }
+    // Sem dados: assumir disponível (melhor UX -- backend valida na criação)
     return { minAvailable: room?.physicalRoomsCount || room?.totalRooms || 1, bottleneckDate: null };
   })();
 
@@ -366,13 +395,14 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   // Sugestão de data seguinte -- funciona com e sem ownerRoom
   const nextDate = (() => {
     if (!isUnavailable || !room || !checkIn) return null;
-    // API retorna nextAvailableDate directamente
+    // API retorna nextAvailableDate directamente (formato DD/MM/YYYY)
     if (apiAvailability?.nextAvailableDate) return apiAvailability.nextAvailableDate;
     if (apiAvailability) {
-      // Fallback: checkout + 1 dia
-      const dOut = new Date(checkOut || checkIn);
-      dOut.setDate(dOut.getDate() + 1);
-      return fmtDate(dOut);
+      // Fallback seguro: usar parseDate para suportar DD/MM/YYYY e ISO
+      const base = parseDate(checkOut || checkIn);
+      if (!base || isNaN(base.getTime())) return null;
+      base.setDate(base.getDate() + 1);
+      return fmtDate(base);
     }
     if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings);
     return null;
@@ -384,6 +414,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       setStep(1); setCheckIn(''); setCheckOut(''); setRoomQty(1);
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
       setSpecialRequest(''); setPayOnArrival(false);
+      setActiveDateFieldModal(null);
     }
   }, [visible]);
 
@@ -456,10 +487,25 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
             <>
               <Text style={hS.stepTitle}>Quando vai ficar?</Text>
               <View style={{ gap: 12, marginBottom: 16 }}>
-                <CalendarPicker label="Check-in" value={checkIn}
-                  onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
-                <CalendarPicker label="Check-out" value={checkOut}
-                  onChange={setCheckOut} minDate={checkIn} />
+                <CalendarPicker
+                  label="CHECK-IN"
+                  value={checkIn}
+                  isOpen={activeDateFieldModal === 'checkin'}
+                  onToggle={() => setActiveDateFieldModal(f => f === 'checkin' ? null : 'checkin')}
+                  onChange={v => {
+                    setCheckIn(v);
+                    if (checkOut && countNights(v, checkOut) <= 0) setCheckOut('');
+                    setActiveDateFieldModal('checkout');
+                  }}
+                />
+                <CalendarPicker
+                  label="CHECK-OUT"
+                  value={checkOut}
+                  isOpen={activeDateFieldModal === 'checkout'}
+                  onToggle={() => setActiveDateFieldModal(f => f === 'checkout' ? null : 'checkout')}
+                  onChange={v => { setCheckOut(v); setActiveDateFieldModal(null); }}
+                  minDate={checkIn}
+                />
               </View>
 
               {/* Aviso min nights */}
@@ -471,10 +517,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                 </View>
               )}
 
-              {/* Indisponível */}
+              {/* Disponibilidade */}
               {checkingAvail && checkIn && checkOut && (
-                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, color: COLORS.grayText }}>A verificar disponibilidade...</Text>
+                <View style={hS.checkingBox}>
+                  <Text style={hS.checkingText}>🔍 A verificar disponibilidade...</Text>
                 </View>
               )}
               {isUnavailable && !checkingAvail && (
@@ -483,8 +529,12 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                   {nextDate ? (
                     <TouchableOpacity onPress={() => {
                       const d = parseDate(nextDate);
-                      const out = new Date(d.getTime() + (nights || 1) * 86400000);
-                      setCheckIn(nextDate); setCheckOut(fmtDate(out));
+                      if (!d || isNaN(d.getTime())) return;
+                      // Manter o mesmo número de noites que o cliente escolheu
+                      const stayNights = nights > 0 ? nights : 1;
+                      const out = new Date(d.getTime() + stayNights * 86400000);
+                      setCheckIn(nextDate);
+                      setCheckOut(fmtDate(out));
                     }}>
                       <Text style={hS.unavailSuggest}>
                         Ver disponibilidade a partir de {nextDate} →
@@ -580,8 +630,8 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               <TouchableOpacity
-                style={[hS.primaryBtn, (isUnavailable || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
-                disabled={isUnavailable || nights <= 0 || nights < (room.minNights || 1)}
+                style={[hS.primaryBtn, (isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
+                disabled={isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)}
                 onPress={() => setStep(2)}>
                 <Text style={hS.primaryBtnText}>Continuar →</Text>
               </TouchableOpacity>
@@ -866,6 +916,11 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [guestCount, setGuestCount] = useState(1);
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
+  // Controlo de qual campo de data está aberto no módulo principal (um de cada vez)
+  const [activeDateField, setActiveDateField] = useState(null); // 'checkin' | 'checkout' | null
+  // Disponibilidade por roomTypeId -- verificada via API quando datas mudam
+  const [roomAvailMap, setRoomAvailMap]   = useState({}); // { [roomId]: { available, physicalRooms } }
+  const [checkingRooms, setCheckingRooms] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
@@ -1042,6 +1097,33 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, [updateOwnerBiz]);
 
   // ── Abertura de booking modal ─────────────────────────────────────────────
+  // Verificar disponibilidade via API para todos os rooms quando datas mudam
+  useEffect(() => {
+    const safeRooms = rooms ?? [];
+    if (!checkIn || !checkOut || !business?.id || safeRooms.length === 0) {
+      setRoomAvailMap({});
+      return;
+    }
+    const toISO = (str) => {
+      if (!str) return null;
+      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
+      return new Date(str).toISOString();
+    };
+    setCheckingRooms(true);
+    Promise.all(
+      safeRooms.map(room =>
+        backendApi.getAvailability(business.id, room.id, toISO(checkIn), toISO(checkOut))
+          .then(data => ({ roomId: room.id, data }))
+          .catch(() => ({ roomId: room.id, data: null }))
+      )
+    ).then(results => {
+      const map = {};
+      results.forEach(({ roomId, data }) => { map[roomId] = data; });
+      setRoomAvailMap(map);
+      setCheckingRooms(false);
+    });
+  }, [checkIn, checkOut, business?.id, rooms?.length ?? 0]);
+
   const handleBook = useCallback((room) => {
     setBookingRoom(room);
     setShowBookingModal(true);
@@ -1153,7 +1235,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     }
   }, [isOwner, onStatusChangeProp]);
 
-  const rooms = business?.roomTypes || [];
+  const allRooms = business?.roomTypes || [];
+  // Regra 1: cliente só vê tipos de quarto com quartos físicos configurados.
+  // physicalRoomsCount=0  → sem quartos físicos → esconder do cliente
+  // physicalRoomsCount=null → backend antigo, não sabemos → mostrar (permissivo)
+  // O dono vê sempre todos para poder gerir.
+  const rooms = isOwner
+    ? allRooms
+    : allRooms.filter(r => r.physicalRoomsCount !== 0);
   const filteredRooms = guestCount > 0 ? rooms.filter(r => r.maxGuests >= guestCount) : rooms;
   const activeBookings = roomBookings.filter(rb =>
     rb.businessId === business?.id &&
@@ -1164,8 +1253,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
       <Text style={hS.emptyIcon}>🏨</Text>
-      <Text style={hS.emptyTitle}>Sem quartos configurados</Text>
-      <Text style={hS.emptyText}>Configure os tipos de quarto no painel de gestão.</Text>
+      <Text style={hS.emptyTitle}>
+        {isOwner ? 'Sem quartos configurados' : 'Sem quartos disponíveis'}
+      </Text>
+      <Text style={hS.emptyText}>
+        {isOwner
+          ? 'Adiciona tipos de quarto e quartos físicos no painel de gestão.'
+          : 'Este estabelecimento não tem quartos disponíveis de momento.'}
+      </Text>
     </View>
   );
 
@@ -1217,17 +1312,26 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       {/* ── SELETOR DE DATAS ────────────────────────────────────────── */}
       <View style={hS.dateSection}>
         <Text style={hS.dateSectionTitle}>📅 Selecionar Datas</Text>
-        <View style={hS.dateRow}>
-          <View style={{ flex: 1 }}>
-            <CalendarPicker label="Check-in" value={checkIn}
-              onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
-          </View>
-          <View style={hS.dateSep}>
-            <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <CalendarPicker label="Check-out" value={checkOut} onChange={setCheckOut} minDate={checkIn} />
-          </View>
+        <View style={{ gap: 10 }}>
+          <CalendarPicker
+            label="CHECK-IN"
+            value={checkIn}
+            isOpen={activeDateField === 'checkin'}
+            onToggle={() => setActiveDateField(f => f === 'checkin' ? null : 'checkin')}
+            onChange={v => {
+              setCheckIn(v);
+              if (checkOut && countNights(v, checkOut) <= 0) setCheckOut('');
+              setActiveDateField('checkout');
+            }}
+          />
+          <CalendarPicker
+            label="CHECK-OUT"
+            value={checkOut}
+            isOpen={activeDateField === 'checkout'}
+            onToggle={() => setActiveDateField(f => f === 'checkout' ? null : 'checkout')}
+            onChange={v => { setCheckOut(v); setActiveDateField(null); }}
+            minDate={checkIn}
+          />
         </View>
         <View style={hS.guestRow}>
           <Text style={hS.guestLabel}>👤 Hóspedes</Text>
@@ -1258,10 +1362,21 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           const { subtotal } = nights > 0
             ? calcStayPrice({ ...room, seasonalRates: ownerRoom?.seasonalRates, weekendMultiplier: ownerRoom?.weekendMultiplier || room.weekendMultiplier }, checkIn, checkOut)
             : { subtotal: 0 };
-          const avail        = (checkIn && checkOut)
+          // Disponibilidade: API (para todos) tem prioridade sobre cálculo local (dono)
+          const apiAvail      = roomAvailMap[room.id] ?? null;
+          const localAvail    = (checkIn && checkOut && ownerRoom)
             ? getRealAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
             : null;
-          const isUnavailable = avail ? avail.available < 1 : false;
+          // Escolher fonte: API se disponível, local como fallback para dono
+          const avail = (() => {
+            if (apiAvail !== null) {
+              if (apiAvail.physicalRooms === 0) return null; // sem físicos: neutro
+              return { available: apiAvail.available };
+            }
+            return localAvail; // fallback dono
+          })();
+          const isChecking    = checkingRooms && checkIn && checkOut && apiAvail === null;
+          const isUnavailable = !isChecking && avail ? avail.available < 1 : false;
           return (
             <View key={room.id} style={[hS.roomCard, isUnavailable && hS.roomCardUnavailable]}>
               <View style={hS.roomHeader}>
@@ -1294,7 +1409,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                     <Text style={hS.roomMetaText}>Mín {room.minNights} noites</Text>
                   </View>
                 )}
-                {avail && (
+                {isChecking && (
+                  <View style={[hS.roomMetaItem, { marginLeft: 'auto' }]}>
+                    <Text style={[hS.roomMetaText, { color: COLORS.grayText }]}>A verificar...</Text>
+                  </View>
+                )}
+                {!isChecking && avail && (
                   <View style={[hS.roomMetaItem, { marginLeft: 'auto' }]}>
                     <View style={[hS.availDot, { backgroundColor: isUnavailable ? '#EF4444' : COLORS.green }]} />
                     <Text style={[hS.roomMetaText, { color: isUnavailable ? '#EF4444' : COLORS.green, fontWeight: '700' }]}>
@@ -1427,17 +1547,16 @@ const hS = StyleSheet.create({
   nightsBadgeText:  { fontSize: 12, fontWeight: '700', color: '#1565C0' },
 
   // Calendar
-  calWrap:          { flex: 1 },
   calLabel:         { fontSize: 10, fontWeight: '700', color: '#8A8A8A', letterSpacing: 0.6,
                       marginBottom: 4, textTransform: 'uppercase' },
   calTrigger:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      paddingHorizontal: 10, paddingVertical: 10, backgroundColor: '#F7F7F8',
+                      paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#F7F7F8',
                       borderRadius: 8, borderWidth: 1, borderColor: '#EBEBEB' },
   calValue:         { fontSize: 13, fontWeight: '600', color: '#111111' },
   calPlaceholder:   { fontSize: 13, color: '#8A8A8A' },
-  calCard:          { marginTop: 6, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1,
-                      borderColor: '#EBEBEB', padding: 10, elevation: 4,
-                      shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, zIndex: 999 },
+  // Calendário sempre inline, sempre full-width -- sem position absolute, sem sobreposições
+  calCard:          { marginTop: 8, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1,
+                      borderColor: '#EBEBEB', padding: 12 },
   calNav:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   calNavBtn:        { padding: 6 },
   calMonthLabel:    { fontSize: 14, fontWeight: '700', color: '#111111' },
@@ -1499,6 +1618,9 @@ const hS = StyleSheet.create({
   infoBox:          { padding: 12, backgroundColor: '#EFF6FF', borderRadius: 10,
                       borderWidth: 1, borderColor: '#1565C0' + '40', marginBottom: 12 },
   infoBoxText:      { fontSize: 13, color: '#1565C0', fontWeight: '600' },
+  checkingBox:      { padding: 12, backgroundColor: '#F5F5F5', borderRadius: 10,
+                      borderWidth: 1, borderColor: '#E0E0E0', marginBottom: 12 },
+  checkingText:     { fontSize: 13, color: COLORS.grayText, fontWeight: '500' },
   unavailBox:       { padding: 12, backgroundColor: '#FEF2F2', borderRadius: 10,
                       borderWidth: 1, borderColor: '#FCA5A5', marginBottom: 12 },
   unavailTitle:     { fontSize: 13, fontWeight: '700', color: '#DC2626', marginBottom: 4 },
