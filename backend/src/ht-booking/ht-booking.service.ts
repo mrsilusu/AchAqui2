@@ -293,15 +293,28 @@ export class HtBookingService {
     if (eDate <= booking.endDate) {
       throw new BadRequestException('A nova data de saída deve ser posterior à actual.');
     }
-    // Verificar disponibilidade do tipo de quarto para o período adicional
-    if (booking.roomTypeId) {
+    // Verificar disponibilidade do quarto físico específico para o período adicional
+    if (booking.roomId) {
+      const roomConflict = await this.prisma.htRoomBooking.findFirst({
+        where: {
+          id:        { not: bookingId },
+          roomId:    booking.roomId,
+          status:    { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+          startDate: { lt: eDate },
+          endDate:   { gt: booking.endDate },
+        },
+      });
+      if (roomConflict) {
+        throw new BadRequestException('O quarto tem outra reserva nesse período. Muda o hóspede de quarto primeiro.');
+      }
+    } else if (booking.roomTypeId) {
       const overlapping = await this.prisma.htRoomBooking.count({
         where: {
-          id:          { not: bookingId },
-          roomTypeId:  booking.roomTypeId,
-          status:      { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-          startDate:   { lt: eDate },
-          endDate:     { gt: booking.endDate },
+          id:         { not: bookingId },
+          roomTypeId: booking.roomTypeId,
+          status:     { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+          startDate:  { lt: eDate },
+          endDate:    { gt: booking.endDate },
         },
       });
       const physicalRooms = await this.prisma.htRoom.count({
@@ -328,7 +341,7 @@ export class HtBookingService {
       data:  { endDate: eDate, totalPrice: newTotalPrice, version: { increment: 1 } },
     });
     await this.audit({
-      businessId: booking.businessId, action: 'HT_BOOKING_EXTENDED',
+      businessId: booking.businessId, action: 'HT_BOOKING_MODIFIED',
       actorId: ownerId, resourceId: bookingId,
       previousData: { endDate: booking.endDate, totalPrice: booking.totalPrice },
       newData:      { endDate: eDate, totalPrice: newTotalPrice },
@@ -372,7 +385,7 @@ export class HtBookingService {
       return updatedBooking;
     });
     await this.audit({
-      businessId: booking.businessId, action: 'HT_BOOKING_ROOM_CHANGED',
+      businessId: booking.businessId, action: 'HT_ROOM_REASSIGNED',
       actorId: ownerId, resourceId: bookingId,
       previousData: { roomId: previousRoomId },
       newData:      { roomId: newRoomId },

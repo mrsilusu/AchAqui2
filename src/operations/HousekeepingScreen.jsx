@@ -202,7 +202,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose }) {
         {/* Header */}
         <View style={hkS.header}>
           <TouchableOpacity style={hkS.iconBtn} onPress={onClose}>
-            <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+            <Icon name="back" size={20} color={COLORS.darkText} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={hkS.headerTitle}>Housekeeping</Text>

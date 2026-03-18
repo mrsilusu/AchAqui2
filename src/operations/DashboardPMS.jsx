@@ -17,6 +17,8 @@ import {
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { HousekeepingScreen } from './HousekeepingScreen';
+import { ReceptionScreen } from './ReceptionScreen';
+import { ReservationMapModal } from './ReservationMapModal';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -101,6 +103,66 @@ function RoomCard({ room, onMarkClean, onMarkMaintenance, actionLoading }) {
   );
 }
 
+// ─── Room Rack Modal ─────────────────────────────────────────────────────────
+function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, onClose }) {
+  const roomsByFloor = {};
+  rooms.forEach(r => {
+    const floor = r.floor != null ? `Piso ${r.floor}` : 'Sem piso';
+    if (!roomsByFloor[floor]) roomsByFloor[floor] = [];
+    roomsByFloor[floor].push(r);
+  });
+
+  const cleanCount    = rooms.filter(r => r.status === 'CLEAN' && !r.guest).length;
+  const occupiedCount = rooms.filter(r => r.guest).length;
+  const dirtyCount    = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING').length;
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={dS.root}>
+        {/* Header */}
+        <View style={dS.header}>
+          <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
+            <Icon name="back" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={dS.headerTitle}>Quartos</Text>
+            <Text style={dS.headerSub}>
+              {cleanCount} livres · {occupiedCount} ocupados · {dirtyCount} para limpar
+            </Text>
+          </View>
+          <View style={{ width: 36 }} />
+        </View>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {rooms.length === 0 ? (
+            <View style={dS.empty}>
+              <Text style={dS.emptyText}>Sem quartos configurados.</Text>
+            </View>
+          ) : (
+            Object.entries(roomsByFloor).map(([floor, floorRooms]) => (
+              <View key={floor}>
+                <Text style={dS.floorLabel}>{floor}</Text>
+                <View style={dS.roomGrid}>
+                  {floorRooms.map(r => (
+                    <RoomCard
+                      key={r.id}
+                      room={r}
+                      onMarkClean={onMarkClean}
+                      onMarkMaintenance={onMarkMaintenance}
+                      actionLoading={actionLoading}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0 }) {
   const [data, setData]             = useState(null);
@@ -108,6 +170,9 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [showHousekeeping, setShowHousekeeping] = useState(false);
+  const [showRooms, setShowRooms]               = useState(false);
+  const [showReception, setShowReception]       = useState(false);
+  const [showMap, setShowMap]                   = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -170,14 +235,6 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
 
   const today = new Date();
   const todayStr = fmtDate(today);
-
-  // ─── Agrupar quartos por piso ───────────────────────────────────────────
-  const roomsByFloor = {};
-  (data?.rooms || []).forEach(r => {
-    const floor = r.floor != null ? `Piso ${r.floor}` : 'Sem piso';
-    if (!roomsByFloor[floor]) roomsByFloor[floor] = [];
-    roomsByFloor[floor].push(r);
-  });
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -278,30 +335,46 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
 
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
-              <TouchableOpacity style={dS.receptionBtn} onPress={onOpenReception}>
+              <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
                 <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
+                onPress={() => setShowHousekeeping(true)}
+              >
+                <Icon name="star" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>
+                  Housekeeping
+                  {(() => {
+                    const n = (data?.rooms || []).filter(r =>
+                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE'
+                    ).length;
+                    return n > 0 ? ` · ${n} pendente${n !== 1 ? 's' : ''}` : '';
+                  })()}
+                </Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#1565C0' }]}
+                onPress={() => setShowRooms(true)}
+              >
+                <Icon name="hotel" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>
+                  Quartos{data?.rooms?.length > 0 ? ` · ${data.rooms.length} total` : ''}
+                </Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#D32323' }]}
+                onPress={() => setShowMap(true)}
+              >
+                <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
             </View>
-
-            {/* ── Botão Housekeeping ── */}
-            <TouchableOpacity
-              style={[dS.receptionBtn, { backgroundColor: '#7C3AED', marginTop: 0 }]}
-              onPress={() => setShowHousekeeping(true)}
-            >
-              <Icon name="star" size={18} color="#fff" strokeWidth={2.5} />
-              <Text style={dS.receptionBtnText}>
-                Housekeeping
-                {(() => {
-                  const n = (data?.rooms || []).filter(r =>
-                    r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE'
-                  ).length;
-                  return n > 0 ? ` · ${n} pendente${n !== 1 ? 's' : ''}` : '';
-                })()}
-              </Text>
-              <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
-            </TouchableOpacity>
 
             {/* ── Room Calendar (vista semanal) ── */}
             {(() => {
@@ -362,40 +435,39 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               );
             })()}
 
-            {/* ── Room Rack ── */}
-            <Text style={dS.sectionTitle}>Quartos</Text>
-            {data?.rooms?.length === 0 || !data ? (
-              <View style={dS.empty}>
-                <Text style={dS.emptyText}>Sem quartos configurados.{'\n'}Adiciona quartos em "Editar Tipos de Quarto".</Text>
-              </View>
-            ) : (
-              Object.entries(roomsByFloor).map(([floor, rooms]) => (
-                <View key={floor}>
-                  <Text style={dS.floorLabel}>{floor}</Text>
-                  <View style={dS.roomGrid}>
-                    {rooms.map(r => (
-                      <RoomCard
-                        key={r.id}
-                        room={r}
-                        onMarkClean={handleMarkClean}
-                        onMarkMaintenance={handleMarkMaintenance}
-                        actionLoading={actionLoading}
-                      />
-                    ))}
-                  </View>
-                </View>
-              ))
-            )}
-
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
       </View>
+      {showReception && (
+        <ReceptionScreen
+          businessId={businessId}
+          accessToken={accessToken}
+          roomTypes={[]}
+          onClose={() => { setShowReception(false); load(true); }}
+        />
+      )}
       {showHousekeeping && (
         <HousekeepingScreen
           businessId={businessId}
           accessToken={accessToken}
           onClose={() => { setShowHousekeeping(false); load(true); }}
+        />
+      )}
+      {showMap && (
+        <ReservationMapModal
+          businessId={businessId}
+          accessToken={accessToken}
+          onClose={() => setShowMap(false)}
+        />
+      )}
+      {showRooms && (
+        <RoomRackModal
+          rooms={data?.rooms || []}
+          onMarkClean={handleMarkClean}
+          onMarkMaintenance={handleMarkMaintenance}
+          actionLoading={actionLoading}
+          onClose={() => setShowRooms(false)}
         />
       )}
     </Modal>

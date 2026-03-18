@@ -237,6 +237,24 @@ export const backendApi = {
   deleteHtRoom: (roomId, accessToken) =>
     apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
 
+  // ─── HT — Mapa de Reservas
+  getHtMap: (businessId, from, to, accessToken) => {
+    const params = new URLSearchParams({ businessId });
+    if (from) params.append('from', from);
+    if (to)   params.append('to', to);
+    return apiRequest(`/ht/map?${params}`, { accessToken });
+  },
+
+  // ─── HT — Staff / Funcionários
+  getHtStaff: (businessId, accessToken) =>
+    apiRequest(`/ht/staff?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  addHtStaff: (payload, accessToken) =>
+    apiRequest('/ht/staff', { method: 'POST', body: payload, accessToken }),
+  removeHtStaff: (staffId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}?businessId=${encodeURIComponent(businessId)}`, { method: 'DELETE', accessToken }),
+  assignHtTask: (taskId, userId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/tasks/${taskId}/assign`, { method: 'PATCH', body: { userId, businessId }, accessToken }),
+
   // ─── HT — Perfil de Hóspede (Sprint 4)
   getHtGuests: (businessId, accessToken, search = '') =>
     apiRequest(`/ht/guests?businessId=${encodeURIComponent(businessId)}&search=${encodeURIComponent(search)}`, { accessToken }),

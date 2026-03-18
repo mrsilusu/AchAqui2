@@ -357,7 +357,9 @@ function ReceiptModal({ visible, receipt, onClose }) {
           <View style={fS.receiptTotals}>
             <View style={fS.receiptTotalRow}>
               <Text style={fS.receiptTotalLabel}>TOTAL PAGO</Text>
-              <Text style={fS.receiptTotalVal}>{fmtMoney(receipt.summary?.total)}</Text>
+              <Text style={fS.receiptTotalVal}>
+                {fmtMoney(receipt.summary?.total ?? receipt.items?.reduce((s,i) => s + (i.amount || 0), 0))}
+              </Text>
             </View>
             <View style={fS.receiptTotalRow}>
               <Text style={fS.receiptMeta}>
@@ -527,16 +529,35 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
                 <Text style={fS.summaryLabel}>Total</Text>
                 <Text style={fS.summaryVal}>{fmtMoney(data?.summary?.totalPrice)}</Text>
               </View>
-              {(data?.summary?.depositPaid > 0) && (
-                <View style={fS.summaryRow}>
-                  <Text style={fS.summaryLabel}>Já pago</Text>
-                  <Text style={[fS.summaryVal, { color: '#22A06B' }]}>−{fmtMoney(data?.summary?.depositPaid)}</Text>
+              {isPaid ? (
+                /* Pago: mostrar o valor efectivamente pago */
+                <View style={[fS.summaryRow, { backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10, marginTop: 4 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[fS.summaryLabel, { color: '#16A34A' }]}>Total Pago</Text>
+                    {data?.booking?.paymentMethod && (
+                      <Text style={{ fontSize: 11, color: '#16A34A', marginTop: 2 }}>
+                        {PAYMENT_METHODS.find(m => m.key === data.booking.paymentMethod)?.label || data.booking.paymentMethod}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[fS.summaryVal, { color: '#16A34A', fontWeight: '800' }]}>
+                    {fmtMoney(data?.summary?.totalPrice)}
+                  </Text>
                 </View>
+              ) : (
+                <>
+                  {(data?.summary?.depositPaid > 0) && (
+                    <View style={fS.summaryRow}>
+                      <Text style={fS.summaryLabel}>Já pago</Text>
+                      <Text style={[fS.summaryVal, { color: '#22A06B' }]}>−{fmtMoney(data?.summary?.depositPaid)}</Text>
+                    </View>
+                  )}
+                  <View style={[fS.summaryRow, fS.summaryBalance]}>
+                    <Text style={fS.balanceLabel}>Saldo em dívida</Text>
+                    <Text style={fS.balanceVal}>{fmtMoney(data?.summary?.balance)}</Text>
+                  </View>
+                </>
               )}
-              <View style={[fS.summaryRow, fS.summaryBalance]}>
-                <Text style={fS.balanceLabel}>Saldo em dívida</Text>
-                <Text style={fS.balanceVal}>{fmtMoney(data?.summary?.balance)}</Text>
-              </View>
             </View>
 
             {/* ── Acções ── */}
@@ -547,8 +568,38 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
               </TouchableOpacity>
             )}
 
-            {receipt && (
-              <TouchableOpacity style={fS.receiptBtn} onPress={() => setShowReceipt(true)}>
+            {(receipt || isPaid) && (
+              <TouchableOpacity style={fS.receiptBtn} onPress={() => {
+                // Se não há receipt em memória mas a reserva está paga,
+                // gerar recibo a partir dos dados do folio
+                if (!receipt && isPaid && data) {
+                  const generatedReceipt = {
+                    receiptNumber: `REC-${booking?.id?.slice(-8)?.toUpperCase() || Date.now()}`,
+                    issuedAt:      new Date().toISOString(),
+                    business:      { name: booking?.businessName || '—' },
+                    guest:         { name: data.booking?.guestName },
+                    stay: {
+                      room:      data.booking?.room,
+                      startDate: data.booking?.startDate,
+                      endDate:   data.booking?.endDate,
+                      nights:    nights(data.booking?.startDate, data.booking?.endDate),
+                    },
+                    items: (data.items || []).map(i => ({
+                      description: i.description,
+                      quantity:    i.quantity,
+                      unitPrice:   i.unitPrice,
+                      amount:      i.amount,
+                    })),
+                    summary: {
+                      total:         data.summary?.totalPrice,
+                      paymentMethod: data.booking?.paymentMethod,
+                      paymentStatus: data.booking?.paymentStatus,
+                    },
+                  };
+                  setReceipt(generatedReceipt);
+                }
+                setShowReceipt(true);
+              }}>
                 <Icon name="briefcase" size={16} color={COLORS.blue} strokeWidth={2} />
                 <Text style={fS.receiptBtnText}>Ver Recibo</Text>
               </TouchableOpacity>

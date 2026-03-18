@@ -58,6 +58,20 @@ export class HtBookingController {
     return this.htBookingService.markNoShow(id, req.user.userId, ip);
   }
 
+  // ─── Mapa de Reservas ────────────────────────────────────────────────────────
+  @Get('map')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  getMap(
+    @Query('businessId') businessId: string,
+    @Query('from') from: string,
+    @Query('to')   to:   string,
+    @Req() req: any,
+  ) {
+    const f = from ? new Date(from) : (() => { const d = new Date(); d.setDate(1); return d; })();
+    const t = to   ? new Date(to)   : (() => { const d = new Date(); d.setMonth(d.getMonth()+1,0); return d; })();
+    return this.htDashboardService.getBookingsForMap(businessId, req.user.userId, f, t);
+  }
+
   // ─── Prolongar estadia / Alterar quarto ─────────────────────────────────────
   @Patch('bookings/:id/extend')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

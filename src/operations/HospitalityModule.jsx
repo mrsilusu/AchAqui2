@@ -647,26 +647,28 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                 <Text style={hS.inputLabel}>Nome completo *</Text>
                 <TextInput style={hS.input}
                   value={guestName}
-                  onChangeText={t => setGuestName(sanitizeInput(t, 100))}
+                  onChangeText={setGuestName}
                   placeholder="Nome do hóspede"
                   placeholderTextColor={COLORS.grayText}
+                  autoCorrect={false}
                   maxLength={100} />
               </View>
               <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Telefone *</Text>
                 <TextInput style={hS.input}
                   value={guestPhone}
-                  onChangeText={t => setGuestPhone(sanitizeInput(t, 30))}
+                  onChangeText={setGuestPhone}
                   placeholder="+244 9xx xxx xxx"
                   placeholderTextColor={COLORS.grayText}
                   keyboardType="phone-pad"
+                  autoCorrect={false}
                   maxLength={30} />
               </View>
               <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Pedido especial (opcional)</Text>
                 <TextInput style={[hS.input, { height: 80, textAlignVertical: 'top' }]}
                   value={specialRequest}
-                  onChangeText={t => setSpecialRequest(sanitizeInput(t, 300))}
+                  onChangeText={setSpecialRequest}
                   placeholder="Cama extra, andar alto, chegada tardia..."
                   placeholderTextColor={COLORS.grayText}
                   multiline
@@ -851,9 +853,20 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditB
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={hS.bookingGuestName}>{rb.guestName}</Text>
-                    <Text style={hS.bookingGuestPhone}>{rb.guestPhone}</Text>
+                    <Text style={hS.bookingGuestPhone}>
+                      {rb.checkIn} → {rb.checkOut}
+                      {rb.nights ? ` · ${rb.nights}n` : ''}
+                    </Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {/* Botão editar sempre visível -- não precisa expandir */}
+                    {(rb.status === 'pending' || rb.status === 'PENDING' || rb.status === 'confirmed' || rb.status === 'CONFIRMED') && (
+                      <TouchableOpacity
+                        style={{ padding: 6, backgroundColor: '#F5F3FF', borderRadius: 6 }}
+                        onPress={() => setEditModal(rb)}>
+                        <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>✏️</Text>
+                      </TouchableOpacity>
+                    )}
                     <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
                       <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
@@ -1624,7 +1637,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <DashboardPMS
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
-          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onOpenReception={() => {}}
           onClose={() => setShowDashboard(false)}
           reloadTrigger={dashboardReloadTrigger}
         />

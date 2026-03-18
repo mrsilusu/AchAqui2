@@ -144,6 +144,60 @@ export class HtDashboardService {
       },
     };
   }
+  // ─── Reservas para o Mapa (período configurável) ────────────────────────
+  async getBookingsForMap(businessId: string, ownerId: string, from: Date, to: Date) {
+    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
+    if (!b) throw new Error('Sem permissão.');
+
+    const [rooms, bookings] = await Promise.all([
+      this.prisma.htRoom.findMany({
+        where: { businessId },
+        include: { roomType: { select: { id: true, name: true } } },
+        orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+      }),
+      this.prisma.htRoomBooking.findMany({
+        where: {
+          businessId,
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
+          OR: [
+            { startDate: { lte: to }, endDate: { gte: from } },
+          ],
+        },
+        select: {
+          id: true, guestName: true, startDate: true, endDate: true,
+          status: true, roomId: true, roomTypeId: true, totalPrice: true,
+          roomType: { select: { id: true, name: true } },
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+    ]);
+
+    // Agrupar quartos por tipo
+    const typeMap: Record<string, { id: string; name: string; rooms: any[] }> = {};
+    rooms.forEach(r => {
+      const tid = r.roomType.id;
+      if (!typeMap[tid]) typeMap[tid] = { id: tid, name: r.roomType.name, rooms: [] };
+      typeMap[tid].rooms.push({ id: r.id, number: r.number, floor: r.floor, status: r.status });
+    });
+
+    return {
+      roomTypes: Object.values(typeMap),
+      bookings:  bookings.map(bk => ({
+        id:         bk.id,
+        guestName:  bk.guestName || 'Hóspede',
+        startDate:  bk.startDate.toISOString(),
+        endDate:    bk.endDate.toISOString(),
+        status:     bk.status,
+        roomId:     bk.roomId,
+        roomTypeId: bk.roomTypeId,
+        typeName:   bk.roomType?.name || '—',
+        totalPrice: bk.totalPrice,
+      })),
+      from: from.toISOString(),
+      to:   to.toISOString(),
+    };
+  }
+
   // ─── Marcar tarefa de housekeeping como concluída ────────────────────────
   async completeTask(taskId: string, ownerId: string) {
     const task = await this.prisma.htHousekeepingTask.findFirst({
