@@ -901,12 +901,21 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
     setActionLoading(bookingId);
     try {
       const payload = roomId ? { roomId, assignType, note } : {};
-      await backendApi.htCheckIn(bookingId, payload, accessToken);
-      if (assignType === 'temporario' && roomId) {
-        Alert.alert('Check-In Temporário', `Quarto atribuído temporariamente.${note ? `
-${note}` : ''}`);
-      }
+      const result  = await backendApi.htCheckIn(bookingId, payload, accessToken);
       await load(true);
+      if (result?.earlyCheckIn?.daysEarly > 0) {
+        const { daysEarly, fee } = result.earlyCheckIn;
+        const feeMsg = fee > 0
+          ? `\n\nTaxa lan\xc3\xa7ada no folio: ${Math.round(fee).toLocaleString()} Kz`
+          : '\n\nSem taxa adicional.';
+        Alert.alert(
+          '\u23f0 Check-In Antecipado',
+          `Check-in ${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista.${feeMsg}`,
+          [{ text: 'OK' }]
+        );
+      } else if (assignType === 'temporario' && roomId) {
+        Alert.alert('Check-In Tempor\xc3\xa1rio', `Quarto atribu\xc3\xaddo temporariamente.${note ? '\n' + note : ''}`);
+      }
     } catch (e) {
       Alert.alert('Erro no Check-In', e?.message || 'Operação falhou. Tenta novamente.');
     } finally {

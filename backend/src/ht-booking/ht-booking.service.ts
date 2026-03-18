@@ -68,6 +68,34 @@ export class HtBookingService {
       throw new BadRequestException(`Não é possível fazer check-in. Estado actual: ${booking.status}`);
     }
 
+    // [PMS] Validação de early check-in
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const checkInDate   = new Date(booking.startDate); checkInDate.setHours(0,0,0,0);
+    const daysEarly     = Math.round((checkInDate.getTime() - todayMidnight.getTime()) / 86400000);
+
+    let earlyCheckInFee = 0;
+    if (daysEarly > 0) {
+      // Check-in antecipado: calcular taxa proporcional
+      const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+        where:  { businessId: booking.businessId },
+        select: { earlyCheckinFee: true, lateCheckoutFee: true },
+      }).catch(() => null);
+
+      // Se o hotel tem earlyCheckinFee configurada, usar esse valor
+      // Caso contrário: cobrar 1 diária completa por cada dia antecipado
+      if (pmsConfig?.earlyCheckinFee && pmsConfig.earlyCheckinFee > 0) {
+        earlyCheckInFee = pmsConfig.earlyCheckinFee * daysEarly;
+      } else if (booking.roomTypeId) {
+        const rt = await this.prisma.htRoomType.findFirst({
+          where: { id: booking.roomTypeId }, select: { pricePerNight: true },
+        });
+        if (rt) earlyCheckInFee = rt.pricePerNight * daysEarly;
+      }
+
+      // Guardar info do early check-in para o caller usar (não lança erro — o owner decide)
+      // O caller (controller) devolve earlyCheckInInfo na resposta
+    }
+
     if (dto.roomId) {
       const room = await this.prisma.htRoom.findFirst({
         where: { id: dto.roomId, businessId: booking.businessId },
@@ -121,13 +149,28 @@ export class HtBookingService {
       return updatedBooking;
     });
 
+    // Se houve early check-in, adicionar taxa ao folio
+    if (earlyCheckInFee > 0) {
+      await this.prisma.htFolioItem.create({
+        data: {
+          businessId:  booking.businessId,
+          bookingId,
+          type:        'SERVICE' as any,
+          description: `Check-in antecipado (${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista)`,
+          quantity:    daysEarly,
+          unitPrice:   earlyCheckInFee / daysEarly,
+          amount:      earlyCheckInFee,
+        },
+      }).catch(() => null); // não bloquear o check-in se o folio falhar
+    }
+
     await this.audit({
       businessId:   booking.businessId,
       action:       'HT_BOOKING_CHECKED_IN',
       actorId:      ownerId,
       resourceId:   bookingId,
       previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt },
+      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt, earlyCheckInFee },
       ipAddress:    ip,
     });
 
@@ -136,9 +179,13 @@ export class HtBookingService {
       businessName: booking.business.name,
       roomNumber:   updated.room?.number,
       checkedInAt:  updated.checkedInAt,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
     });
 
-    return updated;
+    return {
+      ...updated,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
+    };
   }
 
   // CHECK-OUT

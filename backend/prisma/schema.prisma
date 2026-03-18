@@ -464,6 +464,8 @@ model HtRoom {
   updatedAt  DateTime             @updatedAt
 
   @@unique([businessId, number])
+  @@index([businessId, status])          // dashboard + auto-assign CLEAN
+  @@index([roomTypeId, status])           // overlap check por tipo
   @@map("ht_rooms")
 }
 
@@ -545,6 +547,13 @@ model HtRoomBooking {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  // Índices para queries de disponibilidade e dashboard
+  @@index([businessId, status])
+  @@index([roomTypeId, status, startDate, endDate])  // overlap check
+  @@index([roomId, status])                           // auto-assign + conflito extend
+  @@index([businessId, startDate])                    // arrivals
+  @@index([businessId, endDate])                      // departures
+  @@index([userId, createdAt])                        // histórico do cliente
   @@map("ht_room_bookings")
 }
 
@@ -573,6 +582,7 @@ model HtFolioItem {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  @@index([bookingId, removedAt])   // getFolio query
   @@map("ht_folio_items")
 }
 

@@ -1172,56 +1172,33 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, [business?.id]);
 
   // ── iCal parse ───────────────────────────────────────────────────────────
-  const handleSync = useCallback(async (url) => {
-    if (!validateExternalUrl(url)) {
-      setIcalStatus(s => ({ ...s, error: 'URL inválido. Deve começar por https://' }));
+  const handleSync = useCallback(async (_url) => {
+    // [SECURITY] O parse do .ics é feito no backend para evitar CORS e DoS.
+    // O frontend apenas dispara o sync; o backend faz o fetch + parse + guarda os bloqueios.
+    const bizId = ownerBusinessPrivate?.id || business?.id;
+    if (!bizId || !ctx?.accessToken) {
+      setIcalStatus(s => ({ ...s, error: 'Sem sessão activa.' }));
       return;
     }
     setIcalStatus({ loaded: false, ranges: [], error: null, lastSync: null });
     try {
-      const res = await fetch(url);
-
-      // SEGURANÇA: Limite de tamanho — previne DoS por ficheiro .ics gigante (Zip Bomb).
-      // Um ficheiro iCal legítimo raramente ultrapassa 1 MB.
-      const MAX_ICAL_BYTES = 1 * 1024 * 1024; // 1 MB
-      const contentLength = res.headers.get('content-length');
-      if (contentLength && parseInt(contentLength, 10) > MAX_ICAL_BYTES) {
-        setIcalStatus({ loaded: false, ranges: [], error: 'Ficheiro iCal demasiado grande (máx. 1 MB).', lastSync: null });
-        return;
-      }
-
-      // Leitura com abort se o stream ultrapassar o limite
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('Não foi possível ler a resposta.');
-      let received = 0;
-      const chunks = [];
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.length;
-        if (received > MAX_ICAL_BYTES) {
-          await reader.cancel();
-          setIcalStatus({ loaded: false, ranges: [], error: 'Ficheiro iCal demasiado grande (máx. 1 MB).', lastSync: null });
-          return;
-        }
-        chunks.push(value);
-      }
-      const text = new TextDecoder().decode(
-        chunks.reduce((acc, chunk) => {
-          const merged = new Uint8Array(acc.length + chunk.length);
-          merged.set(acc); merged.set(chunk, acc.length);
-          return merged;
-        }, new Uint8Array(0))
-      );
-
-      const ranges = parseIcalText(text);
-      const now  = new Date();
+      const result = await backendApi.syncHtIcal(bizId, ctx.accessToken);
+      const now    = new Date();
       const lastSync = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-      setIcalStatus({ loaded: true, ranges, error: null, lastSync });
-    } catch {
-      setIcalStatus({ loaded: false, ranges: [], error: 'Não foi possível carregar. Verifique o URL.', lastSync: null });
+      if (result.errors?.length > 0 && result.synced === 0) {
+        setIcalStatus({ loaded: false, ranges: [], error: result.errors[0], lastSync: null });
+      } else {
+        setIcalStatus({
+          loaded:   true,
+          ranges:   Array.from({ length: result.synced }, (_, i) => i), // placeholder
+          error:    null,
+          lastSync,
+        });
+      }
+    } catch (e) {
+      setIcalStatus({ loaded: false, ranges: [], error: e?.message || 'Sync falhou.', lastSync: null });
     }
-  }, []);
+  }, [ownerBusinessPrivate?.id, business?.id, ctx?.accessToken]);
 
   // ── Guardar icalLink no ownerBiz ─────────────────────────────────────────
   const handleIcalChange = useCallback((val) => {

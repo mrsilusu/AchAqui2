@@ -190,10 +190,47 @@ export class BookingService {
       }
     }
 
+    // [RULE] Validar minNights configurado no tipo de quarto e no HtPmsConfig
+    if (bookingType === BookingTypeDto.ROOM && dto.roomTypeId) {
+      const nights = Math.max(1, Math.ceil(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      ));
+
+      // 1. Verificar minNights do RoomType (prioridade mais específica)
+      const roomType = await this.prisma.htRoomType.findFirst({
+        where: { id: dto.roomTypeId, businessId: dto.businessId },
+        select: { minNights: true, pricePerNight: true },
+      });
+      const rtMin = roomType?.minNights ?? 1;
+      if (nights < rtMin) {
+        throw new BadRequestException(
+          `Este tipo de quarto exige um mínimo de ${rtMin} noite${rtMin !== 1 ? 's' : ''}.`
+        );
+      }
+
+      // 2. Verificar minNights do HtPmsConfig (configuração global do hotel)
+      const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+        where: { businessId: dto.businessId },
+        select: { minNights: true, instantConfirm: true },
+      });
+      const hotelMin = pmsConfig?.minNights ?? 1;
+      if (nights < hotelMin) {
+        throw new BadRequestException(
+          `Este estabelecimento exige um mínimo de ${hotelMin} noite${hotelMin !== 1 ? 's' : ''}.`
+        );
+      }
+
+      // 3. Aplicar instantConfirm se configurado
+      if (pmsConfig?.instantConfirm && !dto.status) {
+        // Override: reserva confirmada imediatamente sem validação manual do dono
+        (dto as any)._forceStatus = HtBookingStatus.CONFIRMED;
+      }
+    }
+
     const bookingData = {
       startDate,
       endDate,
-      status: dto.status ?? HtBookingStatus.PENDING,
+      status: (dto as any)._forceStatus ?? dto.status ?? HtBookingStatus.PENDING,
       userId,
       businessId: dto.businessId,
     };
@@ -210,56 +247,54 @@ export class BookingService {
       roomTypeId: dto.roomTypeId ?? null,
     };
 
-    // Regras de disponibilidade para reservas de quarto
+    // [ACID] Regras de disponibilidade + criação dentro da mesma $transaction
+    // para eliminar a race condition entre o count() e o create().
+    // Sem esta transação, dois pedidos simultâneos passam ambos no count()
+    // antes de qualquer create() e resultam em overbooking.
+    let booking: any;
+
     if (bookingType === BookingTypeDto.ROOM && dto.roomTypeId) {
-      // Regra 1: tipo de quarto deve ter quartos físicos
+      // Regra 1: tipo de quarto deve ter quartos físicos (pode ficar fora — não muta estado)
       const physicalRooms = await this.prisma.htRoom.count({
         where: { roomTypeId: dto.roomTypeId, businessId: dto.businessId },
       });
       if (physicalRooms === 0) {
         throw new BadRequestException('Este tipo de quarto não tem quartos físicos disponíveis.');
       }
-      // Regra 2: não permitir reservas acima do número de quartos físicos nas datas
-      // Regra 3: validação por roomTypeId -- tipos diferentes podem ter reservas nas mesmas datas
-      const overlapping = await this.prisma.htRoomBooking.count({
-        where: {
-          roomTypeId: dto.roomTypeId,
-          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-          startDate: { lt: endDate },
-          endDate:   { gt: startDate },
-        },
-      });
-      if (overlapping >= physicalRooms) {
-        throw new BadRequestException('Não há quartos disponíveis para as datas seleccionadas.');
-      }
-    }
 
-    const booking =
-      bookingType === BookingTypeDto.ROOM
+      // [ATOMIC] count + create na mesma transação — sem window de race condition
+      booking = await this.prisma.$transaction(async (tx) => {
+        // Regra 2: re-contar overlaps DENTRO da transação (snapshot isolado)
+        const overlapping = await tx.htRoomBooking.count({
+          where: {
+            roomTypeId: dto.roomTypeId,
+            status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+            startDate: { lt: endDate },
+            endDate:   { gt: startDate },
+          },
+        });
+        if (overlapping >= physicalRooms) {
+          throw new BadRequestException('Não há quartos disponíveis para as datas seleccionadas.');
+        }
+        return tx.htRoomBooking.create({
+          data: roomBookingData,
+          include: {
+            business: { select: { id: true, name: true, ownerId: true } },
+          },
+        });
+      });
+    } else {
+      // Reserva de mesa: sem overlap check, criação directa
+      booking = bookingType === BookingTypeDto.ROOM
         ? await this.prisma.htRoomBooking.create({
             data: roomBookingData,
-            include: {
-              business: {
-                select: {
-                  id: true,
-                  name: true,
-                  ownerId: true,
-                },
-              },
-            },
+            include: { business: { select: { id: true, name: true, ownerId: true } } },
           })
         : await this.prisma.diTableBooking.create({
             data: bookingData,
-            include: {
-              business: {
-                select: {
-                  id: true,
-                  name: true,
-                  ownerId: true,
-                },
-              },
-            },
+            include: { business: { select: { id: true, name: true, ownerId: true } } },
           });
+    }
 
     const guestLabel = dto.guestName ?? user.name;
     const ownerNotification = await this.prisma.notification.create({
@@ -383,6 +418,13 @@ export class BookingService {
       throw new BadRequestException('Reserva não pertence ao businessId informado.');
     }
 
+    // [RULE] Não permitir cancelar reserva com hóspede já no hotel
+    if (booking.status === HtBookingStatus.CHECKED_IN) {
+      throw new BadRequestException(
+        'Não é possível cancelar uma reserva activa (hóspede em casa). Faça o checkout primeiro.'
+      );
+    }
+
     const reason = dto.reason?.trim();
     const updatedBooking =
       booking.status === HtBookingStatus.CANCELLED
@@ -390,7 +432,7 @@ export class BookingService {
         : bookingType === BookingTypeDto.ROOM
           ? await this.prisma.htRoomBooking.update({
               where: { id: booking.id },
-              data: { status: HtBookingStatus.CANCELLED },
+              data: { status: HtBookingStatus.CANCELLED, updatedAt: new Date() },
             })
           : await this.prisma.diTableBooking.update({
               where: { id: booking.id },
