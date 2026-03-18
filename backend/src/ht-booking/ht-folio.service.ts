@@ -62,6 +62,10 @@ export class HtFolioService {
           where:   { removedAt: null },
           orderBy: { addedAt: 'asc' },
         },
+        guestProfile: {
+          select: { documentType: true, documentNumber: true, nationality: true },
+        },
+        roomType: { select: { pricePerNight: true, name: true } },
       },
     });
     if (!booking) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
@@ -71,9 +75,40 @@ export class HtFolioService {
   // ─── Listar folio completo ────────────────────────────────────────────────
   async getFolio(bookingId: string, ownerId: string) {
     const booking = await this.assertOwner(bookingId, ownerId);
-    const subtotal   = booking.folio.reduce((s, i) => s + i.amount, 0);
-    const totalPrice = booking.totalPrice ?? 0;
-    const paid       = booking.depositPaid ?? 0;
+    const nights = Math.max(1, Math.round(
+      (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
+    ));
+
+    // Separar extras (minibar, room service, etc.) dos itens de alojamento já no folio
+    const existingAccomItems = booking.folio.filter(i => i.type === 'ACCOMMODATION' && i.amount > 0 && !i.removedAt);
+    const extraItems         = booking.folio.filter(i => i.type !== 'ACCOMMODATION' && !i.removedAt);
+    const discountItems      = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+
+    // Valor base de alojamento: pricePerNight × nights (guardado como totalPrice na reserva)
+    // Os extras são cobrados adicionalmente
+    const baseAccomPrice = booking.roomType
+      ? (booking.roomType.pricePerNight ?? 0) * nights * (booking.rooms ?? 1)
+      : (booking.totalPrice ?? 0);
+
+    const extrasTotal = extraItems.reduce((s, i) => s + i.amount, 0);
+    const discountsTotal = discountItems.reduce((s, i) => s + i.amount, 0); // negativo
+
+    // Item virtual de alojamento (sempre mostrado, independente do estado do folio)
+    const accomDisplayItem = {
+      id:          '__accommodation__',
+      type:        'ACCOMMODATION' as const,
+      description: `Alojamento · ${nights} noite${nights !== 1 ? 's' : ''} · Quarto ${booking.room?.number ?? '—'}`,
+      quantity:    nights,
+      unitPrice:   baseAccomPrice / Math.max(nights, 1),
+      amount:      baseAccomPrice,
+      addedAt:     booking.startDate,
+      removedAt:   null,
+    };
+
+    const displayItems = [accomDisplayItem, ...extraItems, ...discountItems];
+    const totalPrice   = baseAccomPrice + extrasTotal + discountsTotal;
+    const subtotal     = totalPrice;
+    const paid         = booking.depositPaid ?? 0;
 
     return {
       booking: {
@@ -87,14 +122,14 @@ export class HtFolioService {
         paymentMethod: booking.paymentMethod,
         totalPrice,
         depositPaid:   paid,
-        balance:       totalPrice - paid,
+        balance:       Math.max(0, totalPrice - paid),
       },
-      items:   booking.folio,
+      items:   displayItems.filter(i => !i.removedAt),
       summary: {
         subtotal,
         totalPrice,
         depositPaid: paid,
-        balance:     totalPrice - paid,
+        balance:     Math.max(0, totalPrice - paid),
       },
     };
   }
@@ -214,23 +249,36 @@ export class HtFolioService {
       });
     });
 
+    // Buscar config PMS para dados fiscais (NIF, prefixo de fatura)
+    const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+      where: { businessId: booking.businessId },
+      select: { vatNumber: true, invoicePrefix: true },
+    }).catch(() => null);
+
     // Gerar recibo
-    const receipt = this.generateReceipt(updated, booking.folio);
+    const receipt = this.generateReceipt(updated, booking.folio, pmsConfig);
     return { booking: updated, receipt };
   }
 
   // ─── Gerar dados do recibo ────────────────────────────────────────────────
-  private generateReceipt(booking: any, items: any[]) {
+  private generateReceipt(booking: any, items: any[], pmsConfig?: { vatNumber?: string | null; invoicePrefix?: string | null } | null) {
     const nights = Math.max(1, Math.round(
       (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
     ));
     return {
       receiptNumber: `REC-${Date.now()}`,
       issuedAt:      new Date().toISOString(),
-      business:      booking.business,
+      business: {
+        ...booking.business,
+        vatNumber:     pmsConfig?.vatNumber     || null,
+        invoicePrefix: pmsConfig?.invoicePrefix || null,
+      },
       guest: {
-        name:  booking.guestName || booking.user?.name,
-        email: booking.user?.email,
+        name:           booking.guestName  || booking.user?.name,
+        email:          booking.user?.email,
+        phone:          booking.guestPhone || null,
+        documentType:   booking.guestProfile?.documentType   || null,
+        documentNumber: booking.guestProfile?.documentNumber || null,
       },
       stay: {
         room:      booking.room?.number,

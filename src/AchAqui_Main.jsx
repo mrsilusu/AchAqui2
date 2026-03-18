@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 
 import {
   Icon, COLORS, AppProvider,
@@ -180,11 +181,11 @@ function normalizeBusiness(rawBusiness) {
     ...base,
     id: rawBusiness.id,
     name: rawBusiness.name || base.name || 'Negócio',
-    category: rawBusiness.category || base.category || meta.category || 'Serviços',
-    subcategory: base.subcategory || meta.subcategory || rawBusiness.category || 'Serviços',
-    businessType: base.businessType || meta.businessType || 'professional',
-    primaryCategoryId: base.primaryCategoryId || meta.primaryCategoryId || 'professional',
-    subCategoryIds: base.subCategoryIds || meta.subCategoryIds || ['professional'],
+    category: rawBusiness.category || meta.category || base.category || 'Serviços',
+    subcategory: meta.subcategory || rawBusiness.category || base.subcategory || 'Serviços',
+    businessType: rawBusiness.businessType || meta.businessType || base.businessType || '',
+    primaryCategoryId: rawBusiness.primaryCategoryId || meta.primaryCategoryId || base.primaryCategoryId || '',
+    subCategoryIds: rawBusiness.subCategoryIds || meta.subCategoryIds || base.subCategoryIds || [],
     icon: base.icon || meta.icon || '🏢',
     rating: base.rating || meta.rating || 4.8,
     reviews: base.reviews || meta.reviews || 0,
@@ -225,7 +226,10 @@ function normalizeBusiness(rawBusiness) {
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
-    roomTypes: (rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || []),
+    roomTypes: ((rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || [])).map(rt => ({
+      ...rt,
+      physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
+    })),
     metadata: meta,
     owner: rawBusiness.owner || null,
   };
@@ -453,7 +457,8 @@ function AppContent() {
   }, []);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
-  const [locationPermission, setLocationPermission] = useState('denied');
+  const [locationPermission, setLocationPermission] = useState('loading');
+  const [userLocation, setUserLocation] = useState(null); // { latitude, longitude }
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
@@ -549,16 +554,113 @@ function AppContent() {
     }).catch(() => {});
   }, [meta.swipeProgress]);
 
-  const requestLocationPermission = () => {
-    Alert.alert('Permitir Localização', 'AchAqui precisa da sua localização.', [
-      { text: 'Não Permitir', onPress: () => setLocationPermission('denied')  },
-      { text: 'Permitir',     onPress: () => setLocationPermission('granted') },
-    ]);
+  // Haversine -- distância em km entre dois pontos GPS
+  const haversineKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
+  // Ref para guardar a subscription do watch -- permite parar e reiniciar
+  const locationWatchRef = React.useRef(null);
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+      if (status === 'granted') {
+        // Posição imediata
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        // Iniciar watch se ainda não está activo
+        if (!locationWatchRef.current) {
+          locationWatchRef.current = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+            (l) => setUserLocation({ latitude: l.coords.latitude, longitude: l.coords.longitude })
+          );
+        }
+      }
+    } catch {
+      setLocationPermission('denied');
+    }
+  };
+
+  // Localização: pede permissão ao arrancar + watch contínuo para actualizar com deslocação
   useEffect(() => {
+    let subscription = null;
+
+    const startLocation = async () => {
+      try {
+        // Verificar permissão actual
+        let { status } = await Location.getForegroundPermissionsAsync();
+
+        // Pedir permissão em qualquer estado que não seja 'granted'
+        // 'undetermined' = primeira vez | 'denied' pode ser re-pedido em Expo Go
+        if (status !== 'granted') {
+          const result = await Location.requestForegroundPermissionsAsync();
+          status = result.status;
+        }
+
+        setLocationPermission(status);
+
+        if (status !== 'granted') return;
+
+        // Posição inicial imediata
+        const initial = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }).catch(() => null);
+        if (initial) {
+          setUserLocation({
+            latitude:  initial.coords.latitude,
+            longitude: initial.coords.longitude,
+          });
+        }
+
+        // Watch contínuo — actualiza distâncias conforme o utilizador se desloca
+        // distanceInterval: 50m -- só dispara se o utilizador andar mais de 50 metros
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy:         Location.Accuracy.Balanced,
+            distanceInterval: 50,    // metros mínimos entre updates
+            timeInterval:     30000, // máximo a cada 30 segundos
+          },
+          (loc) => {
+            setUserLocation({
+              latitude:  loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+          }
+        );
+        locationWatchRef.current = subscription;
+      } catch {
+        setLocationPermission('denied');
+      }
+    };
+
+    startLocation();
+
+    // Cleanup: parar o watch quando o componente desmonta
+    return () => {
+      if (subscription) subscription.remove();
+    };
+  }, []);
+
+    useEffect(() => {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
   }, []);
+
+  // Recalcular distâncias quando a localização do utilizador muda
+  useEffect(() => {
+    if (!userLocation) return;
+    setBusinesses(prev => prev.map(b => {
+      if (!b.latitude || !b.longitude) return b;
+      const km = haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude);
+      const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
+      return { ...b, distance: km, distanceText };
+    }));
+  }, [userLocation]);
 
   useEffect(() => {
     let cancelled = false;

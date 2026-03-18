@@ -41,6 +41,8 @@ import {
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
+import { HousekeepingScreen } from './HousekeepingScreen';
+import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -160,7 +162,8 @@ export function getPriceLabel(room) {
  * SEGURANÇA: bookedRanges só no ownerRoom (dados privados)
  */
 export function getRealAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings = [], excludeId = null) {
-  const total = roomPublic?.totalRooms || 1;
+  // Prioridade: quartos físicos reais > totalRooms do tipo > 1
+  const total = roomPublic?.physicalRoomsCount || roomPublic?.totalRooms || 1;
   const cIn   = parseDate(checkIn);
   const cOut  = parseDate(checkOut);
   if (!cIn || !cOut || cOut <= cIn) return { available: total, manualBlocked: 0, bookingBlocked: 0, total };
@@ -238,27 +241,41 @@ function parseIcalText(text) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CALENDAR PICKER — componente independente com estado próprio
 // ─────────────────────────────────────────────────────────────────────────────
-export function CalendarPicker({ value, onChange, label, minDate }) {
-  const [open, setOpen]   = useState(false);
+// CalendarPicker — sempre inline, sempre full-width, controlo do pai via isOpen+onToggle
+// Não usa position:absolute -- sem sobreposições, sem cortes
+export function CalendarPicker({ value, onChange, label, minDate, isOpen, onToggle }) {
   const [month, setMonth] = useState(() => {
     const base = value ? parseDate(value) : minDate ? parseDate(minDate) : new Date();
-    return new Date(base.getFullYear(), base.getMonth(), 1);
+    const d = (base && !isNaN(base.getTime())) ? base : new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
   });
+
+  // Quando minDate muda (ex: após seleccionar check-in), avançar o mês se necessário
+  useEffect(() => {
+    if (!minDate) return;
+    const min = parseDate(minDate);
+    if (!min || isNaN(min.getTime())) return;
+    setMonth(prev => {
+      const minMonth = new Date(min.getFullYear(), min.getMonth(), 1);
+      return prev < minMonth ? minMonth : prev;
+    });
+  }, [minDate]);
+
   const { year, month: m, weeks } = buildCalendar(month);
-  const today       = new Date();
-  const minDateObj  = minDate ? parseDate(minDate) : null;
+  const today      = new Date();
+  const minDateObj = minDate ? parseDate(minDate) : null;
 
   return (
-    <View style={hS.calWrap}>
+    <View>
       {label && <Text style={hS.calLabel}>{label}</Text>}
-      <TouchableOpacity style={hS.calTrigger} onPress={() => setOpen(o => !o)}>
+      <TouchableOpacity style={hS.calTrigger} onPress={onToggle}>
         <Text style={value ? hS.calValue : hS.calPlaceholder}>
           {value || 'Selecionar data'}
         </Text>
-        <Icon name={open ? 'chevronDown' : 'chevronRight'} size={14} color={COLORS.grayText} strokeWidth={2} />
+        <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={14} color={COLORS.grayText} strokeWidth={2} />
       </TouchableOpacity>
 
-      {open && (
+      {isOpen && (
         <View style={hS.calCard}>
           <View style={hS.calNav}>
             <TouchableOpacity style={hS.calNavBtn} onPress={() => setMonth(new Date(year, m - 1, 1))}>
@@ -276,17 +293,17 @@ export function CalendarPicker({ value, onChange, label, minDate }) {
             <View key={wi} style={hS.calDayRow}>
               {week.map((day, di) => {
                 if (!day) return <View key={di} style={hS.calDayEmpty} />;
-                const thisDate   = new Date(year, m, day);
-                const dateStr    = fmtDate(thisDate);
-                const isPast     = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const thisDate    = new Date(year, m, day);
+                const dateStr     = fmtDate(thisDate);
+                const isPast      = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                 const isBeforeMin = minDateObj ? thisDate <= minDateObj : false;
-                const isDisabled = isPast || isBeforeMin;
-                const isSelected = value === dateStr;
+                const isDisabled  = isPast || isBeforeMin;
+                const isSelected  = value === dateStr;
                 return (
                   <TouchableOpacity key={di}
                     style={[hS.calDay, isSelected && hS.calDaySelected, isDisabled && hS.calDayPast]}
                     disabled={isDisabled}
-                    onPress={() => { onChange(dateStr); setOpen(false); }}>
+                    onPress={() => { onChange(dateStr); }}>
                     <Text style={[hS.calDayText, isSelected && hS.calDayTextSelected, isDisabled && hS.calDayTextPast]}>
                       {day}
                     </Text>
@@ -316,15 +333,54 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const [guestPhone, setGuestPhone]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
+  const [activeDateFieldModal, setActiveDateFieldModal] = useState(null); // 'checkin'|'checkout'|null
+  const [apiAvailability, setApiAvailability] = useState(null); // { available, physicalRooms, occupied }
+  const [checkingAvail, setCheckingAvail] = useState(false);
 
   const nights = countNights(checkIn, checkOut);
-  const minAvailData = (checkIn && checkOut && room && ownerRoom)
-    ? getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
-    : { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+
+  // Verificar disponibilidade via API quando datas são seleccionadas
+  useEffect(() => {
+    if (!checkIn || !checkOut || !room?.id || !business?.id) { setApiAvailability(null); return; }
+    const toISO = (str) => {
+      if (!str) return null;
+      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
+      return new Date(str).toISOString();
+    };
+    setCheckingAvail(true);
+    backendApi.getAvailability(business.id, room.id, toISO(checkIn), toISO(checkOut))
+      .then(data => { setApiAvailability(data); setCheckingAvail(false); })
+      .catch(() => { setApiAvailability(null); setCheckingAvail(false); });
+  }, [checkIn, checkOut, room?.id, business?.id]);
+
+  // Disponibilidade: API tem prioridade, fallback para cálculo local
+  const minAvailData = (() => {
+    if (apiAvailability !== null) {
+      // physicalRooms=0: tipo sem quartos físicos configurados.
+      // Para o dono (ownerRoom presente): permitir, usa totalRooms como capacidade.
+      // Para o cliente: bloquear -- não devia ter chegado aqui (filtro Regra 1),
+      // mas se chegou (backend antigo sem physicalRoomsCount), proteger.
+      if (apiAvailability.physicalRooms === 0) {
+        if (ownerRoom) {
+          return { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+        }
+        // Cliente sem quartos físicos -> bloquear com minAvailable=0
+        return { minAvailable: 0, bottleneckDate: null };
+      }
+      // physicalRooms>0: a resposta é fiável -- usar available directamente
+      return { minAvailable: apiAvailability.available, bottleneckDate: null };
+    }
+    // API não respondeu (erro/timeout): fallback para cálculo local
+    if (checkIn && checkOut && room && ownerRoom) {
+      return getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings);
+    }
+    // Sem dados: assumir disponível (melhor UX -- backend valida na criação)
+    return { minAvailable: room?.physicalRoomsCount || room?.totalRooms || 1, bottleneckDate: null };
+  })();
 
   const { minAvailable, bottleneckDate } = minAvailData;
   const effectiveQty   = Math.min(roomQty, Math.max(1, minAvailable));
-  const isUnavailable  = checkIn && checkOut && minAvailable === 0;
+  const isUnavailable  = checkIn && checkOut && !checkingAvail && minAvailable === 0;
   const maxGuests      = (room?.maxGuests || 2) * effectiveQty;
 
   const { subtotal, breakdown } = (nights > 0 && room)
@@ -337,10 +393,21 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const taxAmt     = Math.round(subtotal * effectiveQty * taxRate / 100);
   const grandTotal = subtotal * effectiveQty + taxAmt;
 
-  // Sugestão de data seguinte
-  const nextDate = (isUnavailable && room && ownerRoom)
-    ? findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings)
-    : null;
+  // Sugestão de data seguinte -- funciona com e sem ownerRoom
+  const nextDate = (() => {
+    if (!isUnavailable || !room || !checkIn) return null;
+    // API retorna nextAvailableDate directamente (formato DD/MM/YYYY)
+    if (apiAvailability?.nextAvailableDate) return apiAvailability.nextAvailableDate;
+    if (apiAvailability) {
+      // Fallback seguro: usar parseDate para suportar DD/MM/YYYY e ISO
+      const base = parseDate(checkOut || checkIn);
+      if (!base || isNaN(base.getTime())) return null;
+      base.setDate(base.getDate() + 1);
+      return fmtDate(base);
+    }
+    if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings);
+    return null;
+  })();
 
   // Reset ao fechar
   useEffect(() => {
@@ -348,6 +415,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       setStep(1); setCheckIn(''); setCheckOut(''); setRoomQty(1);
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
       setSpecialRequest(''); setPayOnArrival(false);
+      setActiveDateFieldModal(null);
     }
   }, [visible]);
 
@@ -420,10 +488,25 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
             <>
               <Text style={hS.stepTitle}>Quando vai ficar?</Text>
               <View style={{ gap: 12, marginBottom: 16 }}>
-                <CalendarPicker label="Check-in" value={checkIn}
-                  onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
-                <CalendarPicker label="Check-out" value={checkOut}
-                  onChange={setCheckOut} minDate={checkIn} />
+                <CalendarPicker
+                  label="CHECK-IN"
+                  value={checkIn}
+                  isOpen={activeDateFieldModal === 'checkin'}
+                  onToggle={() => setActiveDateFieldModal(f => f === 'checkin' ? null : 'checkin')}
+                  onChange={v => {
+                    setCheckIn(v);
+                    if (checkOut && countNights(v, checkOut) <= 0) setCheckOut('');
+                    setActiveDateFieldModal('checkout');
+                  }}
+                />
+                <CalendarPicker
+                  label="CHECK-OUT"
+                  value={checkOut}
+                  isOpen={activeDateFieldModal === 'checkout'}
+                  onToggle={() => setActiveDateFieldModal(f => f === 'checkout' ? null : 'checkout')}
+                  onChange={v => { setCheckOut(v); setActiveDateFieldModal(null); }}
+                  minDate={checkIn}
+                />
               </View>
 
               {/* Aviso min nights */}
@@ -435,20 +518,33 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                 </View>
               )}
 
-              {/* Indisponível */}
-              {isUnavailable && (
+              {/* Disponibilidade */}
+              {checkingAvail && checkIn && checkOut && (
+                <View style={hS.checkingBox}>
+                  <Text style={hS.checkingText}>🔍 A verificar disponibilidade...</Text>
+                </View>
+              )}
+              {isUnavailable && !checkingAvail && (
                 <View style={hS.unavailBox}>
                   <Text style={hS.unavailTitle}>🔴 Indisponível nestas datas</Text>
-                  {nextDate && (
+                  {nextDate ? (
                     <TouchableOpacity onPress={() => {
                       const d = parseDate(nextDate);
-                      const out = new Date(d.getTime() + (nights || 1) * 86400000);
-                      setCheckIn(nextDate); setCheckOut(fmtDate(out));
+                      if (!d || isNaN(d.getTime())) return;
+                      // Manter o mesmo número de noites que o cliente escolheu
+                      const stayNights = nights > 0 ? nights : 1;
+                      const out = new Date(d.getTime() + stayNights * 86400000);
+                      setCheckIn(nextDate);
+                      setCheckOut(fmtDate(out));
                     }}>
                       <Text style={hS.unavailSuggest}>
                         Ver disponibilidade a partir de {nextDate} →
                       </Text>
                     </TouchableOpacity>
+                  ) : (
+                    <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 4 }}>
+                      Sem datas disponíveis próximas. Tenta outras datas.
+                    </Text>
                   )}
                 </View>
               )}
@@ -535,8 +631,8 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               <TouchableOpacity
-                style={[hS.primaryBtn, (isUnavailable || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
-                disabled={isUnavailable || nights <= 0 || nights < (room.minNights || 1)}
+                style={[hS.primaryBtn, (isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
+                disabled={isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)}
                 onPress={() => setStep(2)}>
                 <Text style={hS.primaryBtnText}>Continuar →</Text>
               </TouchableOpacity>
@@ -551,26 +647,28 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                 <Text style={hS.inputLabel}>Nome completo *</Text>
                 <TextInput style={hS.input}
                   value={guestName}
-                  onChangeText={t => setGuestName(sanitizeInput(t, 100))}
+                  onChangeText={setGuestName}
                   placeholder="Nome do hóspede"
                   placeholderTextColor={COLORS.grayText}
+                  autoCorrect={false}
                   maxLength={100} />
               </View>
               <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Telefone *</Text>
                 <TextInput style={hS.input}
                   value={guestPhone}
-                  onChangeText={t => setGuestPhone(sanitizeInput(t, 30))}
+                  onChangeText={setGuestPhone}
                   placeholder="+244 9xx xxx xxx"
                   placeholderTextColor={COLORS.grayText}
                   keyboardType="phone-pad"
+                  autoCorrect={false}
                   maxLength={30} />
               </View>
               <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Pedido especial (opcional)</Text>
                 <TextInput style={[hS.input, { height: 80, textAlignVertical: 'top' }]}
                   value={specialRequest}
-                  onChangeText={t => setSpecialRequest(sanitizeInput(t, 300))}
+                  onChangeText={setSpecialRequest}
                   placeholder="Cama extra, andar alto, chegada tardia..."
                   placeholderTextColor={COLORS.grayText}
                   multiline
@@ -677,16 +775,35 @@ function ICalSyncCard({ icalLink, onLinkChange, icalStatus, onSync }) {
 // OWNER: BOOKINGS MANAGER — SF_H3
 // SEGURANÇA: só renderiza quando isOwner === true (verificado no pai)
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
-  const [filter, setFilter] = useState('all');
+function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditBooking }) {
+  const [filter, setFilter]   = useState('all');
   const [expanded, setExpanded] = useState({});
-  const FILTERS = [['all','Todas'],['pending','Pendentes'],['confirmed','Confirmadas'],['confirmed_unpaid','Aguarda Pag.'],['cancelled','Canceladas']];
+  const [editModal, setEditModal] = useState(null); // booking a editar
+  const FILTERS = [
+    ['all','Todas'],
+    ['today','Hoje'],
+    ['pending','Pendentes'],
+    ['confirmed','Confirmadas'],
+    ['confirmed_unpaid','Aguarda Pag.'],
+    ['CHECKED_IN','Em Casa'],
+    ['CHECKED_OUT','Checkout'],
+    ['cancelled','Canceladas'],
+  ];
 
-  const filtered = bookings.filter(rb =>
-    filter === 'all' ? true :
-    filter === 'cancelled' ? (rb.status === 'cancelled' || rb.status === 'rejected') :
-    rb.status === filter
-  );
+  const todayStr = (() => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  })();
+
+  const filtered = bookings.filter(rb => {
+    if (filter === 'all') return true;
+    if (filter === 'today') {
+      // Reservas com check-in OU check-out hoje
+      return rb.checkIn === todayStr || rb.checkOut === todayStr;
+    }
+    if (filter === 'cancelled') return rb.status === 'cancelled' || rb.status === 'rejected';
+    return rb.status === filter;
+  });
 
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -736,13 +853,24 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={hS.bookingGuestName}>{rb.guestName}</Text>
-                    <Text style={hS.bookingGuestPhone}>{rb.guestPhone}</Text>
+                    <Text style={hS.bookingGuestPhone}>
+                      {rb.checkIn} → {rb.checkOut}
+                      {rb.nights ? ` · ${rb.nights}n` : ''}
+                    </Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {/* Botão editar sempre visível -- não precisa expandir */}
+                    {(rb.status === 'pending' || rb.status === 'PENDING' || rb.status === 'confirmed' || rb.status === 'CONFIRMED') && (
+                      <TouchableOpacity
+                        style={{ padding: 6, backgroundColor: '#F5F3FF', borderRadius: 6 }}
+                        onPress={() => setEditModal(rb)}>
+                        <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>✏️</Text>
+                      </TouchableOpacity>
+                    )}
                     <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
                       <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
-                    <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.grayText} />
+                    <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={16} color={COLORS.grayText} strokeWidth={2} />
                   </View>
                 </TouchableOpacity>
 
@@ -765,13 +893,22 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
                     ) : null}
                     <View style={hS.bookingFooter}>
                       <Text style={hS.bookingTotal}>{displayPrice.toLocaleString()} Kz</Text>
-                      {rb.status === 'pending' && (
+                      {(rb.status === 'pending' || rb.status === 'confirmed' || rb.status === 'PENDING' || rb.status === 'CONFIRMED') && (
                         <View style={hS.bookingActions}>
-                          <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
-                            <Text style={hS.rejectBtnText}>Rejeitar</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
-                            <Text style={hS.approveBtnText}>Confirmar</Text>
+                          {(rb.status === 'pending' || rb.status === 'PENDING') && (
+                            <>
+                              <TouchableOpacity style={hS.rejectBtn} onPress={() => onStatusChange(rb.id, 'rejected')}>
+                                <Text style={hS.rejectBtnText}>Rejeitar</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={hS.approveBtn} onPress={() => onStatusChange(rb.id, 'confirmed')}>
+                                <Text style={hS.approveBtnText}>Confirmar</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                          <TouchableOpacity
+                            style={[hS.approveBtn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]}
+                            onPress={() => setEditModal(rb)}>
+                            <Text style={[hS.approveBtnText, { color: '#7C3AED' }]}>✏️ Editar</Text>
                           </TouchableOpacity>
                         </View>
                       )}
@@ -791,6 +928,105 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose }) {
             );
           })}
         </ScrollView>
+      </View>
+
+      {/* Modal editar reserva */}
+      {editModal && (
+        <EditBookingModal
+          visible={!!editModal}
+          booking={editModal}
+          roomTypes={roomTypes}
+          onSave={(id, changes) => { onEditBooking && onEditBooking(id, changes); setEditModal(null); }}
+          onClose={() => setEditModal(null)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// ─── Modal de edição de reserva ───────────────────────────────────────────────
+function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
+  const [checkIn,  setCheckIn]  = useState(booking?.checkIn  || '');
+  const [checkOut, setCheckOut] = useState(booking?.checkOut || '');
+  const [roomTypeId, setRoomTypeId] = useState(booking?.roomTypeId || '');
+  const [activeField, setActiveField] = useState(null);
+
+  const countN = (ci, co) => {
+    if (!ci || !co) return 0;
+    const parse = (s) => { const [d,m,y] = s.split('/').map(Number); return new Date(y,m-1,d); };
+    return Math.round((parse(co) - parse(ci)) / 86400000);
+  };
+
+  const toISO = (str) => {
+    if (!str) return null;
+    const [d,m,y] = str.split('/').map(Number);
+    return new Date(Date.UTC(y, m-1, d, 12, 0, 0)).toISOString();
+  };
+
+  const nights = countN(checkIn, checkOut);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 20 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111' }}>Editar Reserva</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 4 }}>CHECK-IN</Text>
+          <CalendarPicker
+            label="" value={checkIn}
+            isOpen={activeField === 'checkin'}
+            onToggle={() => setActiveField(f => f === 'checkin' ? null : 'checkin')}
+            onChange={v => { setCheckIn(v); if (checkOut && countN(v, checkOut) <= 0) setCheckOut(''); setActiveField('checkout'); }}
+          />
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 4, marginTop: 10 }}>CHECK-OUT</Text>
+          <CalendarPicker
+            label="" value={checkOut} minDate={checkIn}
+            isOpen={activeField === 'checkout'}
+            onToggle={() => setActiveField(f => f === 'checkout' ? null : 'checkout')}
+            onChange={v => { setCheckOut(v); setActiveField(null); }}
+          />
+
+          {nights > 0 && (
+            <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 8 }}>
+              {nights} noite{nights !== 1 ? 's' : ''}
+            </Text>
+          )}
+
+          <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginTop: 12, marginBottom: 4 }}>TIPO DE QUARTO</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            {(roomTypes || []).map(rt => (
+              <TouchableOpacity
+                key={rt.id}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8,
+                  backgroundColor: roomTypeId === rt.id ? '#D32323' : '#F7F7F8',
+                  borderWidth: 1, borderColor: roomTypeId === rt.id ? '#D32323' : '#E5E7EB',
+                }}
+                onPress={() => setRoomTypeId(rt.id)}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: roomTypeId === rt.id ? '#fff' : '#555' }}>
+                  {rt.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={{ backgroundColor: '#D32323', borderRadius: 10, paddingVertical: 14, alignItems: 'center' }}
+            onPress={() => onSave(booking.id, {
+              startDate: toISO(checkIn),
+              endDate:   toISO(checkOut),
+              roomTypeId,
+            })}
+            disabled={!checkIn || !checkOut || nights <= 0}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>Guardar Alterações</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -821,9 +1057,16 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [guestCount, setGuestCount] = useState(1);
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
+  // Controlo de qual campo de data está aberto no módulo principal (um de cada vez)
+  const [activeDateField, setActiveDateField] = useState(null); // 'checkin' | 'checkout' | null
+  // Disponibilidade por roomTypeId -- verificada via API quando datas mudam
+  const [roomAvailMap, setRoomAvailMap]   = useState({}); // { [roomId]: { available, physicalRooms } }
+  const [checkingRooms, setCheckingRooms] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [showHousekeeping, setShowHousekeeping] = useState(false);
+  const [dashboardReloadTrigger, setDashboardReloadTrigger] = useState(0);
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
   // Limpos automaticamente quando o Realtime confirma o novo status
@@ -834,18 +1077,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   //   1. Supabase Realtime (liveBookings do backend) — produção
   //   2. ownerRoomBookingsProp (estado elevado no Main) — desenvolvimento local
   //   3. localBookings (fallback isolado, sem Main)
-  const LOCAL_MOCK_BOOKINGS = [
-    { id: 'rb_1', businessId: business?.id, roomTypeId: '1',
-      guestName: 'Ana Rodrigues', guestPhone: '+244 912 111 222',
-      checkIn: '01/03/2026', checkOut: '05/03/2026', nights: 4,
-      adults: 2, children: 0, rooms: 1, totalPrice: 60000, status: 'confirmed' },
-    { id: 'rb_2', businessId: business?.id, roomTypeId: '1',
-      guestName: 'Paulo Ferreira', guestPhone: '+244 923 333 444',
-      checkIn: '10/03/2026', checkOut: '13/03/2026', nights: 3,
-      adults: 1, children: 1, rooms: 1, totalPrice: 45000, status: 'pending' },
-  ];
-
-  const [localBookings, setLocalBookings] = useState(LOCAL_MOCK_BOOKINGS);
+  // [FIX] Mock removido -- dados vêm sempre da API (apiBookings) ou estado partilhado (sharedBookings)
+  const [localBookings, setLocalBookings] = useState([]);
 
   // Converte liveBookings (formato API) para o formato interno do HospitalityModule
   const apiBookings = useMemo(() => {
@@ -996,11 +1229,68 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     updateOwnerBiz({ icalLink: val });
   }, [updateOwnerBiz]);
 
+  // ── Enriquecer ownerRooms com ranges do iCal (bidirecional) ──────────────
+  // Os ranges do iCal (Booking.com/Airbnb) são adicionados ao bookedRanges
+  // de cada tipo de quarto para que a disponibilidade local os considere.
+  const ownerRoomsWithIcal = useMemo(() => {
+    if (!icalStatus?.ranges?.length) return ownerRooms;
+    const result = { ...ownerRooms };
+    Object.keys(result).forEach(roomId => {
+      const room = result[roomId];
+      const existing = room.bookedRanges || [];
+      // Evitar duplicados: só adicionar ranges do iCal que não existem já
+      const icalRanges = icalStatus.ranges.filter(ir =>
+        !existing.some(er => er.start === ir.start && er.end === ir.end)
+      );
+      if (icalRanges.length > 0) {
+        result[roomId] = { ...room, bookedRanges: [...existing, ...icalRanges] };
+      }
+    });
+    return result;
+  }, [ownerRooms, icalStatus]);
+
   // ── Abertura de booking modal ─────────────────────────────────────────────
+  // Verificar disponibilidade via API para todos os rooms quando datas mudam
+  useEffect(() => {
+    const safeRooms = rooms ?? [];
+    if (!checkIn || !checkOut || !business?.id || safeRooms.length === 0) {
+      setRoomAvailMap({});
+      return;
+    }
+    const toISO = (str) => {
+      if (!str) return null;
+      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
+      return new Date(str).toISOString();
+    };
+    setCheckingRooms(true);
+    Promise.all(
+      safeRooms.map(room =>
+        backendApi.getAvailability(business.id, room.id, toISO(checkIn), toISO(checkOut))
+          .then(data => ({ roomId: room.id, data }))
+          .catch(() => ({ roomId: room.id, data: null }))
+      )
+    ).then(results => {
+      const map = {};
+      results.forEach(({ roomId, data }) => { map[roomId] = data; });
+      setRoomAvailMap(map);
+      setCheckingRooms(false);
+    });
+  }, [checkIn, checkOut, business?.id, rooms?.length ?? 0]);
+
   const handleBook = useCallback((room) => {
     setBookingRoom(room);
     setShowBookingModal(true);
   }, []);
+
+  // Editar datas/tipo de reserva existente (do BookingsManager)
+  const handleEditBooking = useCallback(async (bookingId, changes) => {
+    try {
+      await backendApi.updateBooking(bookingId, changes, ctx?.accessToken);
+      Alert.alert('Reserva Actualizada', 'As alterações foram guardadas.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível actualizar a reserva.');
+    }
+  }, [ctx?.accessToken]);
 
   // ── Confirmar reserva ────────────────────────────────────────────────────
   // Se onCreateBooking está disponível (cliente autenticado via backendApi),
@@ -1063,11 +1353,24 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           [{ text: 'OK' }],
         );
       } catch (err) {
-        Alert.alert(
-          'Erro ao Reservar',
-          err?.message || 'Não foi possível criar a reserva. Verifica a tua ligação.',
-          [{ text: 'OK' }],
-        );
+        const rawMsg = err?.message || '';
+        let parsed = rawMsg;
+        // Extrair message do JSON se vier como string JSON
+        try { const j = JSON.parse(rawMsg); parsed = j.message || rawMsg; } catch {}
+        const isUnavail = parsed.includes('Não há quartos') || parsed.includes('quartos físicos');
+        if (isUnavail) {
+          Alert.alert(
+            '🔴 Indisponível nestas datas',
+            'Todos os quartos deste tipo estão ocupados para as datas seleccionadas. Escolhe outras datas.',
+            [{ text: 'OK' }],
+          );
+        } else {
+          Alert.alert(
+            'Erro ao Reservar',
+            parsed || 'Não foi possível criar a reserva. Verifica a tua ligação.',
+            [{ text: 'OK' }],
+          );
+        }
       }
     } else {
       // Fallback local (modo dono a testar, ou sem sessão)
@@ -1095,38 +1398,61 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     }
   }, [isOwner, onStatusChangeProp]);
 
-  const rooms = business?.roomTypes || [];
+  const allRooms = business?.roomTypes || [];
+  // Regra 1: cliente só vê tipos de quarto com quartos físicos configurados.
+  // physicalRoomsCount=0  → sem quartos físicos → esconder do cliente
+  // physicalRoomsCount=null → backend antigo, não sabemos → mostrar (permissivo)
+  // O dono vê sempre todos para poder gerir.
+  const rooms = isOwner
+    ? allRooms
+    : allRooms.filter(r => r.physicalRoomsCount !== 0);
   const filteredRooms = guestCount > 0 ? rooms.filter(r => r.maxGuests >= guestCount) : rooms;
   const activeBookings = roomBookings.filter(rb =>
     rb.businessId === business?.id &&
     (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
   );
-  const pendingCount = activeBookings.filter(rb => rb.status === 'pending').length;
+  const pendingCount = activeBookings.filter(rb =>
+    rb.status === 'pending' || rb.status === 'PENDING'
+  ).length;
 
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
       <Text style={hS.emptyIcon}>🏨</Text>
-      <Text style={hS.emptyTitle}>Sem quartos configurados</Text>
-      <Text style={hS.emptyText}>Configure os tipos de quarto no painel de gestão.</Text>
+      <Text style={hS.emptyTitle}>
+        {isOwner ? 'Sem quartos configurados' : 'Sem quartos disponíveis'}
+      </Text>
+      <Text style={hS.emptyText}>
+        {isOwner
+          ? 'Adiciona tipos de quarto e quartos físicos no painel de gestão.'
+          : 'Este estabelecimento não tem quartos disponíveis de momento.'}
+      </Text>
     </View>
   );
 
   return (
     <View style={hS.container}>
       {/* ── HEADER ─────────────────────────────────────────────────── */}
-      <View style={hS.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
-          <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
+      <View style={[hS.header, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
+            <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
+          </View>
+          {isOwner && (
+            <View style={hS.ownerBadge}>
+              <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
+              <Text style={hS.ownerBadgeText}>Activo</Text>
+            </View>
+          )}
         </View>
         {isOwner && (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
-              <Icon name="bar-chart-2" size={16} color={COLORS.white} strokeWidth={2} />
+              <Icon name="analytics" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Dashboard</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#22A06B' }]} onPress={() => setShowReception(true)}>
-              <Icon name="home" size={16} color={COLORS.white} strokeWidth={2} />
+              <Icon name="map" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Receção</Text>
             </TouchableOpacity>
             <TouchableOpacity style={hS.ownerActionBtn} onPress={() => setShowBookingsManager(true)}>
@@ -1138,10 +1464,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
               <Icon name="calendar" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Reservas</Text>
             </TouchableOpacity>
-            <View style={hS.ownerBadge}>
-              <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
-              <Text style={hS.ownerBadgeText}>Gestão</Text>
-            </View>
+            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#7C3AED' }]} onPress={() => setShowHousekeeping(true)}>
+              <Icon name="star" size={16} color={COLORS.white} strokeWidth={2} />
+              <Text style={hS.ownerActionBtnText}>Limpeza</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -1155,17 +1481,26 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       {/* ── SELETOR DE DATAS ────────────────────────────────────────── */}
       <View style={hS.dateSection}>
         <Text style={hS.dateSectionTitle}>📅 Selecionar Datas</Text>
-        <View style={hS.dateRow}>
-          <View style={{ flex: 1 }}>
-            <CalendarPicker label="Check-in" value={checkIn}
-              onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
-          </View>
-          <View style={hS.dateSep}>
-            <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <CalendarPicker label="Check-out" value={checkOut} onChange={setCheckOut} minDate={checkIn} />
-          </View>
+        <View style={{ gap: 10 }}>
+          <CalendarPicker
+            label="CHECK-IN"
+            value={checkIn}
+            isOpen={activeDateField === 'checkin'}
+            onToggle={() => setActiveDateField(f => f === 'checkin' ? null : 'checkin')}
+            onChange={v => {
+              setCheckIn(v);
+              if (checkOut && countNights(v, checkOut) <= 0) setCheckOut('');
+              setActiveDateField('checkout');
+            }}
+          />
+          <CalendarPicker
+            label="CHECK-OUT"
+            value={checkOut}
+            isOpen={activeDateField === 'checkout'}
+            onToggle={() => setActiveDateField(f => f === 'checkout' ? null : 'checkout')}
+            onChange={v => { setCheckOut(v); setActiveDateField(null); }}
+            minDate={checkIn}
+          />
         </View>
         <View style={hS.guestRow}>
           <Text style={hS.guestLabel}>👤 Hóspedes</Text>
@@ -1191,15 +1526,26 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       <View style={hS.roomsSection}>
         <Text style={hS.sectionTitle}>Tipos de Quarto</Text>
         {filteredRooms.map(room => {
-          const ownerRoom    = ownerRooms[room.id] || null;
+          const ownerRoom    = ownerRoomsWithIcal[room.id] || null;
           const nights       = countNights(checkIn, checkOut);
           const { subtotal } = nights > 0
             ? calcStayPrice({ ...room, seasonalRates: ownerRoom?.seasonalRates, weekendMultiplier: ownerRoom?.weekendMultiplier || room.weekendMultiplier }, checkIn, checkOut)
             : { subtotal: 0 };
-          const avail        = (checkIn && checkOut)
+          // Disponibilidade: API (para todos) tem prioridade sobre cálculo local (dono)
+          const apiAvail      = roomAvailMap[room.id] ?? null;
+          const localAvail    = (checkIn && checkOut && ownerRoom)
             ? getRealAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
             : null;
-          const isUnavailable = avail ? avail.available < 1 : false;
+          // Escolher fonte: API se disponível, local como fallback para dono
+          const avail = (() => {
+            if (apiAvail !== null) {
+              if (apiAvail.physicalRooms === 0) return null; // sem físicos: neutro
+              return { available: apiAvail.available };
+            }
+            return localAvail; // fallback dono
+          })();
+          const isChecking    = checkingRooms && checkIn && checkOut && apiAvail === null;
+          const isUnavailable = !isChecking && avail ? avail.available < 1 : false;
           return (
             <View key={room.id} style={[hS.roomCard, isUnavailable && hS.roomCardUnavailable]}>
               <View style={hS.roomHeader}>
@@ -1232,7 +1578,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                     <Text style={hS.roomMetaText}>Mín {room.minNights} noites</Text>
                   </View>
                 )}
-                {avail && (
+                {isChecking && (
+                  <View style={[hS.roomMetaItem, { marginLeft: 'auto' }]}>
+                    <Text style={[hS.roomMetaText, { color: COLORS.grayText }]}>A verificar...</Text>
+                  </View>
+                )}
+                {!isChecking && avail && (
                   <View style={[hS.roomMetaItem, { marginLeft: 'auto' }]}>
                     <View style={[hS.availDot, { backgroundColor: isUnavailable ? '#EF4444' : COLORS.green }]} />
                     <Text style={[hS.roomMetaText, { color: isUnavailable ? '#EF4444' : COLORS.green, fontWeight: '700' }]}>
@@ -1274,7 +1625,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <BookingModal
           visible={showBookingModal}
           room={bookingRoom}
-          ownerRoom={ownerRooms[bookingRoom?.id] || null}
+          ownerRoom={ownerRoomsWithIcal[bookingRoom?.id] || null}
           business={business}
           activeBookings={activeBookings}
           onClose={() => setShowBookingModal(false)}
@@ -1284,18 +1635,30 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
       {isOwner && showDashboard && (
         <DashboardPMS
-          businessId={ownerBusinessPrivate?.id}
+          businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
-          onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onOpenReception={() => {}}
           onClose={() => setShowDashboard(false)}
+          reloadTrigger={dashboardReloadTrigger}
         />
       )}
       {isOwner && showReception && (
         <ReceptionScreen
-          businessId={ownerBusinessPrivate?.id}
+          businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
-          roomTypes={ownerBusinessPrivate?.roomTypes || []}
-          onClose={() => setShowReception(false)}
+          roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+          onClose={() => {
+            setShowReception(false);
+            setDashboardReloadTrigger(t => t + 1);
+            setShowDashboard(true);
+          }}
+        />
+      )}
+      {isOwner && showHousekeeping && (
+        <HousekeepingScreen
+          businessId={ownerBusinessPrivate?.id || business?.id}
+          accessToken={ctx?.accessToken}
+          onClose={() => setShowHousekeeping(false)}
         />
       )}
       {isOwner && showBookingsManager && (
@@ -1303,6 +1666,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           bookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onStatusChange={handleStatusChange}
+          onEditBooking={handleEditBooking}
           onClose={() => setShowBookingsManager(false)}
         />
       )}
@@ -1365,17 +1729,16 @@ const hS = StyleSheet.create({
   nightsBadgeText:  { fontSize: 12, fontWeight: '700', color: '#1565C0' },
 
   // Calendar
-  calWrap:          { flex: 1 },
   calLabel:         { fontSize: 10, fontWeight: '700', color: '#8A8A8A', letterSpacing: 0.6,
                       marginBottom: 4, textTransform: 'uppercase' },
   calTrigger:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      paddingHorizontal: 10, paddingVertical: 10, backgroundColor: '#F7F7F8',
+                      paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#F7F7F8',
                       borderRadius: 8, borderWidth: 1, borderColor: '#EBEBEB' },
   calValue:         { fontSize: 13, fontWeight: '600', color: '#111111' },
   calPlaceholder:   { fontSize: 13, color: '#8A8A8A' },
-  calCard:          { marginTop: 6, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1,
-                      borderColor: '#EBEBEB', padding: 10, elevation: 4,
-                      shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, zIndex: 999 },
+  // Calendário sempre inline, sempre full-width -- sem position absolute, sem sobreposições
+  calCard:          { marginTop: 8, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1,
+                      borderColor: '#EBEBEB', padding: 12 },
   calNav:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   calNavBtn:        { padding: 6 },
   calMonthLabel:    { fontSize: 14, fontWeight: '700', color: '#111111' },
@@ -1437,6 +1800,9 @@ const hS = StyleSheet.create({
   infoBox:          { padding: 12, backgroundColor: '#EFF6FF', borderRadius: 10,
                       borderWidth: 1, borderColor: '#1565C0' + '40', marginBottom: 12 },
   infoBoxText:      { fontSize: 13, color: '#1565C0', fontWeight: '600' },
+  checkingBox:      { padding: 12, backgroundColor: '#F5F5F5', borderRadius: 10,
+                      borderWidth: 1, borderColor: '#E0E0E0', marginBottom: 12 },
+  checkingText:     { fontSize: 13, color: COLORS.grayText, fontWeight: '500' },
   unavailBox:       { padding: 12, backgroundColor: '#FEF2F2', borderRadius: 10,
                       borderWidth: 1, borderColor: '#FCA5A5', marginBottom: 12 },
   unavailTitle:     { fontSize: 13, fontWeight: '700', color: '#DC2626', marginBottom: 4 },

@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "AchAqui",
@@ -14,14 +13,22 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O AchAqui usa a tua localização para mostrar negócios próximos e calcular distâncias em tempo real.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "O AchAqui usa a tua localização para mostrar negócios próximos e calcular distâncias em tempo real."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

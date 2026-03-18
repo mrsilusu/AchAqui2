@@ -186,7 +186,8 @@ export class ItemController {
   @Get('rooms/by-business')
   @Public()
   findRoomsByBusiness(@Query('businessId') businessId: string) {
-    return this.itemService.getRoomsByBusiness(businessId);
+    // onlyWithRooms=true: perfil público vê apenas tipos com quartos físicos configurados
+    return this.itemService.getRoomsByBusiness(businessId, true);
   }
 
   @Post('rooms')

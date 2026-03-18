@@ -1,5 +1,5 @@
 // backend/src/ht-booking/ht-dashboard.service.ts
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -35,7 +35,7 @@ export class HtDashboardService {
       pendingTasks,
       revenueToday,
     ] = await Promise.all([
-      // Quartos e estados
+      // Quartos e estados (inclui tasks de housekeeping pendentes)
       this.prisma.htRoom.findMany({
         where: { businessId },
         include: {
@@ -49,6 +49,11 @@ export class HtDashboardService {
               user: { select: { name: true } },
             },
             take: 1,
+          },
+          tasks: {
+            where: { completedAt: null },
+            select: { id: true, priority: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: [{ floor: 'asc' }, { number: 'asc' }],
@@ -97,18 +102,21 @@ export class HtDashboardService {
     ]);
 
     // Calcular estados dos quartos
+    // occupied: quarto CLEAN com reserva CHECKED_IN activa (roomId associado à reserva)
+    // clean (livre): quarto CLEAN sem reservas activas
     const roomStats = {
       total:       rooms.length,
-      clean:       rooms.filter(r => r.status === 'CLEAN').length,
       occupied:    rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0).length,
+      clean:       rooms.filter(r => r.status === 'CLEAN' && r.bookings.length === 0).length,
       dirty:       rooms.filter(r => r.status === 'DIRTY').length,
       cleaning:    rooms.filter(r => r.status === 'CLEANING').length,
       maintenance: rooms.filter(r => r.status === 'MAINTENANCE').length,
     };
 
-    // Taxa de ocupação real = quartos com hóspede / total
-    const occupancyRate = rooms.length > 0
-      ? Math.round((currentGuests / rooms.length) * 100)
+    // Taxa de ocupação real = quartos físicos ocupados / total quartos físicos
+    // Usa roomStats.occupied (CLEAN com reserva activa) em vez de contagem de reservas
+    const occupancyRate = roomStats.total > 0
+      ? Math.round((roomStats.occupied / roomStats.total) * 100)
       : 0;
 
     return {
@@ -116,13 +124,14 @@ export class HtDashboardService {
       occupancyRate,
       roomStats,
       rooms: rooms.map(r => ({
-        id:        r.id,
-        number:    r.number,
-        floor:     r.floor,
-        status:    r.status,
-        typeName:  r.roomType.name,
-        guest:     r.bookings[0]?.guestName || r.bookings[0]?.user?.name || null,
-        checkOut:  r.bookings[0]?.endDate || null,
+        id:           r.id,
+        number:       r.number,
+        floor:        r.floor,
+        status:       r.status,
+        typeName:     r.roomType.name,
+        guest:        r.bookings[0]?.guestName || r.bookings[0]?.user?.name || null,
+        checkOut:     r.bookings[0]?.endDate || null,
+        pendingTasks: r.tasks.map(t => ({ id: t.id, priority: t.priority, createdAt: t.createdAt })),
       })),
       today: {
         arrivals:   arrivalsToday,
@@ -134,5 +143,86 @@ export class HtDashboardService {
         pendingTasks,
       },
     };
+  }
+  // ─── Reservas para o Mapa (período configurável) ────────────────────────
+  async getBookingsForMap(businessId: string, ownerId: string, from: Date, to: Date) {
+    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
+    if (!b) throw new Error('Sem permissão.');
+
+    const [rooms, bookings] = await Promise.all([
+      this.prisma.htRoom.findMany({
+        where: { businessId },
+        include: { roomType: { select: { id: true, name: true } } },
+        orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+      }),
+      this.prisma.htRoomBooking.findMany({
+        where: {
+          businessId,
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
+          OR: [
+            { startDate: { lte: to }, endDate: { gte: from } },
+          ],
+        },
+        select: {
+          id: true, guestName: true, startDate: true, endDate: true,
+          status: true, roomId: true, roomTypeId: true, totalPrice: true,
+          roomType: { select: { id: true, name: true } },
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+    ]);
+
+    // Agrupar quartos por tipo
+    const typeMap: Record<string, { id: string; name: string; rooms: any[] }> = {};
+    rooms.forEach(r => {
+      const tid = r.roomType.id;
+      if (!typeMap[tid]) typeMap[tid] = { id: tid, name: r.roomType.name, rooms: [] };
+      typeMap[tid].rooms.push({ id: r.id, number: r.number, floor: r.floor, status: r.status });
+    });
+
+    return {
+      roomTypes: Object.values(typeMap),
+      bookings:  bookings.map(bk => ({
+        id:         bk.id,
+        guestName:  bk.guestName || 'Hóspede',
+        startDate:  bk.startDate.toISOString(),
+        endDate:    bk.endDate.toISOString(),
+        status:     bk.status,
+        roomId:     bk.roomId,
+        roomTypeId: bk.roomTypeId,
+        typeName:   bk.roomType?.name || '—',
+        totalPrice: bk.totalPrice,
+      })),
+      from: from.toISOString(),
+      to:   to.toISOString(),
+    };
+  }
+
+  // ─── Marcar tarefa de housekeeping como concluída ────────────────────────
+  async completeTask(taskId: string, ownerId: string) {
+    const task = await this.prisma.htHousekeepingTask.findFirst({
+      where: { id: taskId },
+      include: { room: { include: { business: { select: { id: true, ownerId: true } } } } },
+    });
+    if (!task) throw new NotFoundException('Tarefa não encontrada.');
+    if (task.room.business.ownerId !== ownerId) {
+      throw new ForbiddenException('Sem permissão para esta tarefa.');
+    }
+    if (task.completedAt) {
+      throw new BadRequestException('Tarefa já foi concluída.');
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const t = await tx.htHousekeepingTask.update({
+        where: { id: taskId },
+        data:  { completedAt: new Date() },
+      });
+      // Quarto passa a CLEAN após limpeza concluída
+      await tx.htRoom.update({
+        where: { id: task.roomId },
+        data:  { status: 'CLEAN', version: { increment: 1 } },
+      });
+      return t;
+    });
+    return updated;
   }
 }

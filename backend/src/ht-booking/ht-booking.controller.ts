@@ -58,6 +58,52 @@ export class HtBookingController {
     return this.htBookingService.markNoShow(id, req.user.userId, ip);
   }
 
+  // ─── Mapa de Reservas ────────────────────────────────────────────────────────
+  @Get('map')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  getMap(
+    @Query('businessId') businessId: string,
+    @Query('from') from: string,
+    @Query('to')   to:   string,
+    @Req() req: any,
+  ) {
+    const f = from ? new Date(from) : (() => { const d = new Date(); d.setDate(1); return d; })();
+    const t = to   ? new Date(to)   : (() => { const d = new Date(); d.setMonth(d.getMonth()+1,0); return d; })();
+    return this.htDashboardService.getBookingsForMap(businessId, req.user.userId, f, t);
+  }
+
+  // ─── Prolongar estadia / Alterar quarto ─────────────────────────────────────
+  @Patch('bookings/:id/extend')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  extendStay(
+    @Param('id') id: string,
+    @Body() body: { newEndDate: string },
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    return this.htBookingService.extendStay(id, req.user.userId, body.newEndDate, ip);
+  }
+
+  @Patch('bookings/:id/change-room')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  changeRoom(
+    @Param('id') id: string,
+    @Body() body: { newRoomId: string },
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    return this.htBookingService.changeRoom(id, req.user.userId, body.newRoomId, ip);
+  }
+
+  // ─── Housekeeping ────────────────────────────────────────────────────────────
+  @Patch('housekeeping/:id/complete')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async completeHousekeepingTask(@Param('id') id: string, @Req() req: any) {
+    // Verificar que a tarefa pertence a um quarto do owner
+    const task = await this.htDashboardService.completeTask(id, req.user.userId);
+    return task;
+  }
+
   // ─── Folio (Sprint 3) ─────────────────────────────────────────────────────
   @Get('bookings/:id/folio')
   getFolio(@Param('id') id: string, @Req() req: any) {

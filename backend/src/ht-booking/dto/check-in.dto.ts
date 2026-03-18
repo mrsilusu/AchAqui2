@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CheckInDto {
   @IsOptional()
@@ -12,4 +12,12 @@ export class CheckInDto {
   @IsOptional()
   @IsString()
   guestPhone?: string;
+
+  @IsOptional()
+  @IsIn(['definitivo', 'temporario'])
+  assignType?: 'definitivo' | 'temporario';
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

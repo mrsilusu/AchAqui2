@@ -173,6 +173,23 @@ export class BookingService {
 
     const bookingType = dto.bookingType ?? BookingTypeDto.TABLE;
 
+    // [SECURITY] Calcular totalPrice no backend — nunca aceitar o valor do frontend.
+    // Previne manipulação de preço (ex: cliente envia totalPrice: 1).
+    let calculatedTotalPrice: number | null = null;
+    if (bookingType === BookingTypeDto.ROOM && dto.roomTypeId) {
+      const roomType = await this.prisma.htRoomType.findFirst({
+        where: { id: dto.roomTypeId, businessId: dto.businessId },
+        select: { pricePerNight: true },
+      });
+      if (roomType) {
+        const nights = Math.max(1, Math.ceil(
+          (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        ));
+        const rooms = dto.rooms ?? 1;
+        calculatedTotalPrice = roomType.pricePerNight * nights * rooms;
+      }
+    }
+
     const bookingData = {
       startDate,
       endDate,
@@ -188,10 +205,34 @@ export class BookingService {
       adults:     dto.adults     ?? 1,
       children:   dto.children   ?? 0,
       rooms:      dto.rooms      ?? 1,
-      totalPrice: dto.totalPrice ?? null,
+      totalPrice: calculatedTotalPrice, // sempre calculado no backend
       notes:      dto.notes      ?? null,
       roomTypeId: dto.roomTypeId ?? null,
     };
+
+    // Regras de disponibilidade para reservas de quarto
+    if (bookingType === BookingTypeDto.ROOM && dto.roomTypeId) {
+      // Regra 1: tipo de quarto deve ter quartos físicos
+      const physicalRooms = await this.prisma.htRoom.count({
+        where: { roomTypeId: dto.roomTypeId, businessId: dto.businessId },
+      });
+      if (physicalRooms === 0) {
+        throw new BadRequestException('Este tipo de quarto não tem quartos físicos disponíveis.');
+      }
+      // Regra 2: não permitir reservas acima do número de quartos físicos nas datas
+      // Regra 3: validação por roomTypeId -- tipos diferentes podem ter reservas nas mesmas datas
+      const overlapping = await this.prisma.htRoomBooking.count({
+        where: {
+          roomTypeId: dto.roomTypeId,
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+          startDate: { lt: endDate },
+          endDate:   { gt: startDate },
+        },
+      });
+      if (overlapping >= physicalRooms) {
+        throw new BadRequestException('Não há quartos disponíveis para as datas seleccionadas.');
+      }
+    }
 
     const booking =
       bookingType === BookingTypeDto.ROOM
@@ -297,7 +338,7 @@ export class BookingService {
         : bookingType === BookingTypeDto.ROOM
           ? await this.prisma.htRoomBooking.update({
               where: { id: booking.id },
-              data: { status: HtBookingStatus.CONFIRMED },
+              data: { status: HtBookingStatus.CONFIRMED, confirmedAt: new Date() },
             })
           : await this.prisma.diTableBooking.update({
               where: { id: booking.id },
@@ -383,5 +424,105 @@ export class BookingService {
     });
 
     return { ...updatedBooking, bookingType };
+  }
+
+  async updateByOwner(bookingId: string, ownerId: string, dto: { startDate?: string; endDate?: string; roomTypeId?: string }) {
+    const found = await this.findOwnedBooking(bookingId, ownerId);
+    if (!found) throw new NotFoundException('Reserva não encontrada.');
+    const { booking, bookingType } = found;
+    // Edição de datas/tipo só suportada em reservas de quarto
+    if (bookingType !== BookingTypeDto.ROOM) {
+      throw new BadRequestException('Edição de datas só disponível para reservas de quarto.');
+    }
+    if (booking.status === HtBookingStatus.CHECKED_IN || booking.status === HtBookingStatus.CHECKED_OUT) {
+      throw new BadRequestException('Não é possível editar uma reserva activa ou concluída.');
+    }
+    // Cast seguro — confirmado acima que é ROOM
+    const roomBooking = booking as any;
+    const data: any = {};
+    if (dto.startDate)  data.startDate  = new Date(dto.startDate);
+    if (dto.endDate)    data.endDate    = new Date(dto.endDate);
+    if (dto.roomTypeId) data.roomTypeId = dto.roomTypeId;
+    // Recalcular preço se datas ou tipo mudaram
+    const currentRoomTypeId = dto.roomTypeId || roomBooking.roomTypeId;
+    if (currentRoomTypeId) {
+      const rt = await this.prisma.htRoomType.findFirst({
+        where: { id: currentRoomTypeId }, select: { pricePerNight: true },
+      });
+      if (rt) {
+        const s = data.startDate || roomBooking.startDate;
+        const e = data.endDate   || roomBooking.endDate;
+        const nights = Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000));
+        data.totalPrice = rt.pricePerNight * nights * (roomBooking.rooms ?? 1);
+      }
+    }
+    return this.prisma.htRoomBooking.update({ where: { id: bookingId }, data });
+  }
+
+  async getAvailability(businessId: string, roomTypeId: string, startDate: string, endDate: string) {
+    const sDate = new Date(startDate);
+    const eDate = new Date(endDate);
+    if (isNaN(sDate.getTime()) || isNaN(eDate.getTime())) {
+      throw new BadRequestException('Datas inválidas.');
+    }
+    const nights = Math.ceil((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
+    const [physicalRooms, overlapping] = await Promise.all([
+      this.prisma.htRoom.count({ where: { roomTypeId, businessId } }),
+      this.prisma.htRoomBooking.count({
+        where: {
+          roomTypeId,
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+          startDate: { lt: eDate },
+          endDate:   { gt: sDate },
+        },
+      }),
+    ]);
+    // Se não há quartos físicos configurados, usar totalRooms do tipo como capacidade.
+    // Isso evita bloquear reservas quando o dono ainda não configurou os quartos físicos.
+    const effectiveCapacity = physicalRooms > 0
+      ? physicalRooms
+      : 0; // 0 aqui sinaliza "sem quartos físicos" -- o frontend trata este caso
+    const available = physicalRooms > 0
+      ? Math.max(0, physicalRooms - overlapping)
+      : 0; // sem quartos físicos -> não sabemos a capacidade real
+
+    // Calcular próxima data disponível se ocupado
+    let nextAvailableDate: string | null = null;
+    if (available === 0 && physicalRooms > 0) {
+      // Encontrar a última reserva activa que se sobrepõe e sugerir após o seu checkout
+      const lastBooking = await this.prisma.htRoomBooking.findFirst({
+        where: {
+          roomTypeId,
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+          startDate: { lt: eDate },
+          endDate:   { gt: sDate },
+        },
+        orderBy: { endDate: 'desc' },
+        select: { endDate: true },
+      });
+      if (lastBooking) {
+        // Sugerir endDate + 1 para garantir tempo de limpeza/housekeeping.
+        // Ex: reserva 10→12, checkout dia 12, próxima entrada sugerida: dia 13.
+        const next = new Date(lastBooking.endDate);
+        next.setDate(next.getDate() + 1);
+        // Verificar se nessa data já há disponibilidade
+        const nextEnd = new Date(next.getTime() + nights * 24 * 60 * 60 * 1000);
+        const nextOccupied = await this.prisma.htRoomBooking.count({
+          where: {
+            roomTypeId,
+            status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+            startDate: { lt: nextEnd },
+            endDate:   { gt: next },
+          },
+        });
+        if (nextOccupied < physicalRooms) {
+          const d = next.toISOString().slice(0, 10);
+          const [y, m, day] = d.split('-');
+          nextAvailableDate = `${day}/${m}/${y}`;
+        }
+      }
+    }
+
+    return { roomTypeId, physicalRooms, occupied: overlapping, available, nextAvailableDate };
   }
 }

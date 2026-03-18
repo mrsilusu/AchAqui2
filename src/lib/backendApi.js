@@ -130,6 +130,8 @@ export const backendApi = {
   getBookings: (accessToken) => apiRequest('/bookings', { accessToken }),
   createBooking: (payload, accessToken) =>
     apiRequest('/bookings', { method: 'POST', body: payload, accessToken }),
+  updateBooking: (bookingId, payload, accessToken) =>
+    apiRequest(`/bookings/${bookingId}`, { method: 'PATCH', body: payload, accessToken }),
   confirmBooking: (bookingId, payload, accessToken) =>
     apiRequest(`/bookings/${bookingId}/confirm`, { method: 'PATCH', body: payload, accessToken }),
   rejectBooking: (bookingId, payload, accessToken) =>
@@ -194,6 +196,14 @@ export const backendApi = {
     apiRequest(`/businesses/promos/${promoId}`, { method: 'DELETE', accessToken }),
   
 
+  // ─── DISPONIBILIDADE PÚBLICA (sem auth) ──────────────────────────────────────
+  // Verifica quartos disponíveis para um tipo de quarto nas datas pedidas.
+  // Retorna: { available, physicalRooms, occupied, nextAvailableDate }
+  getAvailability: (businessId, roomTypeId, startDate, endDate) =>
+    apiRequest(
+      `/bookings/availability?businessId=${encodeURIComponent(businessId)}&roomTypeId=${encodeURIComponent(roomTypeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    ),
+
   // ─── HT — Folio + Checkout Financeiro (Sprint 3)
   getHtFolio: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/folio`, { accessToken }),
@@ -226,6 +236,46 @@ export const backendApi = {
     apiRequest(`/ht/rooms/${roomId}`, { method: 'PATCH', body: payload, accessToken }),
   deleteHtRoom: (roomId, accessToken) =>
     apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
+
+  // ─── HT — Mapa de Reservas
+  getHtMap: (businessId, from, to, accessToken) => {
+    const params = new URLSearchParams({ businessId });
+    if (from) params.append('from', from);
+    if (to)   params.append('to', to);
+    return apiRequest(`/ht/map?${params}`, { accessToken });
+  },
+
+  // ─── HT — Staff / Funcionários
+  getHtStaff: (businessId, accessToken) =>
+    apiRequest(`/ht/staff?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  addHtStaff: (payload, accessToken) =>
+    apiRequest('/ht/staff', { method: 'POST', body: payload, accessToken }),
+  removeHtStaff: (staffId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}?businessId=${encodeURIComponent(businessId)}`, { method: 'DELETE', accessToken }),
+  assignHtTask: (taskId, userId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/tasks/${taskId}/assign`, { method: 'PATCH', body: { userId, businessId }, accessToken }),
+
+  // ─── HT — Perfil de Hóspede (Sprint 4)
+  getHtGuests: (businessId, accessToken, search = '') =>
+    apiRequest(`/ht/guests?businessId=${encodeURIComponent(businessId)}&search=${encodeURIComponent(search)}`, { accessToken }),
+  getHtGuest: (guestId, businessId, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  createHtGuest: (payload, accessToken) =>
+    apiRequest('/ht/guests', { method: 'POST', body: payload, accessToken }),
+  updateHtGuest: (guestId, businessId, payload, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: payload, accessToken }),
+  linkHtGuestToBooking: (guestId, bookingId, businessId, accessToken) =>
+    apiRequest(`/ht/guests/${guestId}/link-booking`, { method: 'POST', body: { bookingId, businessId }, accessToken }),
+
+  // ─── HT — Prolongar estadia / Alterar quarto (Sprint 6)
+  htExtendStay: (bookingId, newEndDate, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/extend`, { method: 'PATCH', body: { newEndDate }, accessToken }),
+  htChangeRoom: (bookingId, newRoomId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/change-room`, { method: 'PATCH', body: { newRoomId }, accessToken }),
+
+  // ─── HT — Housekeeping
+  completeHousekeepingTask: (taskId, accessToken) =>
+    apiRequest(`/ht/housekeeping/${taskId}/complete`, { method: 'PATCH', body: {}, accessToken }),
 
   // ─── HT — Receção / PMS (Sprint 1)
   getHtArrivals: (businessId, accessToken) =>

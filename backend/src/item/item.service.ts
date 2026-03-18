@@ -453,12 +453,25 @@ export class ItemService {
     }
   }
 
-    async getRoomsByBusiness(businessId: string) {
+    async getRoomsByBusiness(businessId: string, onlyWithRooms = false) {
     if (!businessId) throw new BadRequestException('businessId é obrigatório.');
-    return this.prisma.htRoomType.findMany({
+    // Buscar tipos de quarto com contagem de quartos físicos associados
+    const roomTypes = await this.prisma.htRoomType.findMany({
       where: { businessId },
       orderBy: { createdAt: 'asc' },
+      include: {
+        _count: { select: { rooms: true } },
+      },
     });
+    // Mapear para incluir physicalRoomsCount no payload público
+    const mapped = roomTypes.map(rt => ({
+      ...rt,
+      physicalRoomsCount: rt._count.rooms,
+      _count: undefined,
+    }));
+    // onlyWithRooms=true: perfil público — só mostra tipos com quartos físicos
+    if (onlyWithRooms) return mapped.filter(rt => rt.physicalRoomsCount > 0);
+    return mapped;
   }
 
   async createRoomType(ownerId: string, dto: any) {

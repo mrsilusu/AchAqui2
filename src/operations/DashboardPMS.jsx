@@ -11,17 +11,21 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, Alert,
   ScrollView, Modal, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
+import { HousekeepingScreen } from './HousekeepingScreen';
+import { ReceptionScreen } from './ReceptionScreen';
+import { ReservationMapModal } from './ReservationMapModal';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
   CLEAN:       { label: 'Livre',        color: '#22A06B', bg: '#F0FDF4' },
+  OCCUPIED:    { label: 'Ocupado',      color: '#1565C0', bg: '#EFF6FF' },
   DIRTY:       { label: 'Sujo',         color: '#D97706', bg: '#FFFBEB' },
-  CLEANING:    { label: 'A limpar',     color: '#1565C0', bg: '#EFF6FF' },
+  CLEANING:    { label: 'A limpar',     color: '#6B7280', bg: '#F9FAFB' },
   MAINTENANCE: { label: 'Manutenção',   color: '#DC2626', bg: '#FEF2F2' },
   INSPECTING:  { label: 'Inspecção',    color: '#7C3AED', bg: '#F5F3FF' },
 };
@@ -50,16 +54,26 @@ function MetricCard({ icon, label, value, color, sub }) {
 }
 
 // ─── Card de quarto ───────────────────────────────────────────────────────────
-function RoomCard({ room }) {
-  const st = ROOM_STATUS[room.status] || ROOM_STATUS.CLEAN;
-  const hasGuest = !!room.guest;
+function RoomCard({ room, onMarkClean, onMarkMaintenance, actionLoading }) {
+  const hasGuest   = !!room.guest;
+  const hasTasks   = room.pendingTasks?.length > 0;
+  const st         = hasGuest ? ROOM_STATUS.OCCUPIED : (ROOM_STATUS[room.status] || ROOM_STATUS.CLEAN);
+  const busy       = actionLoading === room.id;
+  const isNeedClean = room.status === 'DIRTY' || room.status === 'CLEANING';
 
   return (
     <View style={[dS.roomCard, { borderLeftColor: st.color }]}>
       <View style={dS.roomCardTop}>
         <Text style={dS.roomNumber}>Nº {room.number}</Text>
-        <View style={[dS.roomBadge, { backgroundColor: st.bg }]}>
-          <Text style={[dS.roomBadgeText, { color: st.color }]}>{st.label}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {hasTasks && (
+            <View style={dS.taskDot}>
+              <Text style={dS.taskDotText}>{room.pendingTasks.length}</Text>
+            </View>
+          )}
+          <View style={[dS.roomBadge, { backgroundColor: st.bg }]}>
+            <Text style={[dS.roomBadgeText, { color: st.color }]}>{st.label}</Text>
+          </View>
         </View>
       </View>
       <Text style={dS.roomType}>{room.typeName}</Text>
@@ -72,15 +86,93 @@ function RoomCard({ room }) {
           )}
         </View>
       )}
+      {/* Botão rápido para marcar limpo — só aparece quando sujo */}
+      {isNeedClean && onMarkClean && (
+        <TouchableOpacity
+          style={dS.markCleanBtn}
+          onPress={() => onMarkClean(room.id, room.pendingTasks?.[0]?.id || null)}
+          disabled={busy}
+        >
+          {busy
+            ? <ActivityIndicator size="small" color={COLORS.green} />
+            : <Text style={dS.markCleanBtnText}>✓ Limpo</Text>
+          }
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
+// ─── Room Rack Modal ─────────────────────────────────────────────────────────
+function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, onClose }) {
+  const roomsByFloor = {};
+  rooms.forEach(r => {
+    const floor = r.floor != null ? `Piso ${r.floor}` : 'Sem piso';
+    if (!roomsByFloor[floor]) roomsByFloor[floor] = [];
+    roomsByFloor[floor].push(r);
+  });
+
+  const cleanCount    = rooms.filter(r => r.status === 'CLEAN' && !r.guest).length;
+  const occupiedCount = rooms.filter(r => r.guest).length;
+  const dirtyCount    = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING').length;
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={dS.root}>
+        {/* Header */}
+        <View style={dS.header}>
+          <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
+            <Icon name="back" size={20} color={COLORS.darkText} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={dS.headerTitle}>Quartos</Text>
+            <Text style={dS.headerSub}>
+              {cleanCount} livres · {occupiedCount} ocupados · {dirtyCount} para limpar
+            </Text>
+          </View>
+          <View style={{ width: 36 }} />
+        </View>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {rooms.length === 0 ? (
+            <View style={dS.empty}>
+              <Text style={dS.emptyText}>Sem quartos configurados.</Text>
+            </View>
+          ) : (
+            Object.entries(roomsByFloor).map(([floor, floorRooms]) => (
+              <View key={floor}>
+                <Text style={dS.floorLabel}>{floor}</Text>
+                <View style={dS.roomGrid}>
+                  {floorRooms.map(r => (
+                    <RoomCard
+                      key={r.id}
+                      room={r}
+                      onMarkClean={onMarkClean}
+                      onMarkMaintenance={onMarkMaintenance}
+                      actionLoading={actionLoading}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose }) {
-  const [data, setData]         = useState(null);
-  const [loading, setLoading]   = useState(true);
+export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0 }) {
+  const [data, setData]             = useState(null);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [showHousekeeping, setShowHousekeeping] = useState(false);
+  const [showRooms, setShowRooms]               = useState(false);
+  const [showReception, setShowReception]       = useState(false);
+  const [showMap, setShowMap]                   = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -104,18 +196,45 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
     }
   }, [businessId, accessToken]);
 
-  useEffect(() => { load(); }, [load]);
+  // Recarregar quando reloadTrigger muda (ex: depois de acções na Receção)
+  useEffect(() => { load(); }, [load, reloadTrigger]);
+
+  // ─── Housekeeping: marcar quarto como limpo ou em manutenção ─────────────
+  const handleMarkClean = useCallback(async (roomId, taskId) => {
+    setActionLoading(roomId);
+    try {
+      if (taskId) await backendApi.completeHousekeepingTask(taskId, accessToken);
+      await backendApi.updateHtRoom(roomId, { status: 'CLEAN' }, accessToken);
+      await load(true);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível marcar o quarto como limpo.');
+    } finally {
+      if (alive.current) setActionLoading(null);
+    }
+  }, [accessToken, load]);
+
+  const handleMarkMaintenance = useCallback(async (roomId) => {
+    Alert.alert('Manutenção', 'Marcar quarto como em manutenção?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        onPress: async () => {
+          setActionLoading(roomId);
+          try {
+            await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, accessToken);
+            await load(true);
+          } catch (e) {
+            Alert.alert('Erro', e?.message || 'Operação falhou.');
+          } finally {
+            if (alive.current) setActionLoading(null);
+          }
+        },
+      },
+    ]);
+  }, [accessToken, load]);
 
   const today = new Date();
   const todayStr = fmtDate(today);
-
-  // ─── Agrupar quartos por piso ───────────────────────────────────────────
-  const roomsByFloor = {};
-  (data?.rooms || []).forEach(r => {
-    const floor = r.floor != null ? `Piso ${r.floor}` : 'Sem piso';
-    if (!roomsByFloor[floor]) roomsByFloor[floor] = [];
-    roomsByFloor[floor].push(r);
-  });
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -164,9 +283,10 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 </View>
                 <View style={dS.occupancyLegend}>
                   {[
-                    { label: 'Livres',     n: data?.roomStats?.clean ?? 0,       color: '#22A06B' },
-                    { label: 'Sujos',      n: data?.roomStats?.dirty ?? 0,       color: '#D97706' },
-                    { label: 'Manut.',     n: data?.roomStats?.maintenance ?? 0, color: '#DC2626' },
+                    { label: 'Livres',    n: data?.roomStats?.clean ?? 0,       color: '#22A06B' },
+                    { label: 'Ocupados',  n: data?.roomStats?.occupied ?? 0,    color: '#1565C0' },
+                    { label: 'Sujos',     n: data?.roomStats?.dirty ?? 0,       color: '#D97706' },
+                    { label: 'Manut.',    n: data?.roomStats?.maintenance ?? 0, color: '#DC2626' },
                   ].map(l => (
                     <View key={l.label} style={dS.legendItem}>
                       <View style={[dS.legendDot, { backgroundColor: l.color }]} />
@@ -215,34 +335,141 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
 
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
-              <TouchableOpacity style={dS.receptionBtn} onPress={onOpenReception}>
+              <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
                 <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
+                onPress={() => setShowHousekeeping(true)}
+              >
+                <Icon name="star" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>
+                  Housekeeping
+                  {(() => {
+                    const n = (data?.rooms || []).filter(r =>
+                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE'
+                    ).length;
+                    return n > 0 ? ` · ${n} pendente${n !== 1 ? 's' : ''}` : '';
+                  })()}
+                </Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#1565C0' }]}
+                onPress={() => setShowRooms(true)}
+              >
+                <Icon name="hotel" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>
+                  Quartos{data?.rooms?.length > 0 ? ` · ${data.rooms.length} total` : ''}
+                </Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#D32323' }]}
+                onPress={() => setShowMap(true)}
+              >
+                <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
             </View>
 
-            {/* ── Room Rack ── */}
-            <Text style={dS.sectionTitle}>Quartos</Text>
-            {data?.rooms?.length === 0 || !data ? (
-              <View style={dS.empty}>
-                <Text style={dS.emptyText}>Sem quartos configurados.{'\n'}Adiciona quartos em "Editar Tipos de Quarto".</Text>
-              </View>
-            ) : (
-              Object.entries(roomsByFloor).map(([floor, rooms]) => (
-                <View key={floor}>
-                  <Text style={dS.floorLabel}>{floor}</Text>
-                  <View style={dS.roomGrid}>
-                    {rooms.map(r => <RoomCard key={r.id} room={r} />)}
+            {/* ── Room Calendar (vista semanal) ── */}
+            {(() => {
+              const today7 = Array.from({ length: 7 }, (_, i) => {
+                const d = new Date(); d.setDate(d.getDate() + i);
+                return { date: d, label: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}` };
+              });
+              const rooms7 = data?.rooms || [];
+              if (rooms7.length === 0) return null;
+              return (
+                <>
+                  <Text style={dS.sectionTitle}>Calendário — 7 dias</Text>
+                  <View style={dS.calendarWrap}>
+                    {/* Header dias */}
+                    <View style={dS.calHeaderRow}>
+                      <View style={dS.calRoomCol}><Text style={dS.calHeaderText}>Quarto</Text></View>
+                      {today7.map((d, i) => (
+                        <View key={i} style={[dS.calDayCol, i === 0 && dS.calDayColToday]}>
+                          <Text style={[dS.calHeaderText, i === 0 && { color: '#D32323' }]}>{d.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {/* Linhas por quarto */}
+                    {rooms7.map(room => (
+                      <View key={room.id} style={dS.calRow}>
+                        <View style={dS.calRoomCol}>
+                          <Text style={dS.calRoomNum} numberOfLines={1}>Nº {room.number}</Text>
+                          <Text style={dS.calRoomType} numberOfLines={1}>{room.typeName}</Text>
+                        </View>
+                        {today7.map((d, i) => {
+                          // Verificar se o quarto tem hóspede neste dia
+                          const hasGuest = room.guest && (() => {
+                            const co = room.checkOut ? new Date(room.checkOut) : null;
+                            return co ? d.date <= co : room.status === 'CLEAN' && !!room.guest;
+                          })();
+                          const isDirty = !hasGuest && (room.status === 'DIRTY' || room.status === 'CLEANING');
+                          const isMaint = room.status === 'MAINTENANCE';
+                          return (
+                            <View key={i} style={[
+                              dS.calDayCol,
+                              i === 0 && dS.calDayColToday,
+                              hasGuest && dS.calCellOccupied,
+                              isDirty  && dS.calCellDirty,
+                              isMaint  && dS.calCellMaint,
+                            ]}>
+                              {hasGuest && i === 0 && (
+                                <Text style={dS.calCellText} numberOfLines={1}>
+                                  {room.guest?.split(' ')[0]}
+                                </Text>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ))}
                   </View>
-                </View>
-              ))
-            )}
+                </>
+              );
+            })()}
 
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
       </View>
+      {showReception && (
+        <ReceptionScreen
+          businessId={businessId}
+          accessToken={accessToken}
+          roomTypes={[]}
+          onClose={() => { setShowReception(false); load(true); }}
+        />
+      )}
+      {showHousekeeping && (
+        <HousekeepingScreen
+          businessId={businessId}
+          accessToken={accessToken}
+          onClose={() => { setShowHousekeeping(false); load(true); }}
+        />
+      )}
+      {showMap && (
+        <ReservationMapModal
+          businessId={businessId}
+          accessToken={accessToken}
+          onClose={() => setShowMap(false)}
+        />
+      )}
+      {showRooms && (
+        <RoomRackModal
+          rooms={data?.rooms || []}
+          onMarkClean={handleMarkClean}
+          onMarkMaintenance={handleMarkMaintenance}
+          actionLoading={actionLoading}
+          onClose={() => setShowRooms(false)}
+        />
+      )}
     </Modal>
   );
 }
@@ -286,9 +513,7 @@ const dS = StyleSheet.create({
   revenueValue: { fontSize: 20, fontWeight: '800', color: '#166534', letterSpacing: -0.5, marginTop: 2 },
   revenueSub:   { fontSize: 11, color: '#16a34a' },
 
-  // Botão Receção
-  receptionBtn:     { backgroundColor: '#22A06B', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  receptionBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fff' },
+
 
   // Room rack
   floorLabel:   { fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 6, marginTop: 4 },
@@ -302,6 +527,51 @@ const dS = StyleSheet.create({
   roomGuest:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   roomGuestText:{ fontSize: 11, color: '#444', flex: 1 },
   roomCheckOut: { fontSize: 10, color: '#D97706' },
+
+  // PMS Buttons
+  pmsButtons:       { gap: 8 },
+  receptionBtn:     { backgroundColor: '#22A06B', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  receptionBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // Housekeeping inline
+  hkList:       { backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden', marginBottom: 4,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  hkRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
+                  borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+  hkDot:        { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  hkRoomNum:    { fontSize: 13, fontWeight: '700', color: '#111' },
+  hkStatus:     { fontSize: 11, color: '#888', marginTop: 1 },
+  hkTaskCount:  { fontSize: 11, color: '#D97706', fontWeight: '600', marginRight: 4 },
+  hkBtn:        { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
+                  backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#86EFAC' },
+  hkBtnMaint:   { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+  hkBtnText:    { fontSize: 12, fontWeight: '700', color: '#16A34A' },
+
+  // Room card extras
+  taskDot:      { minWidth: 16, height: 16, borderRadius: 8, backgroundColor: '#DC2626',
+                  alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  taskDotText:  { fontSize: 9, fontWeight: '700', color: '#fff' },
+  markCleanBtn: { marginTop: 8, paddingVertical: 6, borderRadius: 6,
+                  backgroundColor: '#F0FDF4', alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC' },
+  markCleanBtnText: { fontSize: 11, fontWeight: '700', color: '#16A34A' },
+
+  // Room Calendar
+  calendarWrap:    { backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden',
+                     borderWidth: 1, borderColor: '#EBEBEB', marginBottom: 4 },
+  calHeaderRow:    { flexDirection: 'row', backgroundColor: '#F7F7F8',
+                     borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  calRow:          { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  calRoomCol:      { width: 64, paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center' },
+  calDayCol:       { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center',
+                     borderLeftWidth: 1, borderLeftColor: '#F0F0F0' },
+  calDayColToday:  { backgroundColor: '#FFF9F9' },
+  calHeaderText:   { fontSize: 9, fontWeight: '700', color: '#888', textAlign: 'center' },
+  calRoomNum:      { fontSize: 10, fontWeight: '700', color: '#111' },
+  calRoomType:     { fontSize: 9, color: '#888', marginTop: 1 },
+  calCellOccupied: { backgroundColor: '#DBEAFE' },
+  calCellDirty:    { backgroundColor: '#FEF9C3' },
+  calCellMaint:    { backgroundColor: '#FEE2E2' },
+  calCellText:     { fontSize: 8, color: '#1D4ED8', fontWeight: '600', paddingHorizontal: 2, textAlign: 'center' },
 
   // Empty
   empty:        { alignItems: 'center', padding: 24 },
