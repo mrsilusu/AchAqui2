@@ -75,40 +75,52 @@ export class HtFolioService {
   // ─── Listar folio completo ────────────────────────────────────────────────
   async getFolio(bookingId: string, ownerId: string) {
     const booking = await this.assertOwner(bookingId, ownerId);
-    const nights = Math.max(1, Math.round(
+    // ── Separar itens por grupo ──────────────────────────────────────────────
+    const earlyItems    = booking.folio.filter(i => i.type === 'EARLY_CHECKIN' && !i.removedAt);
+    const extraItems    = booking.folio.filter(i =>
+      i.type !== 'ACCOMMODATION' && i.type !== 'EARLY_CHECKIN' && i.amount > 0 && !i.removedAt
+    );
+    const discountItems = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+
+    // Calcular noites do alojamento BASE:
+    // Se houve early check-in, as noites antecipadas já estão em earlyItems.
+    // O alojamento base usa apenas as noites ORIGINAIS (antes do early check-in).
+    // As noites early = soma das quantidades dos earlyItems
+    const earlyNights  = earlyItems.reduce((s, i) => s + (i.quantity ?? 0), 0);
+    const totalNights  = Math.max(1, Math.round(
       (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
     ));
+    // Noites de alojamento = total - early (para evitar dupla cobrança)
+    const nights       = Math.max(1, totalNights - earlyNights);
 
-    // Separar extras (minibar, room service, etc.) dos itens de alojamento já no folio
-    const existingAccomItems = booking.folio.filter(i => i.type === 'ACCOMMODATION' && i.amount > 0 && !i.removedAt);
-    const extraItems         = booking.folio.filter(i => i.type !== 'ACCOMMODATION' && !i.removedAt);
-    const discountItems      = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+    const ppn           = booking.roomType?.pricePerNight ?? 0;
+    const baseAccomPrice = ppn * nights * (booking.rooms ?? 1);
 
-    // Valor base de alojamento: pricePerNight × nights (guardado como totalPrice na reserva)
-    // Os extras são cobrados adicionalmente
-    const baseAccomPrice = booking.roomType
-      ? (booking.roomType.pricePerNight ?? 0) * nights * (booking.rooms ?? 1)
-      : (booking.totalPrice ?? 0);
-
-    const extrasTotal = extraItems.reduce((s, i) => s + i.amount, 0);
-    const discountsTotal = discountItems.reduce((s, i) => s + i.amount, 0); // negativo
-
-    // Item virtual de alojamento (sempre mostrado, independente do estado do folio)
+    // Item virtual de alojamento -- grupo ACCOMMODATION
     const accomDisplayItem = {
       id:          '__accommodation__',
       type:        'ACCOMMODATION' as const,
-      description: `Alojamento · ${nights} noite${nights !== 1 ? 's' : ''} · Quarto ${booking.room?.number ?? '—'}`,
+      description: `Alojamento · ${nights} noite${nights !== 1 ? 's' : ''}${earlyNights > 0 ? ` (+ ${earlyNights} antecipada${earlyNights !== 1 ? 's' : ''})` : ''} · Quarto ${booking.room?.number ?? '—'}`,
       quantity:    nights,
-      unitPrice:   baseAccomPrice / Math.max(nights, 1),
+      unitPrice:   ppn * (booking.rooms ?? 1),
       amount:      baseAccomPrice,
       addedAt:     booking.startDate,
       removedAt:   null,
     };
 
-    const displayItems = [accomDisplayItem, ...extraItems, ...discountItems];
-    const totalPrice   = baseAccomPrice + extrasTotal + discountsTotal;
-    const subtotal     = totalPrice;
-    const paid         = booking.depositPaid ?? 0;
+    const earlyTotal    = earlyItems.reduce((s, i)   => s + i.amount, 0);
+    const extrasTotal   = extraItems.reduce((s, i)   => s + i.amount, 0);
+    const discountsTotal= discountItems.reduce((s, i) => s + i.amount, 0); // negativo
+    const totalPrice    = baseAccomPrice + earlyTotal + extrasTotal + discountsTotal;
+    const paid          = booking.depositPaid ?? 0;
+
+    // Ordenação: alojamento → early check-in → extras → descontos
+    const displayItems  = [
+      accomDisplayItem,
+      ...earlyItems,
+      ...extraItems,
+      ...discountItems,
+    ];
 
     return {
       booking: {
@@ -124,12 +136,16 @@ export class HtFolioService {
         depositPaid:   paid,
         balance:       Math.max(0, totalPrice - paid),
       },
-      items:   displayItems.filter(i => !i.removedAt),
+      items:   displayItems,
       summary: {
-        subtotal,
+        accomTotal:   baseAccomPrice,
+        earlyTotal,
+        extrasTotal,
+        discountsTotal,
+        subtotal:     totalPrice,
         totalPrice,
-        depositPaid: paid,
-        balance:     Math.max(0, totalPrice - paid),
+        depositPaid:  paid,
+        balance:      Math.max(0, totalPrice - paid),
       },
     };
   }

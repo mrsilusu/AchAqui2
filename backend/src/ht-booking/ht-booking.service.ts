@@ -420,6 +420,10 @@ export class HtBookingService {
     if (booking.status !== HtBookingStatus.CHECKED_IN) {
       throw new BadRequestException('Só é possível alterar o quarto em estadias activas (CHECKED_IN).');
     }
+    // [6] Não pode mover para o mesmo quarto onde já está hospedado
+    if (booking.roomId && booking.roomId === newRoomId) {
+      throw new BadRequestException('O hóspede já está hospedado neste quarto. Escolha um quarto diferente.');
+    }
     const newRoom = await this.prisma.htRoom.findFirst({
       where: { id: newRoomId, businessId: booking.businessId },
     });
@@ -439,7 +443,9 @@ export class HtBookingService {
         select: { guestName: true },
       });
       if (collision) {
-        throw new ConflictException(
+        // [5] BadRequestException em vez de ConflictException:
+        // a UI apanha no catch e mostra Alert.alert com a mensagem
+        throw new BadRequestException(
           `Quarto Nº ${newRoom.number} já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
           `Faça o checkout desse hóspede primeiro ou escolha outro quarto.`
         );

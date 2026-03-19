@@ -506,22 +506,36 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
               )}
             </View>
 
-            {/* ── Lista de itens ── */}
-            <View style={fS.folioCard}>
-              <Text style={fS.sectionTitle}>Consumos</Text>
-              {data?.items?.length === 0 ? (
-                <Text style={fS.emptyText}>Sem consumos adicionais lançados.</Text>
-              ) : (
-                data?.items?.map(item => (
-                  <FolioRow
-                    key={item.id}
-                    item={item}
-                    onRemove={handleRemove}
-                    canEdit={canEdit}
-                  />
-                ))
-              )}
-            </View>
+            {/* ── Itens agrupados ── */}
+            {(() => {
+              const accom   = data?.items?.filter(i => i.type === 'ACCOMMODATION') || [];
+              const early   = data?.items?.filter(i => i.type === 'EARLY_CHECKIN') || [];
+              const extras  = data?.items?.filter(i => i.type !== 'ACCOMMODATION' && i.type !== 'EARLY_CHECKIN' && i.amount > 0) || [];
+              const discounts = data?.items?.filter(i => i.amount < 0) || [];
+              const renderGroup = (title, items, editable) => items.length === 0 ? null : (
+                <View style={fS.folioCard} key={title}>
+                  <Text style={fS.sectionTitle}>{title}</Text>
+                  {items.map(item => (
+                    <FolioRow key={item.id} item={item}
+                      onRemove={handleRemove} canEdit={editable} />
+                  ))}
+                </View>
+              );
+              return (
+                <>
+                  {renderGroup('Alojamento', accom, false)}
+                  {renderGroup('Check-In Antecipado', early, false)}
+                  {renderGroup('Consumos', extras, canEdit)}
+                  {renderGroup('Descontos', discounts, canEdit)}
+                  {extras.length === 0 && early.length === 0 && accom.length > 0 && (
+                    <View style={fS.folioCard}>
+                      <Text style={fS.sectionTitle}>Consumos</Text>
+                      <Text style={fS.emptyText}>Sem consumos adicionais lançados.</Text>
+                    </View>
+                  )}
+                </>
+              );
+            })()}
 
             {/* ── Totais ── */}
             <View style={fS.summaryCard}>
