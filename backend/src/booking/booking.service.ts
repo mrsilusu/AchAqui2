@@ -264,17 +264,26 @@ export class BookingService {
 
       // [ATOMIC] count + create na mesma transação — sem window de race condition
       booking = await this.prisma.$transaction(async (tx) => {
-        // Regra 2: re-contar overlaps DENTRO da transação (snapshot isolado)
-        const overlapping = await tx.htRoomBooking.count({
+        // [ATOMIC] Somar booking.rooms (não contar bookings) para ter o total de quartos ocupados.
+        // Uma reserva rooms=2 ocupa 2 quartos físicos — contar como 1 seria overbooking.
+        const overlapBookings = await tx.htRoomBooking.findMany({
           where: {
             roomTypeId: dto.roomTypeId,
             status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
             startDate: { lt: endDate },
             endDate:   { gt: startDate },
           },
+          select: { rooms: true },
         });
-        if (overlapping >= physicalRooms) {
-          throw new BadRequestException('Não há quartos disponíveis para as datas seleccionadas.');
+        const occupiedRooms = overlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
+        const requestedRooms = dto.rooms ?? 1;
+        if (occupiedRooms + requestedRooms > physicalRooms) {
+          const available = Math.max(0, physicalRooms - occupiedRooms);
+          throw new BadRequestException(
+            available === 0
+              ? 'Sem quartos disponíveis para as datas seleccionadas.'
+              : `Apenas ${available} quarto${available !== 1 ? 's' : ''} disponível${available !== 1 ? 'is' : ''} para essas datas.`
+          );
         }
         return tx.htRoomBooking.create({
           data: roomBookingData,

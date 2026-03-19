@@ -62,9 +62,19 @@ function ExtendStayModal({ visible, booking, onConfirm, onClose }) {
 // ─── Modal: Alterar quarto ─────────────────────────────────────────────────────
 function ChangeRoomModal({ visible, booking, rooms, onConfirm, onClose }) {
   if (!booking) return null;
-  const available = (rooms || []).filter(r =>
-    r.status === 'CLEAN' && r.roomType?.id === booking.roomTypeId && r.id !== booking.roomId
-  );
+  // Normalizar campo guest (backend devolve bookings[0].guestName)
+  const normaliseRoom = r => ({
+    ...r,
+    guest: r.guest
+      || r.bookings?.[0]?.guestName
+      || (r.bookings?.[0]?.status === 'CHECKED_IN' ? 'Hóspede' : null),
+  });
+  const sameType = (rooms || [])
+    .filter(r => r.roomType?.id === booking.roomTypeId && r.id !== booking.roomId)
+    .map(normaliseRoom);
+  const cleanRooms    = sameType.filter(r => r.status === 'CLEAN' && !r.guest);
+  const occupiedRooms = sameType.filter(r => r.guest);
+  const otherRooms    = sameType.filter(r => r.status === 'DIRTY' || r.status === 'MAINTENANCE');
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -76,28 +86,56 @@ function ChangeRoomModal({ visible, booking, rooms, onConfirm, onClose }) {
               <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
-          {available.length === 0 ? (
+          {sameType.length === 0 ? (
             <View style={rpS.empty}>
-              <Text style={rpS.emptyText}>Sem quartos limpos disponíveis do mesmo tipo.</Text>
+              <Text style={rpS.emptyText}>Sem outros quartos do mesmo tipo.</Text>
             </View>
           ) : (
-            <>
-              <Text style={rpS.sub}>Selecciona o novo quarto:</Text>
-              <ScrollView style={{ maxHeight: 300 }}>
-                {available.map(r => (
-                  <TouchableOpacity key={r.id} style={rpS.roomRow} onPress={() => onConfirm(r.id)}>
-                    <View style={rpS.roomInfo}>
-                      <Text style={rpS.roomNum}>Nº {r.number}</Text>
-                      {r.floor != null && <Text style={rpS.roomFloor}>Piso {r.floor}</Text>}
-                    </View>
-                    <View style={rpS.roomBadge}>
-                      <View style={rpS.cleanDot} />
-                      <Text style={rpS.cleanLabel}>Livre</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {/* Quartos livres */}
+              {cleanRooms.map(r => (
+                <TouchableOpacity key={r.id} style={rpS.roomRow} onPress={() => onConfirm(r.id, rooms)}>
+                  <View style={rpS.roomInfo}>
+                    <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                    {r.floor != null && <Text style={rpS.roomFloor}>Piso {r.floor}</Text>}
+                  </View>
+                  <View style={rpS.roomBadge}>
+                    <View style={rpS.cleanDot} />
+                    <Text style={rpS.cleanLabel}>Livre</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {/* Quartos ocupados -- com aviso */}
+              {occupiedRooms.map(r => (
+                <TouchableOpacity key={r.id}
+                  style={[rpS.roomRow, { backgroundColor: '#FFF7ED', borderLeftWidth: 3, borderLeftColor: '#F59E0B' }]}
+                  onPress={() => onConfirm(r.id, rooms)}>
+                  <View style={rpS.roomInfo}>
+                    <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                    <Text style={[rpS.roomFloor, { color: '#D97706' }]}>
+                      {r.guest ? `Ocupado · ${r.guest}` : 'Ocupado'}
+                    </Text>
+                  </View>
+                  <View style={[rpS.roomBadge, { backgroundColor: '#FEF3C7' }]}>
+                    <Text style={[rpS.cleanLabel, { color: '#D97706' }]}>⚠️ Em uso</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {/* Quartos indisponíveis -- apenas informativos */}
+              {otherRooms.map(r => (
+                <View key={r.id} style={[rpS.roomRow, { opacity: 0.45 }]}>
+                  <View style={rpS.roomInfo}>
+                    <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                    {r.floor != null && <Text style={rpS.roomFloor}>Piso {r.floor}</Text>}
+                  </View>
+                  <View style={[rpS.roomBadge, { backgroundColor: '#F3F4F6' }]}>
+                    <Text style={[rpS.cleanLabel, { color: '#9CA3AF' }]}>
+                      {r.status === 'DIRTY' ? 'A limpar' : 'Manutenção'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
           )}
         </View>
       </View>
@@ -842,10 +880,9 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       return;
     }
 
-    // Check-in: mostrar picker de quarto
+    // Check-in: passar pelo doCheckIn para verificar early check-in primeiro
     if (action === 'checkin') {
-      const bk = bookingObj || [...(data.arrivals || [])].find(b => b.id === bookingId);
-      setRoomPicker({ bookingId, roomTypeId: bk?.roomTypeId || null });
+      doCheckIn(bookingId);
       return;
     }
     // Perfil de hóspede
@@ -896,8 +933,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
   }, [accessToken, businessId, load, data]);
 
   // Executar check-in com roomId opcional (vazio = auto-assign no backend)
-  const doCheckIn = useCallback(async (bookingId, roomId = null, assignType = 'definitivo', note = null) => {
-    setRoomPicker(null);
+  // Executa o check-in efectivo apos confirmacao
+  const executeCheckIn = useCallback(async (bookingId, roomId, assignType, note) => {
     setActionLoading(bookingId);
     try {
       const payload = roomId ? { roomId, assignType, note } : {};
@@ -906,15 +943,15 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       if (result?.earlyCheckIn?.daysEarly > 0) {
         const { daysEarly, fee } = result.earlyCheckIn;
         const feeMsg = fee > 0
-          ? `\n\nTaxa lan\xc3\xa7ada no folio: ${Math.round(fee).toLocaleString()} Kz`
+          ? `\n\nTaxa de ${Math.round(fee).toLocaleString()} Kz lançada no folio.`
           : '\n\nSem taxa adicional.';
         Alert.alert(
-          '\u23f0 Check-In Antecipado',
-          `Check-in ${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista.${feeMsg}`,
+          '\u23f0 Check-In Antecipado Efectuado',
+          `Check-in realizado ${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista.${feeMsg}`,
           [{ text: 'OK' }]
         );
       } else if (assignType === 'temporario' && roomId) {
-        Alert.alert('Check-In Tempor\xc3\xa1rio', `Quarto atribu\xc3\xaddo temporariamente.${note ? '\n' + note : ''}`);
+        Alert.alert('Check-In Temporário', 'Quarto atribuído temporariamente.');
       }
     } catch (e) {
       Alert.alert('Erro no Check-In', e?.message || 'Operação falhou. Tenta novamente.');
@@ -922,6 +959,52 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       if (alive.current) setActionLoading(null);
     }
   }, [accessToken, load]);
+
+  // Ponto de entrada do check-in:
+  // - Se early (chegada antes da data prevista): pede confirmacao com custo estimado
+  //   e abre o RoomPickerModal para seleccao manual de quarto disponivel
+  // - Se normal: abre o RoomPickerModal directamente
+  const doCheckIn = useCallback((bookingId, roomId = null, assignType = 'definitivo', note = null) => {
+    // Se ja temos roomId (chamado pelo RoomPickerModal) -- executar directamente
+    if (roomId !== null) {
+      executeCheckIn(bookingId, roomId, assignType, note);
+      return;
+    }
+    // Calcular se e early check-in usando dados locais
+    const bk = [...(data.arrivals || []), ...(data.guests || [])].find(b => b.id === bookingId);
+    const todayMid  = new Date(); todayMid.setHours(0, 0, 0, 0);
+    const bkStart   = bk?.startDate ? new Date(bk.startDate) : null;
+    if (bkStart) bkStart.setHours(0, 0, 0, 0);
+    const daysEarly = bkStart ? Math.round((bkStart.getTime() - todayMid.getTime()) / 86400000) : 0;
+
+    if (daysEarly > 0) {
+      // Early check-in: calcular taxa estimada e pedir confirmacao
+      const bkNights = bk?.startDate && bk?.endDate
+        ? Math.max(1, Math.round((new Date(bk.endDate) - new Date(bk.startDate)) / 86400000))
+        : 1;
+      const ppn    = bk?.totalPrice ? bk.totalPrice / bkNights : null;
+      const estFee = ppn ? Math.round(ppn * daysEarly) : null;
+      const feeStr = estFee
+        ? `Taxa estimada: ${estFee.toLocaleString()} Kz (${daysEarly} diária${daysEarly !== 1 ? 's' : ''} adiantada${daysEarly !== 1 ? 's' : ''})`
+        : 'O custo das diárias adiantadas será lançado automaticamente no folio.';
+      Alert.alert(
+        '\u23f0 Check-In Antecipado',
+        `O hóspede chega ${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista (${new Date(bk.startDate).toLocaleDateString('pt-PT')}).\n\n${feeStr}\n\nDeseja continuar?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Escolher Quarto',
+            onPress: () => {
+              // Abre o RoomPicker para seleccao manual do quarto disponivel
+              setRoomPicker({ bookingId, roomTypeId: bk?.roomTypeId || null });
+            }
+          },
+        ]
+      );
+      return;
+    }
+    // Check-in normal: abrir RoomPicker
+    setRoomPicker({ bookingId, roomTypeId: bk?.roomTypeId || null });
+  }, [data, executeCheckIn]);
 
   const doExtend = useCallback(async (bookingId, newEndDate) => {
     setExtendModal(null);
@@ -937,8 +1020,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
     }
   }, [accessToken, load]);
 
-  const doChangeRoom = useCallback(async (bookingId, newRoomId) => {
-    setChangeModal(null);
+  const executeChangeRoom = useCallback(async (bookingId, newRoomId) => {
     setActionLoading(bookingId);
     try {
       await backendApi.htChangeRoom(bookingId, newRoomId, accessToken);
@@ -950,6 +1032,30 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       if (alive.current) setActionLoading(null);
     }
   }, [accessToken, load]);
+
+  const doChangeRoom = useCallback((bookingId, newRoomId, roomsData) => {
+    setChangeModal(null);
+    // Verificar se o quarto destino já tem hóspede (colisão)
+    // Os roomsData vêm do dashboard e incluem o guest activo
+    const targetRoom = (roomsData || data._rooms || []).find(r => r.id === newRoomId);
+    if (targetRoom?.guest) {
+      Alert.alert(
+        '⚠️ Quarto Ocupado',
+        `O quarto Nº ${targetRoom.number} tem um hóspede: ${targetRoom.guest}.
+
+Para mover o hóspede para este quarto, o hóspede actual deve fazer checkout primeiro.
+
+Deseja continuar mesmo assim (quarto em uso)?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Continuar', style: 'destructive',
+            onPress: () => executeChangeRoom(bookingId, newRoomId) },
+        ]
+      );
+      return;
+    }
+    executeChangeRoom(bookingId, newRoomId);
+  }, [data, executeChangeRoom]);
 
   const list = data[tab] || [];
   const today = new Date();
@@ -1070,7 +1176,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
           rooms={physicalRooms}
           roomTypeId={roomPicker.roomTypeId}
           onSelect={(roomId, assignType, note) => doCheckIn(roomPicker.bookingId, roomId, assignType, note)}
-          onSkip={() => doCheckIn(roomPicker.bookingId, null)}
+          onSkip={() => executeCheckIn(roomPicker.bookingId, null, 'definitivo', null)}
           onClose={() => setRoomPicker(null)}
         />
       )}
@@ -1104,7 +1210,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
         visible={!!changeModal}
         booking={changeModal}
         rooms={physicalRooms}
-        onConfirm={(newRoomId) => doChangeRoom(changeModal.id, newRoomId)}
+        onConfirm={(newRoomId, roomsData) => doChangeRoom(changeModal.id, newRoomId, roomsData)}
         onClose={() => setChangeModal(null)}
       />
     </Modal>

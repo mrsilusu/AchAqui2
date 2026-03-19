@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -298,20 +299,36 @@ export class HtBookingService {
     });
   }
 
-  // SAÍDAS — próximos 7 dias com status CHECKED_IN.
+  // SAÍDAS — duas listas combinadas:
+  //   1. Checkouts pendentes: CHECKED_IN com endDate hoje ou nos próx. 7 dias
+  //   2. Checkouts recentes:  CHECKED_OUT nos últimos 7 dias
   async getTodayDepartures(businessId: string, ownerId: string) {
     const now   = new Date();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
-    const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
-    return this.prisma.htRoomBooking.findMany({
-      where: {
-        businessId,
-        endDate: { gte: start, lte: end7 },
-        status: HtBookingStatus.CHECKED_IN,
-      },
-      select: BOOKING_SELECT,
-      orderBy: { endDate: 'asc' },
-    });
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const next7 = new Date(now); next7.setDate(next7.getDate() + 7); next7.setHours(23, 59, 59, 999);
+    const past7 = new Date(now); past7.setDate(past7.getDate() - 7); past7.setHours(0, 0, 0, 0);
+
+    const [pending, recent] = await Promise.all([
+      // Hóspedes ainda dentro que devem sair nos próximos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_IN,
+                 endDate: { gte: today, lte: next7 } },
+        select: BOOKING_SELECT,
+        orderBy: { endDate: 'asc' },
+      }),
+      // Checkouts já efectuados nos últimos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_OUT,
+                 checkedOutAt: { gte: past7 } },
+        select: BOOKING_SELECT,
+        orderBy: { checkedOutAt: 'desc' },
+      }),
+    ]);
+
+    return [
+      ...pending,
+      ...recent.map(b => ({ ...b, _recentCheckout: true })),
+    ];
   }
 
   // HÓSPEDES ACTUAIS — todos com status CHECKED_IN.
@@ -415,6 +432,18 @@ export class HtBookingService {
     }
     const previousRoomId = booking.roomId;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Verificar colisão DENTRO da transação -- outro CHECKED_IN no quarto destino
+      const collision = await tx.htRoomBooking.findFirst({
+        where: { id: { not: bookingId }, roomId: newRoomId,
+                 status: HtBookingStatus.CHECKED_IN },
+        select: { guestName: true },
+      });
+      if (collision) {
+        throw new ConflictException(
+          `Quarto Nº ${newRoom.number} já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+          `Faça o checkout desse hóspede primeiro ou escolha outro quarto.`
+        );
+      }
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data:  { roomId: newRoomId, version: { increment: 1 } },
