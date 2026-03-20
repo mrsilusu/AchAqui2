@@ -640,12 +640,43 @@ export function BusinessDetailModal({
           )}
           {business.description && <Text style={s.description}>{business.description}</Text>}
 
-          {/* Mapa placeholder */}
-          {business.address && (
-            <View style={s.mapPlaceholder}>
-              <Text style={s.mapPlaceholderText}>Mini mapa</Text>
-            </View>
-          )}
+          {/* Mini mapa -- Google Static Maps (sem dependências extra) */}
+          {(business.latitude || business.longitude) && (() => {
+            const lat = business.latitude || -8.8368;
+            const lng = business.longitude || 13.2343;
+            const mapsUrl   = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[s.mapPlaceholder, { overflow: 'hidden', padding: 0 }]}
+                onPress={() => Linking.openURL(mapsUrl).catch(() => {})}
+              >
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: '#E8F0FE' }}>
+                  {/* Grid de fundo estilo mapa */}
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.3 }}>
+                    {[0,1,2,3,4].map(i => (
+                      <View key={i} style={{ position: 'absolute', left: 0, right: 0,
+                        top: `${i * 25}%`, height: 1, backgroundColor: '#9CA3AF' }} />
+                    ))}
+                    {[0,1,2,3,4].map(i => (
+                      <View key={i} style={{ position: 'absolute', top: 0, bottom: 0,
+                        left: `${i * 25}%`, width: 1, backgroundColor: '#9CA3AF' }} />
+                    ))}
+                  </View>
+                  <Icon name="mapPin" size={36} color={COLORS.red} strokeWidth={2} />
+                  <Text style={{ fontSize: 12, color: '#1F2937', fontWeight: '700', marginTop: 8,
+                    textAlign: 'center', paddingHorizontal: 16 }}>
+                    {business.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#1565C0', marginTop: 6, fontWeight: '600' }}>
+                    Toca para abrir no Google Maps ↗
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })()}
 
           {/* Morada */}
           {business.address && (
@@ -654,8 +685,16 @@ export function BusinessDetailModal({
                 <Text style={s.addressMain}>{business.address}</Text>
                 {business.neighborhood && <Text style={s.addressSub}>{business.neighborhood}</Text>}
               </View>
-              <TouchableOpacity style={s.directionsBtn} onPress={() => Alert.alert('Direções', 'Em breve...')}>
-                <Text style={s.directionsBtnText}>Direcoes →</Text>
+              <TouchableOpacity style={s.directionsBtn} onPress={() => {
+                const lat = business.latitude || -8.8368;
+                const lng = business.longitude || 13.2343;
+                const addr = encodeURIComponent(business.address || '');
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${addr}`;
+                Linking.openURL(url).catch(() =>
+                  Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`)
+                );
+              }}>
+                <Text style={s.directionsBtnText}>Direções →</Text>
               </TouchableOpacity>
             </View>
           )}

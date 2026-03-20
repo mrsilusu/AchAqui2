@@ -43,7 +43,7 @@
 
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView,
+  View, Text, TouchableOpacity, ScrollView, RefreshControl,
   Image, ImageBackground, TextInput,
   StyleSheet, Dimensions, Keyboard, Alert,
 } from 'react-native';
@@ -216,6 +216,8 @@ export function HomeModule({
 
   // Dados extra
   bookmarkedIds = [],       onToggleBookmark = () => {},
+  onRefresh = null,
+  refreshing = false,
   notifications = [],
 
   // Localização
@@ -411,6 +413,16 @@ export function HomeModule({
       style={hS.scroll}
       contentContainerStyle={hS.scrollContent}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.red}
+            colors={[COLORS.red]}
+          />
+        ) : undefined
+      }
     >
       {/* Carousel patrocinado */}
       {SPONSORED.length > 0 && (

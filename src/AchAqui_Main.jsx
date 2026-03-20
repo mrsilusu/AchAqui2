@@ -193,6 +193,8 @@ function normalizeBusiness(rawBusiness) {
     isPremium: base.isPremium || meta.isPremium || false,
     verifiedBadge: true,
     isVerified: true,
+    isPublic: true,
+    isOpen: rawBusiness.isOpen ?? base.isOpen ?? true,
     modules: base.modules || meta.modules || (() => {
       const cat = (rawBusiness.category || meta.category || '').toLowerCase();
       const pid = base.primaryCategoryId || meta.primaryCategoryId || '';
@@ -210,7 +212,8 @@ function normalizeBusiness(rawBusiness) {
         ...(!isHotel && !isFood && !isBeauty && !isHealth && { professional: true }),
       };
     })(),
-    address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
+    description: typeof rawBusiness.description === 'string' ? rawBusiness.description : (typeof (rawBusiness.metadata||{}).description === 'string' ? rawBusiness.metadata.description : (rawBusiness.metadata?.about || '')),
+    address: base.address || rawBusiness.metadata?.address || rawBusiness.metadata?.full_address || rawBusiness.metadata?.street || 'Endereço não informado',
     neighborhood: base.neighborhood || meta.neighborhood || '',
     phone: base.phone || meta.phone || '',
     website: base.website || meta.website || '',
@@ -408,6 +411,20 @@ function AppContent() {
     }
   }, [authSession.accessToken, authSession.isOwner, liveSync]);
 
+  const handleHomeRefresh = useCallback(async () => {
+    setHomeRefreshing(true);
+    try {
+      const response = await backendApi.getBusinesses();
+      const fromApi = (Array.isArray(response) ? response : [])
+        .map(normalizeBusiness).filter(Boolean);
+      const apiIds = new Set(fromApi.map(b => b.id));
+      const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
+      setBusinesses([...fromApi, ...mocksNotInApi]);
+      filters.refreshShuffle?.();
+    } catch { /* manter lista actual */ }
+    finally { setHomeRefreshing(false); }
+  }, [filters]);
+
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
@@ -474,6 +491,7 @@ function AppContent() {
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
   const filters = useBusinessFilters(businesses, isBusinessMode);
+  const [homeRefreshing, setHomeRefreshing] = useState(false);
   const meta    = useMetaAnimation({ showDetail });
   const layer   = useOperationalLayer(); // Nível 2 — módulos operacionais
 
@@ -766,6 +784,8 @@ function AppContent() {
               authUser={authSession.accessToken ? authSession.user : null}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
+              onRefresh={handleHomeRefresh}
+              refreshing={homeRefreshing}
             />
           )}
 

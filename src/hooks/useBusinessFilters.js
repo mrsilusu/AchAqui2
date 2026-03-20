@@ -51,7 +51,7 @@ export function useBusinessFilters(businesses, isBusinessMode) {
   const [recentSearches, setRecentSearches]     = useState([]);
 
   // ── Quick filter pills ─────────────────────────────────────────────────────
-  const [activeFilter, setActiveFilter]         = useState('open');
+  const [activeFilter, setActiveFilter]         = useState('all');
 
   // ── Sort & Category ────────────────────────────────────────────────────────
   const [sortBy, setSortBy]                     = useState('recommended');

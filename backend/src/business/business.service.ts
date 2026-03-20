@@ -72,20 +72,22 @@ export class BusinessService {
     );
   }
 
-  findAll() {
+  findAll(limit = 60) {
     return this.prisma.business.findMany({
-      where: { isActive: true },
-      include: {
-        owner: {
-          select: { id: true, name: true },
-        },
+      where:   { isActive: true },
+      take:    limit,
+      orderBy: { id: 'asc' },
+      select: {
+        id: true, name: true, category: true, description: true,
+        latitude: true, longitude: true, municipality: true,
+        isActive: true, isClaimed: true, googlePlaceId: true,
+        metadata: true,
+        owner:       { select: { id: true, name: true } },
         htRoomTypes: {
-          where: { rooms: { some: {} } },
+          where:  { rooms: { some: {} } },
           select: {
-            id: true, name: true, description: true,
-            pricePerNight: true, maxGuests: true,
-            totalRooms: true, available: true,
-            amenities: true, photos: true,
+            id: true, name: true, pricePerNight: true,
+            maxGuests: true, amenities: true, photos: true,
             _count: { select: { rooms: true } },
           },
         },
