@@ -124,15 +124,37 @@ export class HtBookingService {
       if (autoRoom) resolvedRoomId = autoRoom.id;
     }
 
+    const realArrival = new Date();
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedBooking = await tx.htRoomBooking.update({
+      // [Fix 2] Verificar colisão: outro hóspede CHECKED_IN no mesmo quarto
+      if (resolvedRoomId) {
+        const collision = await tx.htRoomBooking.findFirst({
+          where: {
+            id:      { not: bookingId },
+            roomId:  resolvedRoomId,
+            status:  HtBookingStatus.CHECKED_IN,
+          },
+          select: { guestName: true },
+        });
+        if (collision) {
+          throw new BadRequestException(
+            `Quarto já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+            `Escolha outro quarto ou faça o checkout do hóspede actual.`
+          );
+        }
+      }
+
+      return tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
           status:      HtBookingStatus.CHECKED_IN,
-          checkedInAt: new Date(),
+          checkedInAt: realArrival,
           roomId:      resolvedRoomId,
           guestName:   dto.guestName  ?? booking.guestName,
           guestPhone:  dto.guestPhone ?? booking.guestPhone,
+          // [Fix 1] Early check-in: startDate passa a ser o dia real de entrada
+          ...(daysEarly > 0 && { startDate: realArrival }),
           version:     { increment: 1 },
         },
         include: {
@@ -142,12 +164,6 @@ export class HtBookingService {
           business: { select: { id: true, name: true } },
         },
       });
-      // Marcar o quarto físico como OCCUPIED (via CLEAN com booking activo)
-      // O status mantém-se CLEAN -- a ocupação é inferida pelas reservas CHECKED_IN no dashboard.
-      // Nada a fazer aqui para o status do room -- o dashboard já faz:
-      // occupied = rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0)
-      // O que importa é que resolvedRoomId esteja na reserva para o join funcionar.
-      return updatedBooking;
     });
 
     // Se houve early check-in, adicionar taxa ao folio
@@ -420,10 +436,6 @@ export class HtBookingService {
     if (booking.status !== HtBookingStatus.CHECKED_IN) {
       throw new BadRequestException('Só é possível alterar o quarto em estadias activas (CHECKED_IN).');
     }
-    // [6] Não pode mover para o mesmo quarto onde já está hospedado
-    if (booking.roomId && booking.roomId === newRoomId) {
-      throw new BadRequestException('O hóspede já está hospedado neste quarto. Escolha um quarto diferente.');
-    }
     const newRoom = await this.prisma.htRoom.findFirst({
       where: { id: newRoomId, businessId: booking.businessId },
     });
@@ -443,9 +455,7 @@ export class HtBookingService {
         select: { guestName: true },
       });
       if (collision) {
-        // [5] BadRequestException em vez de ConflictException:
-        // a UI apanha no catch e mostra Alert.alert com a mensagem
-        throw new BadRequestException(
+        throw new ConflictException(
           `Quarto Nº ${newRoom.number} já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
           `Faça o checkout desse hóspede primeiro ou escolha outro quarto.`
         );

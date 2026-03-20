@@ -46,6 +46,25 @@ export class HtRoomsService {
       const exists = await this.prisma.htRoom.findFirst({ where: { businessId: room.business.id, number: dto.number } });
       if (exists) throw new BadRequestException(`Quarto nº ${dto.number} já existe.`);
     }
+    // Se está a marcar como CLEAN, completar todas as tasks pendentes deste quarto
+    if (dto.status === 'CLEAN') {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.htHousekeepingTask.updateMany({
+          where: { roomId: id, completedAt: null },
+          data:  { completedAt: new Date() },
+        });
+        return tx.htRoom.update({
+          where: { id },
+          data: {
+            ...(dto.number !== undefined && { number: dto.number }),
+            ...(dto.floor  !== undefined && { floor:  dto.floor }),
+            ...(dto.notes  !== undefined && { notes:  dto.notes }),
+            status: 'CLEAN' as any,
+          },
+          include: { roomType: { select: { id: true, name: true } } },
+        });
+      });
+    }
     return this.prisma.htRoom.update({
       where: { id },
       data: {

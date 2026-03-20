@@ -72,6 +72,15 @@ export class AdminController {
     return this.adminService.importFromGooglePlaces(body.query, body.location, apiKey);
   }
 
+  @Post('import/outscraper')
+  importFromOutscraper(
+    @Body() body: { query: string; limit?: number; coordinates?: string; language?: string; region?: string },
+  ) {
+    const apiKey = this.configService.get<string>('OUTSCRAPER_API_KEY');
+    if (!apiKey) throw new Error('OUTSCRAPER_API_KEY nao configurada no .env do backend.');
+    return this.adminService.importFromOutscraper(body.query, body.limit ?? 100, apiKey, body.coordinates, body.language ?? 'pt', body.region ?? 'ao');
+  }
+
   // ─── Users ─────────────────────────────────────────────────────────────────
 
   @Get('users')

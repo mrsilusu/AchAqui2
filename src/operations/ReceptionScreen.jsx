@@ -814,292 +814,11 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   );
 }
 
-// ─── Modal: Nova Reserva ─────────────────────────────────────────────────────
-function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated }) {
-  const [step,       setStep]       = useState(1);
-  const [roomTypes,  setRoomTypes]  = useState([]);
-  const [rtLoading,  setRtLoading]  = useState(false);
-  const [roomTypeId, setRoomTypeId] = useState('');
-  const [startDate,  setStartDate]  = useState('');
-  const [endDate,    setEndDate]    = useState('');
-  const [guestName,  setGuestName]  = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
-  const [adults,     setAdults]     = useState('1');
-  const [notes,      setNotes]      = useState('');
-  const [loading,    setLoading]    = useState(false);
-  const [calField,   setCalField]   = useState(null);
-
-  // Carregar tipos de quarto com pricePerNight ao abrir
-  React.useEffect(() => {
-    if (!visible || !businessId) return;
-    setRtLoading(true);
-    backendApi.getRoomsByBusiness(businessId, accessToken)
-      .then(data => {
-        const types = Array.isArray(data) ? data : [];
-        setRoomTypes(types);
-        if (types.length > 0 && !roomTypeId) setRoomTypeId(types[0].id);
-      })
-      .catch(() => {})
-      .finally(() => setRtLoading(false));
-  }, [visible, businessId]);
-
-  const selType = roomTypes.find(rt => rt.id === roomTypeId);
-  const ppn     = selType?.pricePerNight ?? 0;
-
-  const nightsCount = React.useMemo(() => {
-    if (!startDate || !endDate) return 0;
-    const p = s => { const [d,m,y] = s.split('/').map(Number); return new Date(y,m-1,d); };
-    return Math.max(0, Math.round((p(endDate) - p(startDate)) / 86400000));
-  }, [startDate, endDate]);
-
-  const toIso = s => {
-    if (!s) return '';
-    const [d,m,y] = s.split('/').map(Number);
-    return new Date(y,m-1,d,12,0,0).toISOString();
-  };
-  const today    = new Date();
-  const todayFmt = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
-
-  const reset = () => {
-    setStep(1); setRoomTypeId(''); setStartDate(''); setEndDate('');
-    setGuestName(''); setGuestPhone(''); setAdults('1'); setNotes('');
-  };
-
-  const canNext = step === 1 ? !!roomTypeId
-                : step === 2 ? nightsCount > 0
-                : !!guestName.trim();
-
-  const handleNext = () => { if (step < 3) setStep(s => s+1); else handleCreate(); };
-
-  const handleCreate = async () => {
-    setLoading(true);
-    try {
-      await backendApi.createBooking({
-        businessId, bookingType: 'ROOM', roomTypeId,
-        startDate: toIso(startDate), endDate: toIso(endDate),
-        guestName: guestName.trim(),
-        guestPhone: guestPhone.trim() || undefined,
-        adults: parseInt(adults,10)||1, rooms: 1,
-        notes: notes.trim() || undefined,
-        status: 'CONFIRMED',
-      }, accessToken);
-      onCreated?.(); onClose(); reset();
-    } catch (e) {
-      Alert.alert('Erro ao criar reserva', e?.message || 'Operação falhou.');
-    } finally { setLoading(false); }
-  };
-
-  const Dot = ({ n }) => (
-    <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: step >= n ? '#1565C0' : '#E5E7EB' }}>
-      <Text style={{ fontSize: 11, fontWeight: '700', color: step >= n ? '#fff' : '#999' }}>{n}</Text>
-    </View>
-  );
-  const Bar = ({ active }) => (
-    <View style={{ width: 24, height: 2, backgroundColor: active ? '#1565C0' : '#E5E7EB' }} />
-  );
-
-  return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet"
-      onRequestClose={() => { onClose(); reset(); }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-
-          {/* Header */}
-          <View style={[rS.header, { justifyContent: 'space-between' }]}>
-            <TouchableOpacity style={rS.iconBtn} onPress={() => {
-              if (step > 1) setStep(s => s-1); else { onClose(); reset(); }
-            }}>
-              <Icon name={step > 1 ? 'back' : 'x'} size={20} color={COLORS.darkText} strokeWidth={2.5} />
-            </TouchableOpacity>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={rS.headerTitle}>Nova Reserva</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                <Dot n={1} /><Bar active={step >= 2} /><Dot n={2} /><Bar active={step >= 3} /><Dot n={3} />
-              </View>
-            </View>
-            <TouchableOpacity
-              style={{ backgroundColor: canNext ? '#1565C0' : '#E5E7EB', borderRadius: 8,
-                paddingHorizontal: 14, paddingVertical: 8, minWidth: 72, alignItems: 'center' }}
-              onPress={handleNext} disabled={!canNext || loading}>
-              {loading ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={{ color: canNext ? '#fff' : '#aaa', fontWeight: '700', fontSize: 13 }}>
-                    {step < 3 ? 'Seguinte' : 'Criar'}
-                  </Text>}
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-
-            {/* Passo 1: Tipo de Quarto */}
-            {step === 1 && (
-              <>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 16 }}>
-                  Seleccione o tipo de quarto
-                </Text>
-                {rtLoading ? (
-                  <ActivityIndicator size="large" color={COLORS.blue} style={{ marginTop: 40 }} />
-                ) : roomTypes.length === 0 ? (
-                  <View style={{ alignItems: 'center', padding: 40 }}>
-                    <Text style={{ color: '#888', fontSize: 14 }}>Sem tipos de quarto configurados.</Text>
-                  </View>
-                ) : roomTypes.map(rt => (
-                  <TouchableOpacity key={rt.id}
-                    style={{ borderWidth: 2, borderRadius: 12, padding: 16, marginBottom: 10,
-                      borderColor: roomTypeId === rt.id ? '#1565C0' : '#E5E7EB',
-                      backgroundColor: roomTypeId === rt.id ? '#EFF6FF' : '#fff' }}
-                    onPress={() => setRoomTypeId(rt.id)}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#111' }}>{rt.name}</Text>
-                      {roomTypeId === rt.id && (
-                        <View style={{ backgroundColor: '#1565C0', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Seleccionado</Text>
-                        </View>
-                      )}
-                    </View>
-                    {rt.pricePerNight > 0 && (
-                      <Text style={{ fontSize: 14, color: '#1565C0', fontWeight: '600', marginTop: 6 }}>
-                        {Math.round(rt.pricePerNight).toLocaleString()} Kz / noite
-                      </Text>
-                    )}
-                    {rt.description ? (
-                      <Text style={{ fontSize: 12, color: '#888', marginTop: 4 }} numberOfLines={2}>
-                        {rt.description}
-                      </Text>
-                    ) : null}
-                    {rt.physicalRoomsCount != null && (
-                      <Text style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
-                        {rt.physicalRoomsCount} quarto{rt.physicalRoomsCount !== 1 ? 's' : ''} disponíveis
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </>
-            )}
-
-            {/* Passo 2: Datas */}
-            {step === 2 && (
-              <>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4 }}>
-                  Seleccione as datas
-                </Text>
-                {selType && (
-                  <Text style={{ fontSize: 13, color: '#1565C0', fontWeight: '600', marginBottom: 16 }}>
-                    {selType.name}{ppn > 0 ? ` · ${Math.round(ppn).toLocaleString()} Kz/noite` : ''}
-                  </Text>
-                )}
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={nbS.label}>Entrada *</Text>
-                    <TouchableOpacity style={nbS.dateBtn}
-                      onPress={() => setCalField(calField === 'start' ? null : 'start')}>
-                      <Icon name="calendar" size={14} color={COLORS.blue} strokeWidth={2} />
-                      <Text style={[nbS.dateTxt, !startDate && { color: '#bbb' }]}>
-                        {startDate || 'DD/MM/AAAA'}
-                      </Text>
-                    </TouchableOpacity>
-                    <CalendarPickerSimple value={startDate} minDate={todayFmt}
-                      isOpen={calField === 'start'}
-                      onToggle={() => setCalField(calField==='start'?null:'start')}
-                      onChange={v => { setStartDate(v); setCalField(null); }} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={nbS.label}>Saída *</Text>
-                    <TouchableOpacity style={nbS.dateBtn}
-                      onPress={() => setCalField(calField === 'end' ? null : 'end')}>
-                      <Icon name="calendar" size={14} color={COLORS.blue} strokeWidth={2} />
-                      <Text style={[nbS.dateTxt, !endDate && { color: '#bbb' }]}>
-                        {endDate || 'DD/MM/AAAA'}
-                      </Text>
-                    </TouchableOpacity>
-                    <CalendarPickerSimple value={endDate} minDate={startDate||todayFmt}
-                      isOpen={calField === 'end'}
-                      onToggle={() => setCalField(calField==='end'?null:'end')}
-                      onChange={v => { setEndDate(v); setCalField(null); }} />
-                  </View>
-                </View>
-                {nightsCount > 0 && (
-                  <View style={{ backgroundColor: '#EFF6FF', borderRadius: 10, padding: 14, marginTop: 16 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1565C0', textAlign: 'center' }}>
-                      {nightsCount} noite{nightsCount!==1?'s':''}
-                    </Text>
-                    {ppn > 0 && (
-                      <Text style={{ fontSize: 22, fontWeight: '800', color: '#1565C0', textAlign: 'center', marginTop: 4 }}>
-                        {Math.round(ppn * nightsCount).toLocaleString()} Kz
-                      </Text>
-                    )}
-                    <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 4 }}>
-                      Estimativa (sem consumos adicionais)
-                    </Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* Passo 3: Hóspede */}
-            {step === 3 && (
-              <>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 16 }}>
-                  Dados do hóspede
-                </Text>
-                <Text style={nbS.label}>Nome Completo *</Text>
-                <TextInput style={nbS.input} value={guestName} onChangeText={setGuestName}
-                  placeholder="Nome do hóspede" placeholderTextColor="#bbb" autoCorrect={false} autoFocus />
-                <Text style={nbS.label}>Telefone</Text>
-                <TextInput style={nbS.input} value={guestPhone} onChangeText={setGuestPhone}
-                  placeholder="9XXXXXXXX" placeholderTextColor="#bbb" keyboardType="phone-pad" />
-                <Text style={nbS.label}>Adultos</Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {['1','2','3','4'].map(n => (
-                    <TouchableOpacity key={n}
-                      style={{ width: 52, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: adults===n ? '#1565C0' : '#F7F7F8',
-                        borderWidth: 1, borderColor: adults===n ? '#1565C0' : '#E5E7EB' }}
-                      onPress={() => setAdults(n)}>
-                      <Text style={{ fontWeight: '700', fontSize: 14, color: adults===n ? '#fff' : '#333' }}>{n}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={[nbS.label, { marginTop: 16 }]}>Notas</Text>
-                <TextInput style={[nbS.input, { height: 80, textAlignVertical: 'top', paddingTop: 10 }]}
-                  value={notes} onChangeText={setNotes}
-                  placeholder="Pedidos especiais..." placeholderTextColor="#bbb" multiline />
-                {selType && nightsCount > 0 && (
-                  <View style={{ backgroundColor: '#F7F7F8', borderRadius: 10, padding: 14, marginTop: 16 }}>
-                    <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 6 }}>RESUMO</Text>
-                    <Text style={{ fontSize: 13, color: '#111' }}>{selType.name}</Text>
-                    <Text style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                      {startDate} → {endDate} · {nightsCount} noite{nightsCount!==1?'s':''}
-                    </Text>
-                    {ppn > 0 && (
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#1565C0', marginTop: 6 }}>
-                        {Math.round(ppn*nightsCount).toLocaleString()} Kz
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </>
-            )}
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-const nbS = StyleSheet.create({
-  label:   { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 6, marginTop: 10 },
-  input:   { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 11,
-             fontSize: 14, color: '#111', backgroundColor: '#FAFAFA' },
-  dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1,
-             borderColor: '#E5E7EB', borderRadius: 8, padding: 11, backgroundColor: '#FAFAFA' },
-  dateTxt: { fontSize: 13, color: '#111', flex: 1 },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // [GHOST] alive ref limpa estado ao desmontar — padrão do OperationalLayerRenderer
 // ─────────────────────────────────────────────────────────────────────────────
-export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, pendingAction, onPendingActionConsumed }) {
+export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose }) {
   const [tab, setTab]                   = useState('arrivals');
   const [data, setData]                 = useState({ arrivals: [], departures: [], guests: [] });
   const [loading, setLoading]           = useState(true);
@@ -1112,7 +831,6 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const [extendModal, setExtendModal]     = useState(null);
   const [changeModal, setChangeModal]     = useState(null);
   const [guestModal, setGuestModal]       = useState(null); // booking
-  const [showNewBooking, setShowNewBooking] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -1145,17 +863,6 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   }, [businessId, accessToken]);
 
   useEffect(() => { load(); }, [load]);
-
-  const _paRef = React.useRef(null);
-  React.useEffect(() => {
-    if (pendingAction) { _paRef.current = pendingAction; onPendingActionConsumed?.(); }
-  }, [pendingAction]);
-  React.useEffect(() => {
-    if (!loading && _paRef.current) {
-      const pa = _paRef.current; _paRef.current = null;
-      setTimeout(() => handleAction(pa.bookingId, pa.action, pa.bk), 300);
-    }
-  }, [loading]);
 
   const handleAction = useCallback(async (bookingId, action, bookingObj = null) => {
     const labels = { checkin: 'Check-In', checkout: 'Check-Out', noshow: 'No-Show', confirm: 'Confirmar' };
@@ -1321,9 +1028,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       Alert.alert('Quarto Alterado', 'O hóspede foi movido para o novo quarto.');
     } catch (e) {
       const msg = e?.message || '';
-      // Mostrar mensagem de ocupado como aviso, não como erro técnico
-      if (msg.includes('ocupado') || msg.includes('CHECKED_IN') || msg.includes('mesmo quarto')) {
-        Alert.alert('Quarto Indisponível', msg);
+      if (msg.includes('já está hospedado') || msg.includes('já está ocupado') || msg.includes('checkout')) {
+        Alert.alert('Quarto Indisponível', msg, [{ text: 'OK' }]);
       } else {
         Alert.alert('Não foi possível alterar o quarto', msg || 'Tenta novamente.');
       }
@@ -1373,11 +1079,6 @@ Deseja continuar mesmo assim (quarto em uso)?`,
             <Text style={rS.headerTitle}>Receção</Text>
             <Text style={rS.headerSub}>{todayStr}</Text>
           </View>
-          <TouchableOpacity
-            style={[rS.iconBtn, { backgroundColor: '#EFF6FF', borderRadius: 8 }]}
-            onPress={() => setShowNewBooking(true)}>
-            <Icon name="plus" size={20} color={COLORS.blue} strokeWidth={2.5} />
-          </TouchableOpacity>
           <TouchableOpacity style={rS.iconBtn} onPress={() => load(true)}>
             <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
           </TouchableOpacity>
@@ -1464,13 +1165,6 @@ Deseja continuar mesmo assim (quarto em uso)?`,
           </ScrollView>
         )}
       </View>
-      <NewBookingModal
-        visible={showNewBooking}
-        businessId={businessId}
-        accessToken={accessToken}
-        onClose={() => setShowNewBooking(false)}
-        onCreated={() => load(true)}
-      />
       {folioBooking && (
         <FolioScreen
           booking={folioBooking}

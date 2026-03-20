@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Activi
 import { COLORS, Icon } from '../../core/AchAqui_Core';
 import { apiRequest } from '../../lib/backendApi';
 
-const STEPS = { CHOOSE: 'CHOOSE', PASTE: 'PASTE', PREVIEW: 'PREVIEW', LOADING: 'LOADING', RESULT: 'RESULT' };
+const STEPS = { CHOOSE: 'CHOOSE', PASTE: 'PASTE', PREVIEW: 'PREVIEW', LOADING: 'LOADING', RESULT: 'RESULT', API: 'API' };
 
 export function ImportModal({ visible, onClose, accessToken }) {
   const [step, setStep] = useState(STEPS.CHOOSE);
@@ -12,8 +12,11 @@ export function ImportModal({ visible, onClose, accessToken }) {
   const [preview, setPreview] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [apiQuery, setApiQuery]         = useState('');
+  const [apiLimit, setApiLimit]         = useState('100');
+  const [apiLoading, setApiLoading]     = useState(false);
 
-  function reset() { setStep(STEPS.CHOOSE); setFormat(null); setContent(''); setPreview([]); setResult(null); setError(''); }
+  function reset() { setStep(STEPS.CHOOSE); setFormat(null); setContent(''); setPreview([]); setResult(null); setError(''); setApiQuery(''); setApiLimit('100'); }
   function handleClose() { reset(); onClose(); }
 
   function handlePreview() {
@@ -40,6 +43,31 @@ export function ImportModal({ visible, onClose, accessToken }) {
     } catch { setError('Formato inválido.'); }
   }
 
+  async function handleApiImport() {
+    if (!apiQuery.trim()) return;
+    setApiLoading(true);
+    setError('');
+    try {
+      const data = await apiRequest('/admin/import/outscraper', {
+        method: 'POST',
+        body: {
+          query:       apiQuery.trim(),
+          limit:       parseInt(apiLimit, 10) || 100,
+          coordinates: '-8.8368,13.2343',
+          language:    'pt',
+          region:      'ao',
+        },
+        accessToken,
+      });
+      setResult(data);
+      setStep(STEPS.RESULT);
+    } catch (err) {
+      setError(err?.message || 'Erro na importação. Verifica a chave OUTSCRAPER_API_KEY no servidor.');
+    } finally {
+      setApiLoading(false);
+    }
+  }
+
   async function handleImport() {
     setStep(STEPS.LOADING);
     try {
@@ -60,11 +88,11 @@ export function ImportModal({ visible, onClose, accessToken }) {
   return (
     <View style={s.overlay}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => { if (step === STEPS.CHOOSE || step === STEPS.RESULT) handleClose(); else if (step === STEPS.PASTE) setStep(STEPS.CHOOSE); else if (step === STEPS.PREVIEW) setStep(STEPS.PASTE); }}>
+        <TouchableOpacity style={s.backBtn} onPress={() => { if (step === STEPS.CHOOSE || step === STEPS.RESULT) handleClose(); else if (step === STEPS.PASTE || step === STEPS.API) setStep(STEPS.CHOOSE); else if (step === STEPS.PREVIEW) setStep(STEPS.PASTE); }}>
           <Icon name={step === STEPS.CHOOSE || step === STEPS.RESULT ? 'x' : 'arrowLeft'} size={20} color={COLORS.darkText} strokeWidth={2} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>
-          {step === STEPS.CHOOSE && 'Importar negócios'}{step === STEPS.PASTE && `Colar ${format?.toUpperCase()}`}{step === STEPS.PREVIEW && 'Preview'}{step === STEPS.LOADING && 'A importar...'}{step === STEPS.RESULT && 'Relatório'}
+          {step === STEPS.CHOOSE && 'Importar negócios'}{step === STEPS.PASTE && `Colar ${format?.toUpperCase()}`}{step === STEPS.API && 'API Directa'}{step === STEPS.PREVIEW && 'Preview'}{step === STEPS.LOADING && 'A importar...'}{step === STEPS.RESULT && 'Relatório'}
         </Text>
         <View style={{ width: 36 }} />
       </View>
@@ -82,6 +110,14 @@ export function ImportModal({ visible, onClose, accessToken }) {
               <Text style={s.formatIcon}>{'{ }'}</Text>
               <View style={{ flex: 1 }}><Text style={s.formatTitle}>JSON</Text><Text style={s.formatSub}>Exporta do Outscraper como JSON e cola o conteúdo</Text></View>
               <Icon name="arrowRight" size={18} color={COLORS.red} strokeWidth={2} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.formatCard, { borderWidth: 2, borderColor: '#1565C0' }]} activeOpacity={0.7} onPress={() => setStep(STEPS.API)}>
+              <Text style={s.formatIcon}>🔌</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.formatTitle}>API Directa</Text>
+                <Text style={s.formatSub}>Pesquisa e importa directamente do Google Maps via Outscraper — sem exportar ficheiros</Text>
+              </View>
+              <Icon name="arrowRight" size={18} color='#1565C0' strokeWidth={2} />
             </TouchableOpacity>
             <View style={s.infoBox}><Text style={s.infoBoxText}>💡 O sistema detecta duplicados pelo Google Place ID. Negócios com dono recebem sugestão em vez de serem sobrescritos.</Text></View>
           </View>
@@ -113,6 +149,88 @@ export function ImportModal({ visible, onClose, accessToken }) {
                 <Icon name="upload" size={16} color={COLORS.white} strokeWidth={2} />
                 <Text style={s.primaryBtnText}>Importar tudo</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        {step === STEPS.API && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Importar via API</Text>
+            <Text style={s.sectionSub}>
+              Pesquisa negócios directamente no Google Maps e importa para a base de dados.
+              Coordenadas centradas em Luanda.
+            </Text>
+
+            {/* Queries rápidas */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.darkText, marginBottom: 8 }}>
+              Categorias rápidas:
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {['hoteis Luanda','restaurantes Luanda','saloes beleza Luanda',
+                'clinicas medicas Luanda','ginasios Luanda','farmacias Luanda',
+                'barbearias Luanda','cafes Luanda','supermercados Luanda',
+                'escolas Luanda'].map(q => (
+                <TouchableOpacity key={q}
+                  style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                    backgroundColor: apiQuery === q + ' Angola' ? '#1565C0' : '#EFF6FF',
+                    borderWidth: 1, borderColor: '#BFDBFE' }}
+                  onPress={() => setApiQuery(q + ' Angola')}>
+                  <Text style={{ fontSize: 12, fontWeight: '600',
+                    color: apiQuery === q + ' Angola' ? '#fff' : '#1565C0' }}>
+                    {q}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.grayText, marginBottom: 6 }}>
+              Pesquisa personalizada:
+            </Text>
+            <TextInput
+              style={[s.pasteArea, { minHeight: 50, paddingVertical: 12 }]}
+              placeholder="ex: pousadas Viana Angola"
+              placeholderTextColor={COLORS.grayText}
+              value={apiQuery}
+              onChangeText={setApiQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.grayText, marginBottom: 6 }}>
+              Limite de resultados:
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+              {['20','50','100','200','500'].map(n => (
+                <TouchableOpacity key={n}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center',
+                    backgroundColor: apiLimit === n ? '#1565C0' : '#F7F7F8',
+                    borderWidth: 1, borderColor: apiLimit === n ? '#1565C0' : '#E5E7EB' }}
+                  onPress={() => setApiLimit(n)}>
+                  <Text style={{ fontSize: 13, fontWeight: '700',
+                    color: apiLimit === n ? '#fff' : COLORS.darkText }}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {error ? <Text style={s.errorText}>{error}</Text> : null}
+
+            <TouchableOpacity
+              style={[s.primaryBtn, { backgroundColor: '#1565C0' },
+                (!apiQuery.trim() || apiLoading) && s.primaryBtnDisabled]}
+              onPress={handleApiImport}
+              disabled={!apiQuery.trim() || apiLoading}
+              activeOpacity={0.8}>
+              {apiLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <>
+                    <Icon name="upload" size={16} color="#fff" strokeWidth={2} />
+                    <Text style={s.primaryBtnText}>Importar agora</Text>
+                  </>}
+            </TouchableOpacity>
+
+            <View style={[s.infoBox, { marginTop: 14 }]}>
+              <Text style={s.infoBoxText}>
+                💡 Cada importação pode demorar 5-15 segundos. O Outscraper cobra por resultado — usa limites menores para testar.
+              </Text>
             </View>
           </View>
         )}

@@ -158,34 +158,50 @@ export class AdminService {
     };
   }
 
-  // ─── Google Places Import ─────────────────────────────────────────────────────
-
-  async importFromOutscraper(query: string, limit: number, apiKey: string, coordinates?: string, language = 'pt', region = 'ao') {
+  // ─── Outscraper API Import ────────────────────────────────────────────────────
+  async importFromOutscraper(
+    query: string,
+    limit: number,
+    apiKey: string,
+    coordinates?: string,
+    language = 'pt',
+    region   = 'ao',
+  ) {
     const params = new URLSearchParams({
       query,
       limit:    String(Math.min(limit, 500)),
       language,
       region,
-      async:    'false',  // síncrono -- espera pelos resultados antes de retornar
       ...(coordinates ? { coordinates } : {}),
-      fields: 'query,name,place_id,google_id,full_address,street,city,borough,postal_code,country,country_code,latitude,longitude,phone,site,email,rating,reviews,photo,logo,working_hours,working_hours_old_format,description,about,business_status,category,subtypes,type,located_in,verified',
+      fields: [
+        'query','name','place_id','google_id','full_address','street','city',
+        'borough','postal_code','country','country_code','latitude','longitude',
+        'phone','site','email','rating','reviews','photo','logo',
+        'working_hours','working_hours_old_format','description','about',
+        'business_status','category','subtypes','type','located_in','verified',
+      ].join(','),
     });
+
     const response = await fetch(
       `https://api.outscraper.cloud/google-maps-search?${params}`,
       { headers: { 'X-API-KEY': apiKey } },
     );
+
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       throw new BadRequestException(`Outscraper API erro ${response.status}: ${body.slice(0, 200)}`);
     }
+
     const json = await response.json();
-    if (json.status !== 'Success') {
-      throw new BadRequestException(`Outscraper retornou status "${json.status}". Tenta com um limite menor.`);
+    if (json.status !== 'Success' && json.status !== 'Pending') {
+      throw new BadRequestException(`Outscraper: status "${json.status}"`);
     }
+
     const rows: any[] = (json.data ?? []).flat();
-    if (rows.length === 0) throw new BadRequestException('Outscraper nao retornou resultados para esta pesquisa.');
     return this.importService.importRows(rows);
   }
+
+  // ─── Google Places Import ─────────────────────────────────────────────────────
 
   async importFromGooglePlaces(query: string, location: string, apiKey?: string) {
     if (!apiKey) {

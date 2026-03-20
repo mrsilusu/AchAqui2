@@ -454,6 +454,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         <HousekeepingScreen
           businessId={businessId}
           accessToken={accessToken}
+          onTaskCompleted={() => load(true)}
           onClose={() => { setShowHousekeeping(false); load(true); }}
         />
       )}
