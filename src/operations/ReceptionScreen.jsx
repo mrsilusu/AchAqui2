@@ -1031,8 +1031,6 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose })
       if (msg.includes('já está hospedado') || msg.includes('já está ocupado') || msg.includes('checkout')) {
         Alert.alert('Quarto Indisponível', msg, [{ text: 'OK' }]);
       } else {
-        Alert.alert('Não foi possível alterar o quarto', msg || 'Tenta novamente.');
-      }
     } finally {
       if (alive.current) setActionLoading(null);
     }

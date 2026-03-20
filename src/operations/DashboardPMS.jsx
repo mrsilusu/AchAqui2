@@ -173,7 +173,6 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   const [showRooms, setShowRooms]               = useState(false);
   const [showReception, setShowReception]       = useState(false);
   const [showMap, setShowMap]                   = useState(false);
-  const [pendingAction, setPendingAction]       = useState(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -444,9 +443,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         <ReceptionScreen
           businessId={businessId}
           accessToken={accessToken}
-          roomTypes={data?.roomTypes || []}
-          pendingAction={pendingAction}
-          onPendingActionConsumed={() => setPendingAction(null)}
+          roomTypes={[]}
           onClose={() => { setShowReception(false); load(true); }}
         />
       )}
@@ -463,10 +460,21 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           businessId={businessId}
           accessToken={accessToken}
           onClose={() => { setShowMap(false); load(true); }}
-          onBookingAction={(bookingId, action, bk) => {
-            setPendingAction({ bookingId, action, bk });
+          onBookingAction={async (bookingId, action, bk) => {
             setShowMap(false);
-            setShowReception(true);
+            // Executar a acção directamente via backendApi
+            const token = accessToken;
+            try {
+              if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
+              if (action === 'checkin')  await backendApi.htCheckIn(bookingId, {}, token);
+              if (action === 'checkout') await backendApi.htCheckOut(bookingId, token);
+              if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
+              if (action === 'cancel')   await backendApi.updateBooking(bookingId, { status: 'CANCELLED' }, token);
+              if (action === 'edit')     { setShowReception(true); return; }
+              load(true); // refresh do dashboard
+            } catch (e) {
+              Alert.alert('Erro', e?.message || 'Operação falhou.');
+            }
           }}
         />
       )}
