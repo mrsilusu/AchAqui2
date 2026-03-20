@@ -43,7 +43,7 @@
 
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, RefreshControl,
+  View, Text, TouchableOpacity, ScrollView, FlatList, RefreshControl,
   Image, ImageBackground, TextInput,
   StyleSheet, Dimensions, Keyboard, Alert,
 } from 'react-native';
@@ -408,22 +408,8 @@ export function HomeModule({
   );
 
   // ── RENDER HOME (scroll + lista) ──────────────────────────────────────────
-  const renderHome = () => (
-    <ScrollView
-      style={hS.scroll}
-      contentContainerStyle={hS.scrollContent}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.red}
-            colors={[COLORS.red]}
-          />
-        ) : undefined
-      }
-    >
+  const renderHomeHeader = () => (
+    <View>
       {/* Carousel patrocinado */}
       {SPONSORED.length > 0 && (
         <View style={hS.carouselSection}>
@@ -438,7 +424,11 @@ export function HomeModule({
           <ScrollView
             ref={carouselRef}
             horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            decelerationRate="fast" snapToInterval={SCREEN_WIDTH} snapToAlignment="start"
+            decelerationRate="fast"
+            snapToInterval={SCREEN_WIDTH} snapToAlignment="start"
+            disableIntervalMomentum={true}
+            nestedScrollEnabled={true}
+            scrollEventThrottle={16}
             contentContainerStyle={hS.carouselScroll}
             onMomentumScrollEnd={e => {
               const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -529,19 +519,53 @@ export function HomeModule({
         <Text style={hS.sectionCount}>({businesses.length} resultados)</Text>
       </View>
 
-      {/* Business list */}
-      {businesses.map(b => (
-        <BusinessListCell
-          key={b.id}
-          business={b}
-          bookmarked={bookmarkedIds.includes(b.id)}
-          isComparing={compareList.includes(b.id)}
-          onPress={onSelectBusiness}
-          onToggleBookmark={onToggleBookmark}
-          onToggleCompare={toggleCompare}
-        />
-      ))}
-    </ScrollView>
+    </View>
+  );
+
+  const renderHomeItem = ({ item: b }) => (
+    <BusinessListCell
+      business={b}
+      bookmarked={bookmarkedIds.includes(b.id)}
+      isComparing={compareList.includes(b.id)}
+      onPress={onSelectBusiness}
+      onToggleBookmark={onToggleBookmark}
+      onToggleCompare={toggleCompare}
+    />
+
+  );
+
+  const renderHome = () => (
+    <FlatList
+      style={hS.scroll}
+      contentContainerStyle={hS.scrollContent}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled={true}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.red}
+            colors={[COLORS.red]}
+          />
+        ) : undefined
+      }
+      data={businesses}
+      keyExtractor={b => b.id}
+      renderItem={renderHomeItem}
+      ListHeaderComponent={renderHomeHeader}
+      ListEmptyComponent={
+        <View style={{ alignItems: 'center', padding: 40 }}>
+          <Text style={{ color: COLORS.grayText, fontSize: 14 }}>
+            Sem negócios para mostrar.
+          </Text>
+        </View>
+      }
+      windowSize={5}
+      maxToRenderPerBatch={10}
+      initialNumToRender={8}
+      removeClippedSubviews={true}
+    />
   );
 
   // ── MAIN RENDER ───────────────────────────────────────────────────────────

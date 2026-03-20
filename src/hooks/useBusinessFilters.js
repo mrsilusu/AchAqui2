@@ -66,6 +66,7 @@ export function useBusinessFilters(businesses, isBusinessMode) {
   // ── Modal visibility ───────────────────────────────────────────────────────
   const [showSortModal, setShowSortModal]       = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [shuffleSeed, setShuffleSeed]           = useState(() => Math.random());
 
   // ── Compare list ────────────────────────────────────────────────────────────
   const [compareList, setCompareList]           = useState([]);
@@ -88,6 +89,18 @@ export function useBusinessFilters(businesses, isBusinessMode) {
   }, []);
 
   // ── Amenity helpers ────────────────────────────────────────────────────────
+  const seededShuffle = useCallback((arr, seed) => {
+    const a = [...arr]; let s = seed;
+    for (let i = a.length - 1; i > 0; i--) {
+      s = (s * 1664525 + 1013904223) & 0xffffffff;
+      const j = Math.abs(s) % (i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }, []);
+
+  const refreshShuffle = useCallback(() => setShuffleSeed(Math.random()), []);
+
   const toggleAmenity = useCallback((id) => {
     setSelectedAmenities(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
   }, []);
@@ -187,9 +200,14 @@ export function useBusinessFilters(businesses, isBusinessMode) {
           default:         return 0;
         }
       });
+    const hasFilters = !!(searchWhat.trim() || activeFilter !== 'all' || activeCategoryId ||
+      priceFilter !== 'all' || distanceFilter !== 'all' || selectedAmenities.length > 0 ||
+      sortBy !== 'recommended');
+    return hasFilters ? sorted : seededShuffle(sorted, Math.floor(shuffleSeed * 2147483647));
   }, [
     businesses, searchWhat, activeFilter, sortBy, activeCategoryId,
     priceFilter, distanceFilter, selectedAmenities, includeClosed, isBusinessMode,
+    shuffleSeed, seededShuffle,
   ]);
 
   return {
@@ -225,5 +243,6 @@ export function useBusinessFilters(businesses, isBusinessMode) {
 
     // Compare
     compareList,    toggleCompare,
+    refreshShuffle,
   };
 }

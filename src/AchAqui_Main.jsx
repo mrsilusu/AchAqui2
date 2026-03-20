@@ -193,8 +193,6 @@ function normalizeBusiness(rawBusiness) {
     isPremium: base.isPremium || meta.isPremium || false,
     verifiedBadge: true,
     isVerified: true,
-    isPublic: true,
-    isOpen: rawBusiness.isOpen ?? base.isOpen ?? true,
     modules: base.modules || meta.modules || (() => {
       const cat = (rawBusiness.category || meta.category || '').toLowerCase();
       const pid = base.primaryCategoryId || meta.primaryCategoryId || '';
@@ -212,8 +210,8 @@ function normalizeBusiness(rawBusiness) {
         ...(!isHotel && !isFood && !isBeauty && !isHealth && { professional: true }),
       };
     })(),
-    description: typeof rawBusiness.description === 'string' ? rawBusiness.description : (typeof (rawBusiness.metadata||{}).description === 'string' ? rawBusiness.metadata.description : (rawBusiness.metadata?.about || '')),
-    address: base.address || rawBusiness.metadata?.address || rawBusiness.metadata?.full_address || rawBusiness.metadata?.street || 'Endereço não informado',
+    description: typeof rawBusiness.description === 'string' ? rawBusiness.description : (meta.description || meta.about || ''),
+    address: base.address || meta.address || meta.full_address || meta.street || 'Endereço não informado',
     neighborhood: base.neighborhood || meta.neighborhood || '',
     phone: base.phone || meta.phone || '',
     website: base.website || meta.website || '',
@@ -418,10 +416,9 @@ function AppContent() {
       const fromApi = (Array.isArray(response) ? response : [])
         .map(normalizeBusiness).filter(Boolean);
       const apiIds = new Set(fromApi.map(b => b.id));
-      const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
-      setBusinesses([...fromApi, ...mocksNotInApi]);
+      setBusinesses([...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]);
       filters.refreshShuffle?.();
-    } catch { /* manter lista actual */ }
+    } catch {}
     finally { setHomeRefreshing(false); }
   }, [filters]);
 
