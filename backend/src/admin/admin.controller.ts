@@ -64,7 +64,15 @@ export class AdminController {
     );
   }
 
-  // ─── Google Places Import ──────────────────────────────────────────────────
+  @Patch('businesses/:id/metadata')
+  updateBusinessMetadata(
+    @Param('id') id: string,
+    @Body() body: { metadata: Record<string, unknown> },
+  ) {
+    return this.adminService.updateBusinessMetadata(id, body.metadata);
+  }
+
+  // ─── Imports ───────────────────────────────────────────────────────────────
 
   @Post('import/google-places')
   importFromGooglePlaces(@Body() body: { query: string; location: string }) {
@@ -77,8 +85,15 @@ export class AdminController {
     @Body() body: { query: string; limit?: number; coordinates?: string; language?: string; region?: string },
   ) {
     const apiKey = this.configService.get<string>('OUTSCRAPER_API_KEY');
-    if (!apiKey) throw new Error('OUTSCRAPER_API_KEY nao configurada no .env do backend.');
-    return this.adminService.importFromOutscraper(body.query, body.limit ?? 100, apiKey, body.coordinates, body.language ?? 'pt', body.region ?? 'ao');
+    if (!apiKey) throw new Error('OUTSCRAPER_API_KEY não configurada no .env do backend.');
+    return this.adminService.importFromOutscraper(
+      body.query,
+      body.limit ?? 100,
+      apiKey,
+      body.coordinates,
+      body.language ?? 'pt',
+      body.region   ?? 'ao',
+    );
   }
 
   // ─── Users ─────────────────────────────────────────────────────────────────

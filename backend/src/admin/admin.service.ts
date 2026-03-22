@@ -9,8 +9,15 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly importService: ImportService,
   ) {}
-
   // ─── Stats ───────────────────────────────────────────────────────────────────
+
+  async updateBusinessMetadata(id: string, metadata: Record<string, unknown>) {
+    return this.prisma.business.update({
+      where: { id },
+      data:  { metadata: metadata as any },
+      select: { id: true, name: true, category: true, metadata: true },
+    });
+  }
 
   async getStats() {
     const [
@@ -32,17 +39,12 @@ export class AdminService {
     ]);
 
     return {
-      users: {
-        total: totalUsers,
-      },
+      users: { total: totalUsers },
       businesses: {
         total: totalBusinesses,
         claimed: claimedBusinesses,
         unclaimed: totalBusinesses - claimedBusinesses,
-        claimedPercent:
-          totalBusinesses > 0
-            ? Math.round((claimedBusinesses / totalBusinesses) * 100)
-            : 0,
+        claimedPercent: totalBusinesses > 0 ? Math.round((claimedBusinesses / totalBusinesses) * 100) : 0,
         fromGoogle: googleBusinesses,
         manual: totalBusinesses - googleBusinesses,
       },
@@ -62,71 +64,41 @@ export class AdminService {
     if (status && ['PENDING', 'APPROVED', 'REJECTED'].includes(status.toUpperCase())) {
       where.status = status.toUpperCase() as ClaimStatus;
     }
-
     return this.prisma.claimRequest.findMany({
       where,
       include: {
-        business: {
-          select: { id: true, name: true, category: true, description: true },
-        },
-        user: {
-          select: { id: true, name: true, email: true },
-        },
+        business: { select: { id: true, name: true, category: true, description: true } },
+        user:     { select: { id: true, name: true, email: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async getPendingClaims() {
-    return this.getAllClaims('PENDING');
-  }
+  async getPendingClaims() { return this.getAllClaims('PENDING'); }
 
-  async reviewClaim(
-    claimId: string,
-    adminId: string,
-    decision: 'APPROVED' | 'REJECTED',
-    adminNote?: string,
-  ) {
+  async reviewClaim(claimId: string, adminId: string, decision: 'APPROVED' | 'REJECTED', adminNote?: string) {
     const claim = await this.prisma.claimRequest.findUnique({
       where: { id: claimId },
       include: { business: true },
     });
+    if (!claim) throw new NotFoundException('Pedido de claim não encontrado.');
+    if (claim.status !== ClaimStatus.PENDING) throw new BadRequestException('Este claim já foi revisto.');
 
-    if (!claim) {
-      throw new NotFoundException('Pedido de claim não encontrado.');
-    }
-
-    if (claim.status !== ClaimStatus.PENDING) {
-      throw new BadRequestException('Este claim já foi revisto.');
-    }
-
-    // Update claim
     const updatedClaim = await this.prisma.claimRequest.update({
       where: { id: claimId },
-      data: {
-        status: decision,
-        adminNote: adminNote ?? null,
-        reviewedBy: adminId,
-        reviewedAt: new Date(),
-      },
+      data: { status: decision, adminNote: adminNote ?? null, reviewedBy: adminId, reviewedAt: new Date() },
       include: {
         business: { select: { id: true, name: true } },
-        user: { select: { id: true, name: true, email: true } },
+        user:     { select: { id: true, name: true, email: true } },
       },
     });
 
-    // If approved → assign business ownership
     if (decision === 'APPROVED') {
       await this.prisma.business.update({
         where: { id: claim.businessId },
-        data: {
-          ownerId: claim.userId,
-          isClaimed: true,
-          claimedAt: new Date(),
-        },
+        data: { ownerId: claim.userId, isClaimed: true, claimedAt: new Date() },
       });
     }
-
     return updatedClaim;
   }
 
@@ -134,15 +106,10 @@ export class AdminService {
 
   async getAllBusinesses(page = 1, limit = 20, search?: string) {
     const skip = (page - 1) * limit;
-    const where: any = search
-      ? { name: { contains: search, mode: 'insensitive' } }
-      : {};
-
+    const where: any = search ? { name: { contains: search, mode: 'insensitive' } } : {};
     const [businesses, total] = await Promise.all([
       this.prisma.business.findMany({
-        where,
-        skip,
-        take: limit,
+        where, skip, take: limit,
         include: {
           owner: { select: { id: true, name: true, email: true } },
           _count: { select: { claimRequests: true } },
@@ -151,98 +118,95 @@ export class AdminService {
       }),
       this.prisma.business.count({ where }),
     ]);
-
-    return {
-      data: businesses,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+    return { data: businesses, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  // ─── Google Places Import ─────────────────────────────────────────────────────
+  // ─── Outscraper Import ────────────────────────────────────────────────────────
 
-  async importFromOutscraper(query: string, limit: number, apiKey: string, coordinates?: string, language = 'pt', region = 'ao') {
+  async importFromOutscraper(
+    query: string,
+    limit: number,
+    apiKey: string,
+    coordinates?: string,
+    language = 'pt',
+    region   = 'ao',
+  ) {
     const params = new URLSearchParams({
       query,
       limit:    String(Math.min(limit, 500)),
       language,
       region,
-      async:    'false',  // síncrono -- espera pelos resultados antes de retornar
       ...(coordinates ? { coordinates } : {}),
       fields: 'query,name,place_id,google_id,full_address,street,city,borough,postal_code,country,country_code,latitude,longitude,phone,site,email,rating,reviews,photo,logo,working_hours,working_hours_old_format,description,about,business_status,category,subtypes,type,located_in,verified',
     });
+
+    // Usar endpoint síncrono -- aguarda resultado imediato
     const response = await fetch(
-      `https://api.outscraper.cloud/google-maps-search?${params}`,
+      `https://api.outscraper.cloud/google-maps-search?${params}&async=false`,
       { headers: { 'X-API-KEY': apiKey } },
     );
+
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       throw new BadRequestException(`Outscraper API erro ${response.status}: ${body.slice(0, 200)}`);
     }
+
     const json = await response.json();
-    if (json.status !== 'Success') {
-      throw new BadRequestException(`Outscraper retornou status "${json.status}". Tenta com um limite menor.`);
+
+    // Se ainda estiver pendente (pedido grande), tentar buscar o resultado
+    if (json.status === 'Pending' && json.id) {
+      // Aguardar até 30 segundos pelo resultado
+      for (let i = 0; i < 6; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const poll = await fetch(
+          `https://api.outscraper.cloud/requests/${json.id}`,
+          { headers: { 'X-API-KEY': apiKey } },
+        );
+        const pollData = await poll.json();
+        if (pollData.status === 'Success') {
+          return this.importService.importRows((pollData.data ?? []).flat());
+        }
+      }
+      throw new BadRequestException('Outscraper: timeout — tenta com um limite menor (ex: 20).');
     }
-    const rows: any[] = (json.data ?? []).flat();
-    if (rows.length === 0) throw new BadRequestException('Outscraper nao retornou resultados para esta pesquisa.');
-    return this.importService.importRows(rows);
+
+    if (json.status !== 'Success') {
+      throw new BadRequestException(`Outscraper: status "${json.status}"`);
+    }
+
+    return this.importService.importRows((json.data ?? []).flat());
   }
 
+  // ─── Google Places Import ─────────────────────────────────────────────────────
+
   async importFromGooglePlaces(query: string, location: string, apiKey?: string) {
-    if (!apiKey) {
-      throw new BadRequestException(
-        'GOOGLE_PLACES_API_KEY não configurada. Adiciona ao .env do backend.',
-      );
-    }
+    if (!apiKey) throw new BadRequestException('GOOGLE_PLACES_API_KEY não configurada.');
 
     const endpoint = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query + ' ' + location)}&key=${apiKey}`;
-
     const response = await fetch(endpoint);
     const data = await response.json();
 
-    if (data.status !== 'OK') {
-      throw new BadRequestException(`Google Places API: ${data.status}`);
-    }
+    if (data.status !== 'OK') throw new BadRequestException(`Google Places API: ${data.status}`);
 
     const imported: any[] = [];
-    const skipped: any[] = [];
+    const skipped: any[]  = [];
 
     for (const place of data.results ?? []) {
-      const existing = await this.prisma.business.findUnique({
-        where: { googlePlaceId: place.place_id },
-      });
-
-      if (existing) {
-        skipped.push({ placeId: place.place_id, name: place.name });
-        continue;
-      }
+      const existing = await this.prisma.business.findUnique({ where: { googlePlaceId: place.place_id } });
+      if (existing) { skipped.push({ placeId: place.place_id, name: place.name }); continue; }
 
       const created = await this.prisma.business.create({
         data: {
-          name: place.name,
-          category: 'other',
-          description: place.formatted_address,
-          latitude: place.geometry.location.lat,
-          longitude: place.geometry.location.lng,
-          source: 'GOOGLE',
-          googlePlaceId: place.place_id,
-          isClaimed: false,
-          metadata: {
-            address: place.formatted_address,
-            rating: place.rating,
-            userRatingsTotal: place.user_ratings_total,
-            types: place.types,
-          },
+          name: place.name, category: 'other', description: place.formatted_address,
+          latitude: place.geometry.location.lat, longitude: place.geometry.location.lng,
+          source: 'GOOGLE', googlePlaceId: place.place_id, isClaimed: false,
+          metadata: { address: place.formatted_address, rating: place.rating,
+            userRatingsTotal: place.user_ratings_total, types: place.types },
         },
       });
-
       imported.push({ id: created.id, name: created.name });
     }
-
-    return {
-      imported: imported.length,
-      skipped: skipped.length,
-      businesses: imported,
-    };
+    return { imported: imported.length, skipped: skipped.length, businesses: imported };
   }
 
   // ─── User Management ─────────────────────────────────────────────────────────
@@ -251,38 +215,26 @@ export class AdminService {
     const skip = (page - 1) * limit;
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
-        skip,
-        take: limit,
+        skip, take: limit,
         select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          createdAt: true,
+          id: true, name: true, email: true, role: true, createdAt: true,
           _count: { select: { businesses: true, claimRequests: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.user.count(),
     ]);
-
-    return {
-      data: users,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+    return { data: users, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  // ─── Report Business (owner requests admin to add it) ────────────────────────
-
   async reportMissingBusiness(userId: string, note: string, businessName?: string) {
-    // Store as a notification for admin — we use the notifications table
     return this.prisma.notification.create({
       data: {
         userId,
-        title: '📍 Negócio em falta reportado',
+        title:   '📍 Negócio em falta reportado',
         message: `Um dono reportou um negócio em falta${businessName ? `: "${businessName}"` : ''}. Nota: ${note}`,
-        data: { type: 'MISSING_BUSINESS', reportedBy: userId, businessName, note },
-        isRead: false,
+        data:    { type: 'MISSING_BUSINESS', reportedBy: userId, businessName, note },
+        isRead:  false,
       },
     });
   }

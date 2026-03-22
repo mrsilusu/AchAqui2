@@ -89,6 +89,18 @@ export function useBusinessFilters(businesses, isBusinessMode) {
   }, []);
 
   // ── Amenity helpers ────────────────────────────────────────────────────────
+  const toggleAmenity = useCallback((id) => {
+    setSelectedAmenities(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setPriceFilter('all');
+    setDistanceFilter('all');
+    setSelectedAmenities([]);
+    setIncludeClosed(false);
+  }, []);
+
+  // ── Shuffle helpers ───────────────────────────────────────────────────────
   const seededShuffle = useCallback((arr, seed) => {
     const a = [...arr]; let s = seed;
     for (let i = a.length - 1; i > 0; i--) {
@@ -100,17 +112,6 @@ export function useBusinessFilters(businesses, isBusinessMode) {
   }, []);
 
   const refreshShuffle = useCallback(() => setShuffleSeed(Math.random()), []);
-
-  const toggleAmenity = useCallback((id) => {
-    setSelectedAmenities(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
-  }, []);
-
-  const clearAllFilters = useCallback(() => {
-    setPriceFilter('all');
-    setDistanceFilter('all');
-    setSelectedAmenities([]);
-    setIncludeClosed(false);
-  }, []);
 
   // ── Compare helpers ────────────────────────────────────────────────────────
   const toggleCompare = useCallback((id) => {
@@ -200,14 +201,9 @@ export function useBusinessFilters(businesses, isBusinessMode) {
           default:         return 0;
         }
       });
-    const hasFilters = !!(searchWhat.trim() || activeFilter !== 'all' || activeCategoryId ||
-      priceFilter !== 'all' || distanceFilter !== 'all' || selectedAmenities.length > 0 ||
-      sortBy !== 'recommended');
-    return hasFilters ? sorted : seededShuffle(sorted, Math.floor(shuffleSeed * 2147483647));
   }, [
     businesses, searchWhat, activeFilter, sortBy, activeCategoryId,
     priceFilter, distanceFilter, selectedAmenities, includeClosed, isBusinessMode,
-    shuffleSeed, seededShuffle,
   ]);
 
   return {

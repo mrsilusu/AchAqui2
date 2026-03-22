@@ -105,6 +105,85 @@ export class ImportService {
   }
 
   // ── Mapear linha Outscraper → dados do negócio ───────────────────────────────
+  private resolveCategory(category: string, subtypes?: string): {
+    primaryCategoryId: string; businessType: string; subCategoryIds: string[];
+  } {
+    const all = [category, ...(subtypes ? subtypes.split(',') : [])].map(s => s.trim().toLowerCase());
+    const has = (...terms: string[]) => terms.some(t => all.some(a => a.includes(t)));
+
+    // Hotéis & Alojamento
+    if (has('lodging','hotel','hostel','resort','pousada','motel','guest_house','extended_stay','boutique_hotel'))
+      return { primaryCategoryId:'hotelsTravel', businessType:'accommodation', subCategoryIds:['hotelsTravel','restaurants','food'] };
+
+    // Restaurantes
+    if (has('restaurant','meal_takeaway','meal_delivery','fast_food','pizza','seafood','steak_house','restaurante'))
+      return { primaryCategoryId:'restaurants', businessType:'food', subCategoryIds:['restaurants','food','delivery'] };
+
+    // Cafés & Pastelarias (antes de 'bar' para evitar conflito)
+    if (has('cafe','coffee_shop','tea_house','bakery','donut','dessert','ice_cream','pastelaria','padaria','cafetaria'))
+      return { primaryCategoryId:'coffee', businessType:'food', subCategoryIds:['coffee','food','restaurants'] };
+
+    // Bares & Nightlife
+    if (has('bar','night_club','cocktail_bar','pub','wine_bar','sports_bar','discoteca'))
+      return { primaryCategoryId:'bars', businessType:'food', subCategoryIds:['bars','nightlife','food'] };
+
+    // Spas & Massagens (antes de beautysalons)
+    if (has('spa','massage','wellness_center','day_spa'))
+      return { primaryCategoryId:'spas', businessType:'beauty', subCategoryIds:['spas','beautysalons','beauty','health'] };
+
+    // Salões de Beleza & Cabeleireiros
+    if (has('beauty_salon','hair_salon','hair_care','nail_salon','eyebrow','eyelash','barbearia','barber','cabeleireiro','salão de beleza'))
+      return { primaryCategoryId:'beautysalons', businessType:'beauty', subCategoryIds:['beautysalons','beauty','health'] };
+
+    // Saúde: Clínicas, Hospitais, Farmácias
+    if (has('pharmacy','drugstore','farmácia','farmacia'))
+      return { primaryCategoryId:'health', businessType:'health', subCategoryIds:['health','shopping'] };
+    if (has('hospital','doctor','clinic','dentist','physiotherapist','medical_lab','optician','policlínica','clínica'))
+      return { primaryCategoryId:'health', businessType:'health', subCategoryIds:['health'] };
+
+    // Fitness & Desporto
+    if (has('gym','fitness_center','sports_club','swimming','yoga','pilates','martial_arts','boxing','academia','ginásio','sala de fitness'))
+      return { primaryCategoryId:'active', businessType:'sports', subCategoryIds:['active','health'] };
+
+    // Educação
+    if (has('school','primary_school','secondary_school','university','language_school','tutoring','driving_school','escola','colégio','instituto','universidade'))
+      return { primaryCategoryId:'education', businessType:'education', subCategoryIds:['education'] };
+
+    // Compras & Supermercados
+    if (has('supermarket','grocery','convenience_store','shopping_mall','clothing','electronics','furniture','book_store','supermercado','mercado'))
+      return { primaryCategoryId:'shopping', businessType:'retail', subCategoryIds:['shopping','delivery'] };
+
+    // Serviços Financeiros
+    if (has('bank','atm','insurance','accounting','financial','money_transfer','banco','seguro','contabilidade'))
+      return { primaryCategoryId:'financial', businessType:'finance', subCategoryIds:['financial','professional'] };
+
+    // Automóveis
+    if (has('car_repair','car_dealer','car_wash','gas_station','tire','auto_parts','oil_change','oficina','mecânico','posto de gasolina'))
+      return { primaryCategoryId:'automotive', businessType:'automotive', subCategoryIds:['automotive'] };
+
+    // Serviços Domésticos
+    if (has('electrician','plumber','painter','carpenter','locksmith','pest_control','moving','laundry','dry_cleaning','eletricista','lavandaria'))
+      return { primaryCategoryId:'homeservices', businessType:'service', subCategoryIds:['homeservices','localservices'] };
+
+    // Eventos & Entretenimento
+    if (has('event_venue','wedding','catering','party_planner','photo_studio','espaço de eventos'))
+      return { primaryCategoryId:'eventplanning', businessType:'service', subCategoryIds:['eventplanning','arts'] };
+
+    // Animais
+    if (has('veterinary','pet_store','pet_grooming','dog_trainer','veterinário'))
+      return { primaryCategoryId:'pets', businessType:'service', subCategoryIds:['pets','health'] };
+
+    // Serviços Profissionais
+    if (has('lawyer','legal','notary','architect','engineer','photographer','marketing','advertising','consultant','it_company'))
+      return { primaryCategoryId:'professional', businessType:'professional', subCategoryIds:['professional','localservices'] };
+
+    // Delivery
+    if (has('delivery','courier','logistics','transport'))
+      return { primaryCategoryId:'delivery', businessType:'logistics', subCategoryIds:['delivery'] };
+
+    return { primaryCategoryId:'services', businessType:'professional', subCategoryIds:['services'] };
+  }
+
   private mapRow(row: OutscraperRow) {
     const lat = parseFloat(String(row.latitude ?? ''));
     const lng = parseFloat(String(row.longitude ?? ''));
@@ -116,9 +195,12 @@ export class ImportService {
     if (status === 'CLOSED_PERMANENTLY') return null;
 
     // Categoria — usa subtypes (mais específico) ou category
-    const category = row.subtypes
+    const rawCategory = row.subtypes
       ? String(row.subtypes).split(',')[0].trim()
       : String(row.category ?? 'other').trim();
+    const category = rawCategory;
+    const { primaryCategoryId, businessType, subCategoryIds } =
+      this.resolveCategory(rawCategory, row.subtypes ? String(row.subtypes) : undefined);
 
     const description = String(row.description || row.about || row.full_address || row.name).slice(0, 500);
 
@@ -143,6 +225,9 @@ export class ImportService {
     const reviewsCount = row.reviews ? parseInt(String(row.reviews))   : null;
 
     const metadata: Record<string, unknown> = {
+      primaryCategoryId,
+      businessType,
+      subCategoryIds,
       address:      row.full_address  || null,
       street:       row.street        || null,
       city:         row.city          || null,

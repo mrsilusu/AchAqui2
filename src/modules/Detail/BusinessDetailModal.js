@@ -134,6 +134,7 @@ export function BusinessDetailModal({
   onClose,
   layer,  // useOperationalLayer() criado externamente (Main) — Nível 2 acima
   authSession = null,  // { accessToken, userId, role }
+  onOpenAuth = null,   // () => void — abre modal de login
 }) {
   const insets  = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
@@ -345,6 +346,18 @@ export function BusinessDetailModal({
     if (offset !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, offset - 48), animated: true });
   }, []);
 
+  const requireAuth = useCallback((action) => {
+    if (authSession?.accessToken) { action(); return; }
+    Alert.alert(
+      'Iniciar sessão',
+      'Para aceder a esta funcionalidade precisas de ter uma conta.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Entrar / Criar conta', onPress: () => onOpenAuth?.() },
+      ],
+    );
+  }, [authSession, onOpenAuth]);
+
   const toggleHelpful = (id) => setHelpfulReviews(p => ({ ...p, [id]: !p[id] }));
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -495,7 +508,7 @@ export function BusinessDetailModal({
             <Text style={s.ratingTitle}>Avaliar</Text>
             <View style={s.starsRow}>
               {[1,2,3,4,5].map(i => (
-                <TouchableOpacity key={i} onPress={() => setRatingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <TouchableOpacity key={i} onPress={() => requireAuth(() => setRatingStars(i))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                   <Text style={{ fontSize: 20, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
                 </TouchableOpacity>
               ))}
@@ -516,7 +529,7 @@ export function BusinessDetailModal({
           <View style={s.socialBtnsRow}>
             <TouchableOpacity
               style={[s.socialBtn, followed && s.socialBtnActive]}
-              onPress={() => setFollowed(p => !p)}
+              onPress={() => requireAuth(() => setFollowed(p => !p))}
               activeOpacity={0.8}
             >
               <Icon name={followed ? 'check' : 'save'} size={13} color={followed ? COLORS.white : COLORS.darkText} strokeWidth={2} />
@@ -524,13 +537,13 @@ export function BusinessDetailModal({
             </TouchableOpacity>
             <TouchableOpacity
               style={s.socialBtn}
-              onPress={() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); }}
+              onPress={() => requireAuth(() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); })}
               activeOpacity={0.8}
             >
               <Icon name="checkin" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Check-in</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.socialBtn} onPress={() => onToggleBookmark?.(business.id)} activeOpacity={0.8}>
+            <TouchableOpacity style={s.socialBtn} onPress={() => requireAuth(() => onToggleBookmark?.(business.id))} activeOpacity={0.8}>
               <Icon name="bookmark" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Guardar</Text>
             </TouchableOpacity>
@@ -557,7 +570,7 @@ export function BusinessDetailModal({
               <TouchableOpacity
                 key={btn.layer}
                 style={s.actionBtn}
-                onPress={() => layer.open(btn.layer, business)}
+                onPress={() => requireAuth(() => layer.open(btn.layer, business))}
                 activeOpacity={0.82}
               >
                 <Text style={s.actionEmoji}>{btn.emoji}</Text>
