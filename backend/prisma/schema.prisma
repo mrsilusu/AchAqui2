@@ -198,6 +198,14 @@ model User {
   htBookings    HtRoomBooking[]
   staffRoles    CoreBusinessStaff[]
   auditActions  CoreAuditLog[]
+  // Social
+  follows       Follow[]
+  checkIns      CheckIn[]
+  reviews       Review[]
+  reviewHelpful ReviewHelpful[]
+  questions     Question[]
+  questionHelpful QuestionHelpful[]
+  bookmarks     Bookmark[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 }
@@ -236,6 +244,12 @@ model Business {
   htFolioItems   HtFolioItem[]
   // DI — Dining (reservas de mesa já existentes)
   diBookings     DiTableBooking[]
+  // Social
+  follows        Follow[]
+  checkIns       CheckIn[]
+  reviews        Review[]
+  questions      Question[]
+  bookmarks      Bookmark[]
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 }
@@ -623,4 +637,125 @@ model DiTableBooking {
 // HE — Health               → tabelas: he_appointments, he_practitioners
 // ED — Education            → tabelas: ed_courses, ed_enrollments, ed_sessions
 // PS — Professional Services→ tabelas: ps_appointments, ps_quotes, ps_projects
+
+// =============================================================================
+// MÓDULO SOCIAL — Follow, CheckIn, Review, Q&A, Bookmark
+// =============================================================================
+
+/// Seguir um negócio — um utilizador pode seguir um negócio uma vez.
+model Follow {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId])
+  @@map("social_follows")
+}
+
+/// Check-in num negócio — máximo 1 por utilizador por dia.
+model CheckIn {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  date       String   // "YYYY-MM-DD" — simplifica o unique diário
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId, date])
+  @@map("social_checkins")
+}
+
+/// Bookmark sincronizado com a conta — cache offline no AsyncStorage.
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId])
+  @@map("social_bookmarks")
+}
+
+/// Avaliação de um negócio — um utilizador pode avaliar um negócio uma vez.
+model Review {
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  businessId        String
+  business          Business        @relation(fields: [businessId], references: [id])
+  rating            Int             // 1-5
+  comment           String
+  photos            String[]        @default([])
+  ownerResponse     String?
+  ownerResponseDate DateTime?
+  helpfulCount      Int             @default(0)
+  helpful           ReviewHelpful[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([userId, businessId])
+  @@map("social_reviews")
+}
+
+/// Marcar avaliação como útil — um utilizador só pode marcar uma vez.
+model ReviewHelpful {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  reviewId  String
+  review    Review   @relation(fields: [reviewId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, reviewId])
+  @@map("social_review_helpful")
+}
+
+/// Pergunta sobre um negócio.
+model Question {
+  id          String            @id @default(uuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  businessId  String
+  business    Business          @relation(fields: [businessId], references: [id])
+  content     String
+  helpfulCount Int              @default(0)
+  answer      QuestionAnswer?
+  helpful     QuestionHelpful[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("social_questions")
+}
+
+/// Resposta do dono a uma pergunta — uma pergunta tem no máximo uma resposta.
+model QuestionAnswer {
+  id         String   @id @default(uuid())
+  questionId String   @unique
+  question   Question @relation(fields: [questionId], references: [id])
+  authorId   String   // OWNER userId
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("social_question_answers")
+}
+
+/// Marcar pergunta como útil.
+model QuestionHelpful {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, questionId])
+  @@map("social_question_helpful")
+}
 
