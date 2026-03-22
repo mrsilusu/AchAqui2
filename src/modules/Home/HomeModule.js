@@ -43,7 +43,7 @@
 
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, FlatList, RefreshControl,
+  View, Text, TouchableOpacity, ScrollView,
   Image, ImageBackground, TextInput,
   StyleSheet, Dimensions, Keyboard, Alert,
 } from 'react-native';
@@ -216,8 +216,6 @@ export function HomeModule({
 
   // Dados extra
   bookmarkedIds = [],       onToggleBookmark = () => {},
-  onRefresh = null,
-  refreshing = false,
   notifications = [],
 
   // Localização
@@ -230,6 +228,7 @@ export function HomeModule({
   const carouselRef   = useRef(null);
   const carouselIndex = useRef(0);
   const [carouselActiveIndex, setCarouselActiveIndex] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(140);
 
   const unreadNotifs = notifications.filter(n => !n.read).length;
 
@@ -259,7 +258,7 @@ export function HomeModule({
 
   // ── RENDER HEADER ─────────────────────────────────────────────────────────
   const renderHeader = () => (
-    <View style={hS.headerWrapper}>
+    <View style={hS.headerWrapper} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
       <View style={[hS.header, { paddingTop: insets.top + 8 }]}>
         {/* Top row */}
         <View style={hS.headerTopRow}>
@@ -332,51 +331,6 @@ export function HomeModule({
         </View>
       </View>
 
-      {/* Autocomplete dropdown */}
-      {showAutocomplete && (
-        <>
-          <TouchableOpacity style={acS.backdrop} activeOpacity={1} onPress={() => setShowAutocomplete(false)} />
-          <View style={acS.absoluteDropdown}>
-            <View style={acS.container}>
-              <ScrollView style={acS.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                {autocompleteSuggestions.length > 0 && (
-                  <>
-                    <Text style={acS.sectionTitle}>Sugestões</Text>
-                    {autocompleteSuggestions.map((s, i) => (
-                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                        <Icon name="search" size={14} color={COLORS.grayText} strokeWidth={1.5} />
-                        <Text style={acS.text}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-                {recentSearches.length > 0 && (
-                  <>
-                    <View style={acS.recentHeader}>
-                      <Text style={acS.sectionTitle}>Recentes</Text>
-                      <TouchableOpacity onPress={clearRecentSearches}><Text style={acS.clearText}>Limpar</Text></TouchableOpacity>
-                    </View>
-                    {recentSearches.map((s, i) => (
-                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                        <Icon name="clock" size={14} color={COLORS.grayText} strokeWidth={1.5} />
-                        <Text style={acS.text}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-                <Text style={acS.sectionTitle}>Trending</Text>
-                {TRENDING_SEARCHES.map((s, i) => (
-                  <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                    <Icon name="fire" size={14} color={COLORS.red} strokeWidth={1.5} />
-                    <Text style={acS.text}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </>
-      )}
-
       {/* Category chips */}
       <View style={hS.categoryRowWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={hS.categoryRow}>
@@ -408,8 +362,12 @@ export function HomeModule({
   );
 
   // ── RENDER HOME (scroll + lista) ──────────────────────────────────────────
-  const renderHomeHeader = () => (
-    <View>
+  const renderHome = () => (
+    <ScrollView
+      style={hS.scroll}
+      contentContainerStyle={hS.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Carousel patrocinado */}
       {SPONSORED.length > 0 && (
         <View style={hS.carouselSection}>
@@ -424,11 +382,7 @@ export function HomeModule({
           <ScrollView
             ref={carouselRef}
             horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            snapToInterval={SCREEN_WIDTH} snapToAlignment="start"
-            disableIntervalMomentum={true}
-            nestedScrollEnabled={true}
-            scrollEventThrottle={16}
+            decelerationRate="fast" snapToInterval={SCREEN_WIDTH} snapToAlignment="start"
             contentContainerStyle={hS.carouselScroll}
             onMomentumScrollEnd={e => {
               const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -519,53 +473,19 @@ export function HomeModule({
         <Text style={hS.sectionCount}>({businesses.length} resultados)</Text>
       </View>
 
-    </View>
-  );
-
-  const renderHomeItem = ({ item: b }) => (
-    <BusinessListCell
-      business={b}
-      bookmarked={bookmarkedIds.includes(b.id)}
-      isComparing={compareList.includes(b.id)}
-      onPress={onSelectBusiness}
-      onToggleBookmark={onToggleBookmark}
-      onToggleCompare={toggleCompare}
-    />
-
-  );
-
-  const renderHome = () => (
-    <FlatList
-      style={hS.scroll}
-      contentContainerStyle={hS.scrollContent}
-      showsVerticalScrollIndicator={false}
-      nestedScrollEnabled={true}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.red}
-            colors={[COLORS.red]}
-          />
-        ) : undefined
-      }
-      data={businesses}
-      keyExtractor={b => b.id}
-      renderItem={renderHomeItem}
-      ListHeaderComponent={renderHomeHeader}
-      ListEmptyComponent={
-        <View style={{ alignItems: 'center', padding: 40 }}>
-          <Text style={{ color: COLORS.grayText, fontSize: 14 }}>
-            Sem negócios para mostrar.
-          </Text>
-        </View>
-      }
-      windowSize={5}
-      maxToRenderPerBatch={10}
-      initialNumToRender={8}
-      removeClippedSubviews={true}
-    />
+      {/* Business list */}
+      {businesses.map(b => (
+        <BusinessListCell
+          key={b.id}
+          business={b}
+          bookmarked={bookmarkedIds.includes(b.id)}
+          isComparing={compareList.includes(b.id)}
+          onPress={onSelectBusiness}
+          onToggleBookmark={onToggleBookmark}
+          onToggleCompare={toggleCompare}
+        />
+      ))}
+    </ScrollView>
   );
 
   // ── MAIN RENDER ───────────────────────────────────────────────────────────
@@ -573,6 +493,54 @@ export function HomeModule({
     <View style={hS.container}>
       {renderHeader()}
       {renderHome()}
+      {/* Autocomplete — fora do FlatList para funcionar correctamente no iOS */}
+      {showAutocomplete && (
+        <>
+          <TouchableOpacity
+            style={[acS.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }]}
+            activeOpacity={1}
+            onPress={() => setShowAutocomplete(false)}
+          />
+          <View style={[acS.absoluteDropdown, { zIndex: 999, top: headerHeight }]}>
+            <View style={acS.container}>
+              <ScrollView style={acS.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {autocompleteSuggestions.length > 0 && (
+                  <>
+                    <Text style={acS.sectionTitle}>Sugestões</Text>
+                    {autocompleteSuggestions.map((s, i) => (
+                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                        <Icon name="search" size={14} color={COLORS.grayText} strokeWidth={1.5} />
+                        <Text style={acS.text}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+                {recentSearches.length > 0 && (
+                  <>
+                    <View style={acS.recentHeader}>
+                      <Text style={acS.sectionTitle}>Recentes</Text>
+                      <TouchableOpacity onPress={clearRecentSearches}><Text style={acS.clearText}>Limpar</Text></TouchableOpacity>
+                    </View>
+                    {recentSearches.map((s, i) => (
+                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                        <Icon name="clock" size={14} color={COLORS.grayText} strokeWidth={1.5} />
+                        <Text style={acS.text}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+                <Text style={acS.sectionTitle}>Trending</Text>
+                {TRENDING_SEARCHES.map((s, i) => (
+                  <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                    <Icon name="fire" size={14} color={COLORS.red} strokeWidth={1.5} />
+                    <Text style={acS.text}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }

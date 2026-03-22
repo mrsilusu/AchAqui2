@@ -93,26 +93,34 @@ export class BusinessService {
     });
   }
 
-  searchByName(q: string, municipality?: string) {
-    return this.prisma.business.findMany({
-      where: {
-        isActive: true,
-        name: { contains: q, mode: 'insensitive' },
-        ...(municipality ? { municipality: { contains: municipality, mode: 'insensitive' } } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        description: true,
-        municipality: true,
-        isClaimed: true,
-        source: true,
-        metadata: true,
-      },
-      take: 20,
-      orderBy: { name: 'asc' },
-    });
+  async searchByName(q: string, municipality?: string) {
+    // unaccent: ignora acentos em ambos os lados (query e dados)
+    // ex: "farmacia" encontra "Farmácia", "salao" encontra "Salão"
+    if (municipality) {
+      return this.prisma.$queryRaw<any[]>`
+        SELECT id, name, category, description, municipality,
+               "isClaimed", source, metadata
+        FROM   "Business"
+        WHERE  "isActive" = true
+          AND  unaccent(name) ILIKE unaccent(${'%' + q + '%'})
+          AND  unaccent(municipality) ILIKE unaccent(${'%' + municipality + '%'})
+        ORDER  BY name ASC
+        LIMIT  20
+      `;
+    }
+    return this.prisma.$queryRaw<any[]>`
+      SELECT id, name, category, description, municipality,
+             "isClaimed", source, metadata
+      FROM   "Business"
+      WHERE  "isActive" = true
+        AND  (
+          unaccent(name)        ILIKE unaccent(${'%' + q + '%'})
+          OR unaccent(category) ILIKE unaccent(${'%' + q + '%'})
+          OR unaccent(COALESCE(description, '')) ILIKE unaccent(${'%' + q + '%'})
+        )
+      ORDER  BY name ASC
+      LIMIT  20
+    `;
   }
 
   async findOne(id: string) {
