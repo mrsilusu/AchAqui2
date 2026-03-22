@@ -451,6 +451,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         <HousekeepingScreen
           businessId={businessId}
           accessToken={accessToken}
+          onTaskCompleted={() => load(true)}
           onClose={() => { setShowHousekeeping(false); load(true); }}
         />
       )}
@@ -458,7 +459,23 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         <ReservationMapModal
           businessId={businessId}
           accessToken={accessToken}
-          onClose={() => setShowMap(false)}
+          onClose={() => { setShowMap(false); load(true); }}
+          onBookingAction={async (bookingId, action, bk) => {
+            setShowMap(false);
+            // Executar a acção directamente via backendApi
+            const token = accessToken;
+            try {
+              if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
+              if (action === 'checkin')  await backendApi.htCheckIn(bookingId, {}, token);
+              if (action === 'checkout') await backendApi.htCheckOut(bookingId, token);
+              if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
+              if (action === 'cancel')   await backendApi.updateBooking(bookingId, { status: 'CANCELLED' }, token);
+              if (action === 'edit')     { setShowReception(true); return; }
+              load(true); // refresh do dashboard
+            } catch (e) {
+              Alert.alert('Erro', e?.message || 'Operação falhou.');
+            }
+          }}
         />
       )}
       {showRooms && (

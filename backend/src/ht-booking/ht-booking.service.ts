@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -68,6 +69,34 @@ export class HtBookingService {
       throw new BadRequestException(`Não é possível fazer check-in. Estado actual: ${booking.status}`);
     }
 
+    // [PMS] Validação de early check-in
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const checkInDate   = new Date(booking.startDate); checkInDate.setHours(0,0,0,0);
+    const daysEarly     = Math.round((checkInDate.getTime() - todayMidnight.getTime()) / 86400000);
+
+    let earlyCheckInFee = 0;
+    if (daysEarly > 0) {
+      // Check-in antecipado: calcular taxa proporcional
+      const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+        where:  { businessId: booking.businessId },
+        select: { earlyCheckinFee: true, lateCheckoutFee: true },
+      }).catch(() => null);
+
+      // Se o hotel tem earlyCheckinFee configurada, usar esse valor
+      // Caso contrário: cobrar 1 diária completa por cada dia antecipado
+      if (pmsConfig?.earlyCheckinFee && pmsConfig.earlyCheckinFee > 0) {
+        earlyCheckInFee = pmsConfig.earlyCheckinFee * daysEarly;
+      } else if (booking.roomTypeId) {
+        const rt = await this.prisma.htRoomType.findFirst({
+          where: { id: booking.roomTypeId }, select: { pricePerNight: true },
+        });
+        if (rt) earlyCheckInFee = rt.pricePerNight * daysEarly;
+      }
+
+      // Guardar info do early check-in para o caller usar (não lança erro — o owner decide)
+      // O caller (controller) devolve earlyCheckInInfo na resposta
+    }
+
     if (dto.roomId) {
       const room = await this.prisma.htRoom.findFirst({
         where: { id: dto.roomId, businessId: booking.businessId },
@@ -95,15 +124,37 @@ export class HtBookingService {
       if (autoRoom) resolvedRoomId = autoRoom.id;
     }
 
+    const realArrival = new Date();
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedBooking = await tx.htRoomBooking.update({
+      // [Fix 2] Verificar colisão: outro hóspede CHECKED_IN no mesmo quarto
+      if (resolvedRoomId) {
+        const collision = await tx.htRoomBooking.findFirst({
+          where: {
+            id:      { not: bookingId },
+            roomId:  resolvedRoomId,
+            status:  HtBookingStatus.CHECKED_IN,
+          },
+          select: { guestName: true },
+        });
+        if (collision) {
+          throw new BadRequestException(
+            `Quarto já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+            `Escolha outro quarto ou faça o checkout do hóspede actual.`
+          );
+        }
+      }
+
+      return tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
           status:      HtBookingStatus.CHECKED_IN,
-          checkedInAt: new Date(),
+          checkedInAt: realArrival,
           roomId:      resolvedRoomId,
           guestName:   dto.guestName  ?? booking.guestName,
           guestPhone:  dto.guestPhone ?? booking.guestPhone,
+          // [Fix 1] Early check-in: startDate passa a ser o dia real de entrada
+          ...(daysEarly > 0 && { startDate: realArrival }),
           version:     { increment: 1 },
         },
         include: {
@@ -113,13 +164,22 @@ export class HtBookingService {
           business: { select: { id: true, name: true } },
         },
       });
-      // Marcar o quarto físico como OCCUPIED (via CLEAN com booking activo)
-      // O status mantém-se CLEAN -- a ocupação é inferida pelas reservas CHECKED_IN no dashboard.
-      // Nada a fazer aqui para o status do room -- o dashboard já faz:
-      // occupied = rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0)
-      // O que importa é que resolvedRoomId esteja na reserva para o join funcionar.
-      return updatedBooking;
     });
+
+    // Se houve early check-in, adicionar taxa ao folio
+    if (earlyCheckInFee > 0) {
+      await this.prisma.htFolioItem.create({
+        data: {
+          businessId:  booking.businessId,
+          bookingId,
+          type:        'SERVICE' as any,
+          description: `Check-in antecipado (${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista)`,
+          quantity:    daysEarly,
+          unitPrice:   earlyCheckInFee / daysEarly,
+          amount:      earlyCheckInFee,
+        },
+      }).catch(() => null); // não bloquear o check-in se o folio falhar
+    }
 
     await this.audit({
       businessId:   booking.businessId,
@@ -127,7 +187,7 @@ export class HtBookingService {
       actorId:      ownerId,
       resourceId:   bookingId,
       previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt },
+      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt, earlyCheckInFee },
       ipAddress:    ip,
     });
 
@@ -136,9 +196,13 @@ export class HtBookingService {
       businessName: booking.business.name,
       roomNumber:   updated.room?.number,
       checkedInAt:  updated.checkedInAt,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
     });
 
-    return updated;
+    return {
+      ...updated,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
+    };
   }
 
   // CHECK-OUT
@@ -251,20 +315,36 @@ export class HtBookingService {
     });
   }
 
-  // SAÍDAS — próximos 7 dias com status CHECKED_IN.
+  // SAÍDAS — duas listas combinadas:
+  //   1. Checkouts pendentes: CHECKED_IN com endDate hoje ou nos próx. 7 dias
+  //   2. Checkouts recentes:  CHECKED_OUT nos últimos 7 dias
   async getTodayDepartures(businessId: string, ownerId: string) {
     const now   = new Date();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
-    const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
-    return this.prisma.htRoomBooking.findMany({
-      where: {
-        businessId,
-        endDate: { gte: start, lte: end7 },
-        status: HtBookingStatus.CHECKED_IN,
-      },
-      select: BOOKING_SELECT,
-      orderBy: { endDate: 'asc' },
-    });
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const next7 = new Date(now); next7.setDate(next7.getDate() + 7); next7.setHours(23, 59, 59, 999);
+    const past7 = new Date(now); past7.setDate(past7.getDate() - 7); past7.setHours(0, 0, 0, 0);
+
+    const [pending, recent] = await Promise.all([
+      // Hóspedes ainda dentro que devem sair nos próximos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_IN,
+                 endDate: { gte: today, lte: next7 } },
+        select: BOOKING_SELECT,
+        orderBy: { endDate: 'asc' },
+      }),
+      // Checkouts já efectuados nos últimos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_OUT,
+                 checkedOutAt: { gte: past7 } },
+        select: BOOKING_SELECT,
+        orderBy: { checkedOutAt: 'desc' },
+      }),
+    ]);
+
+    return [
+      ...pending,
+      ...recent.map(b => ({ ...b, _recentCheckout: true })),
+    ];
   }
 
   // HÓSPEDES ACTUAIS — todos com status CHECKED_IN.
@@ -368,6 +448,18 @@ export class HtBookingService {
     }
     const previousRoomId = booking.roomId;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Verificar colisão DENTRO da transação -- outro CHECKED_IN no quarto destino
+      const collision = await tx.htRoomBooking.findFirst({
+        where: { id: { not: bookingId }, roomId: newRoomId,
+                 status: HtBookingStatus.CHECKED_IN },
+        select: { guestName: true },
+      });
+      if (collision) {
+        throw new ConflictException(
+          `Quarto Nº ${newRoom.number} já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+          `Faça o checkout desse hóspede primeiro ou escolha outro quarto.`
+        );
+      }
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data:  { roomId: newRoomId, version: { increment: 1 } },

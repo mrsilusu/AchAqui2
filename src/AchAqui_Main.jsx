@@ -183,9 +183,9 @@ function normalizeBusiness(rawBusiness) {
     name: rawBusiness.name || base.name || 'Negócio',
     category: rawBusiness.category || meta.category || base.category || 'Serviços',
     subcategory: meta.subcategory || rawBusiness.category || base.subcategory || 'Serviços',
-    businessType: rawBusiness.businessType || meta.businessType || base.businessType || '',
-    primaryCategoryId: rawBusiness.primaryCategoryId || meta.primaryCategoryId || base.primaryCategoryId || '',
-    subCategoryIds: rawBusiness.subCategoryIds || meta.subCategoryIds || base.subCategoryIds || [],
+    businessType: meta.businessType || rawBusiness.businessType || base.businessType || '',
+    primaryCategoryId: meta.primaryCategoryId || rawBusiness.primaryCategoryId || base.primaryCategoryId || '',
+    subCategoryIds: meta.subCategoryIds || rawBusiness.subCategoryIds || base.subCategoryIds || [],
     icon: base.icon || meta.icon || '🏢',
     rating: base.rating || meta.rating || 4.8,
     reviews: base.reviews || meta.reviews || 0,
@@ -195,22 +195,42 @@ function normalizeBusiness(rawBusiness) {
     isVerified: true,
     modules: base.modules || meta.modules || (() => {
       const cat = (rawBusiness.category || meta.category || '').toLowerCase();
-      const pid = base.primaryCategoryId || meta.primaryCategoryId || '';
-      const subs = base.subCategoryIds || meta.subCategoryIds || [];
-      const isHotel  = pid === 'hotelsTravel' || subs.includes('hotelsTravel') ||
-        cat.includes('hotel') || cat.includes('hostel') || cat.includes('pousada') || cat.includes('resort');
-      const isFood   = pid === 'restaurants' || cat.includes('restaur') || cat.includes('café') || cat.includes('bar');
-      const isBeauty = cat.includes('beleza') || cat.includes('sal\u00e3o') || cat.includes('spa') || cat.includes('beauty');
-      const isHealth = cat.includes('sa\u00fade') || cat.includes('cl\u00ednica') || cat.includes('m\u00e9dic') || cat.includes('health');
+      const pid = meta.primaryCategoryId || base.primaryCategoryId || rawBusiness.primaryCategoryId || '';
+      const subs = (meta.subCategoryIds || base.subCategoryIds || rawBusiness.subCategoryIds || []);
+      const c = (s) => cat.includes(s);
+      const pis = (id) => pid === id || subs.includes(id);
+      const isHotel     = pis('hotelsTravel') || c('hotel') || c('hostel') || c('pousada') || c('resort') || c('lodging') || c('motel');
+      const isFood      = pis('restaurants')  || c('restaur') || c('meal') || c('fast_food') || c('pizza');
+      const isCoffee    = pis('coffee')       || c('café') || c('cafe') || c('pastelaria') || c('padaria') || c('cafetaria');
+      const isBar       = pis('bars')         || c('bar') || c('night_club') || c('pub') || c('discoteca');
+      const isSpa       = pis('spas')         || c('spa') || c('massag') || c('wellness');
+      const isBeauty    = pis('beautysalons') || c('beleza') || c('salão') || c('salon') || c('beauty') || c('hair') || c('nail') || c('barber') || c('barbearia');
+      const isHealth    = pis('health')       || c('saúde') || c('clínica') || c('clinic') || c('médic') || c('hospital') || c('doctor') || c('pharmacy') || c('farmácia') || c('dentist');
+      const isSports    = pis('active')       || c('gym') || c('fitness') || c('sport') || c('swimming') || c('yoga') || c('pilates') || c('academia');
+      const isRetail    = pis('shopping')     || c('supermarket') || c('supermercado') || c('grocery') || c('mercado') || c('loja');
+      const isEdu       = pis('education')    || c('school') || c('escola') || c('colégio') || c('universit') || c('training');
+      const isFinancial = pis('financial')    || c('bank') || c('banco') || c('financ') || c('insurance') || c('seguro') || c('contabilid');
+      const isAuto      = pis('automotive')   || c('car_repair') || c('oficina') || c('mecânico') || c('gas_station') || c('posto de gasolina');
+      const isHome      = pis('homeservices') || c('electrician') || c('eletricista') || c('plumber') || c('laundry') || c('lavandaria') || c('cleaning');
+      const isEvents    = pis('eventplanning')|| c('event_venue') || c('catering') || c('wedding') || c('espaço de eventos');
+      const isPets      = pis('pets')         || c('veterinary') || c('veterinário') || c('pet_store') || c('pet shop');
+      const isPro       = pis('professional') || c('lawyer') || c('advogado') || c('architect') || c('consultant') || c('photographer');
+      const isDelivery  = pis('delivery')     || c('courier') || c('logistics');
+      const isAny = isHotel||isFood||isCoffee||isBar||isSpa||isBeauty||isHealth||isSports||isRetail||isEdu||isFinancial||isAuto||isHome||isEvents||isPets||isPro||isDelivery;
       return {
-        ...(isHotel  && { accommodation: true }),
-        ...(isFood   && { gastronomy: true }),
-        ...(isBeauty && { beauty: true }),
-        ...(isHealth && { health: true }),
-        ...(!isHotel && !isFood && !isBeauty && !isHealth && { professional: true }),
+        ...(isHotel    && { accommodation: true }),
+        ...((isFood||isCoffee||isBar) && { gastronomy: true }),
+        ...((isBeauty||isSpa) && { beauty: true }),
+        ...(isHealth   && { health: true }),
+        ...(isSports   && { health: true }),
+        ...(isRetail   && { retail: true }),
+        ...(isEdu      && { education: true }),
+        ...(isDelivery && { delivery: true }),
+        ...(!isAny     && { professional: true }),
       };
     })(),
-    address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
+    description: typeof rawBusiness.description === 'string' ? rawBusiness.description : (meta.description || meta.about || ''),
+    address: base.address || meta.address || meta.full_address || meta.street || 'Endereço não informado',
     neighborhood: base.neighborhood || meta.neighborhood || '',
     phone: base.phone || meta.phone || '',
     website: base.website || meta.website || '',
@@ -408,6 +428,19 @@ function AppContent() {
     }
   }, [authSession.accessToken, authSession.isOwner, liveSync]);
 
+  const handleHomeRefresh = useCallback(async () => {
+    setHomeRefreshing(true);
+    try {
+      const response = await backendApi.getBusinesses();
+      const fromApi = (Array.isArray(response) ? response : [])
+        .map(normalizeBusiness).filter(Boolean);
+      const apiIds = new Set(fromApi.map(b => b.id));
+      setBusinesses([...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]);
+      filters.refreshShuffle?.();
+    } catch {}
+    finally { setHomeRefreshing(false); }
+  }, [filters]);
+
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
@@ -474,6 +507,7 @@ function AppContent() {
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
   const filters = useBusinessFilters(businesses, isBusinessMode);
+  const [homeRefreshing, setHomeRefreshing] = useState(false);
   const meta    = useMetaAnimation({ showDetail });
   const layer   = useOperationalLayer(); // Nível 2 — módulos operacionais
 
@@ -766,6 +800,8 @@ function AppContent() {
               authUser={authSession.accessToken ? authSession.user : null}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
+              onRefresh={handleHomeRefresh}
+              refreshing={homeRefreshing}
             />
           )}
 
@@ -920,6 +956,7 @@ function AppContent() {
               userId: authSession.user?.id,
               role: authSession.user?.role,
             }}
+            onOpenAuth={handleOpenAuth}
             onClose={() => {
               // Fecha também a layer operacional se estiver activa
               if (layer.activeLayer) layer.closeImmediate();

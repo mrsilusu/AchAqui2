@@ -33,6 +33,7 @@ const TABS = [
   { id: 'claims',     label: 'Claims',        icon: 'checkCircle' },
   { id: 'businesses', label: 'Negócios',      icon: 'briefcase'   },
   { id: 'users',      label: 'Utilizadores',  icon: 'users'       },
+  { id: 'quality',    label: 'Qualidade',     icon: 'star'        },
 ];
 
 const CLAIM_STATUS = {
@@ -101,6 +102,7 @@ export function AdminModule({ accessToken, onExit, onLogout = () => {}, insets }
         {activeTab === 'claims'     && <ClaimsTab    accessToken={accessToken} />}
         {activeTab === 'businesses' && <BusinessesTab accessToken={accessToken} />}
         {activeTab === 'users'      && <UsersTab     accessToken={accessToken} />}
+        {activeTab === 'quality'    && <QualityTab    accessToken={accessToken} />}
       </View>
     </View>
   );
@@ -493,6 +495,296 @@ function UsersTab({ accessToken }) {
         </ScrollView>
       )}
     </View>
+  );
+}
+
+
+// ─── Tab: Qualidade dos Dados ─────────────────────────────────────────────────
+
+const CATEGORY_MAP = {
+  'hotel':'hotelsTravel','hostel':'hotelsTravel','pousada':'hotelsTravel','resort':'hotelsTravel',
+  'restaurante':'restaurants','restaurant':'restaurants','pizz':'restaurants','café':'restaurants',
+  'cafe':'restaurants','bar':'restaurants','snack':'restaurants',
+  'supermercado':'shopping','mercado':'shopping','supermarket':'shopping',
+  'farmácia':'health','farmacia':'health','pharmacy':'health',
+  'policlínica':'health','clínica':'health','hospital':'health','médic':'health',
+  'academia':'active','ginásio':'active','gym':'active','fitness':'active',
+  'pilates':'active','boxe':'active','natação':'active',
+  'salão':'beautysalons','cabeleireiro':'beautysalons','spa':'beautysalons',
+  'beleza':'beautysalons','nail':'beautysalons','barber':'beautysalons',
+  'escola':'education','colégio':'education','instituto':'education',
+  'universidade':'education','ensino':'education','idioma':'education',
+};
+
+const CATEGORY_LABELS = {
+  hotelsTravel:'Hotel / Alojamento', restaurants:'Restaurante / Comida',
+  shopping:'Compras / Supermercado', health:'Saúde / Clínica',
+  active:'Desporto / Fitness', beautysalons:'Beleza / Cuidado',
+  education:'Educação / Escola', services:'Serviços Gerais',
+};
+
+function detectInconsistency(name, category) {
+  const n = name.toLowerCase();
+  const c = category.toLowerCase();
+
+  // Detectar pelo nome qual categoria deveria ser
+  let suggestedPid = null;
+  for (const [keyword, pid] of Object.entries(CATEGORY_MAP)) {
+    if (n.includes(keyword)) { suggestedPid = pid; break; }
+  }
+  if (!suggestedPid) return null;
+
+  // Ver se a categoria actual já corresponde
+  let currentPid = null;
+  for (const [keyword, pid] of Object.entries(CATEGORY_MAP)) {
+    if (c.includes(keyword)) { currentPid = pid; break; }
+  }
+
+  // Se não corresponde, é inconsistência
+  if (currentPid !== suggestedPid) {
+    return {
+      suggestedPid,
+      suggestedLabel: CATEGORY_LABELS[suggestedPid] || suggestedPid,
+      reason: `Nome sugere "${CATEGORY_LABELS[suggestedPid]}" mas categoria é "${category}"`,
+    };
+  }
+  return null;
+}
+
+function QualityTab({ accessToken }) {
+  const [businesses, setBusinesses] = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [analysing, setAnalysing]   = useState(false);
+  const [issues, setIssues]         = useState(null);
+  const [fixing, setFixing]         = useState({});
+  const [aiResults, setAiResults]   = useState(null);
+  const [aiLoading, setAiLoading]   = useState(false);
+  const [page, setPage]             = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Carregar todos os negócios (paginado)
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setIssues(null);
+    setAiResults(null);
+    try {
+      let all = [];
+      let pg = 1;
+      let total = 1;
+      while (pg <= total) {
+        const data = await apiRequest(`/admin/businesses?page=${pg}&limit=50`, { accessToken });
+        all = [...all, ...(data.data || [])];
+        total = data.meta?.totalPages || 1;
+        pg++;
+        if (pg > 10) break; // limite de segurança
+      }
+      setBusinesses(all);
+      return all;
+    } catch (err) {
+      Alert.alert('Erro', err?.message || 'Não foi possível carregar negócios.');
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  // Análise local (instantânea, sem API)
+  const runLocalAnalysis = useCallback(async () => {
+    setAnalysing(true);
+    let all = businesses;
+    if (all.length === 0) all = await loadAll();
+
+    const found = [];
+    for (const biz of all) {
+      const issue = detectInconsistency(biz.name || '', biz.category || '');
+      if (issue) found.push({ ...biz, issue });
+    }
+    setIssues(found);
+    setAnalysing(false);
+  }, [businesses, loadAll]);
+
+  // Análise com IA (Claude API)
+  const runAiAnalysis = useCallback(async () => {
+    setAiLoading(true);
+    let all = businesses;
+    if (all.length === 0) all = await loadAll();
+
+    // Preparar lista resumida para a IA
+    const sample = all.slice(0, 100).map(b => `${b.id}|||${b.name}|||${b.category}`).join('\n');
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Analisa esta lista de negócios angolanos (formato: id|||nome|||categoria).
+Identifica APENAS os casos onde o nome do negócio claramente não corresponde à categoria atribuída.
+Responde APENAS em JSON válido, sem texto extra, sem markdown:
+{"issues":[{"id":"...","name":"...","category":"...","suggestedCategory":"...","reason":"..."}]}
+Se não houver problemas, responde: {"issues":[]}
+
+Lista:
+${sample}`,
+          }],
+        }),
+      });
+
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '{"issues":[]}';
+      const clean = text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      setAiResults(parsed.issues || []);
+    } catch (err) {
+      Alert.alert('Erro IA', 'Não foi possível analisar com IA. Verifica a ligação.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [businesses, loadAll]);
+
+  // Aplicar correcção de categoria
+  const applyFix = useCallback(async (bizId, suggestedPid) => {
+    setFixing(prev => ({ ...prev, [bizId]: true }));
+    try {
+      // Actualizar metadata com nova categoria
+      const biz = businesses.find(b => b.id === bizId);
+      const meta = biz?.metadata || {};
+      meta.primaryCategoryId = suggestedPid;
+      meta.businessType = {
+        hotelsTravel:'accommodation', restaurants:'food', shopping:'retail',
+        health:'health', active:'sports', beautysalons:'beauty', education:'education',
+      }[suggestedPid] || 'professional';
+      meta.subCategoryIds = [suggestedPid];
+
+      await apiRequest(`/admin/businesses/${bizId}/metadata`, {
+        method: 'PATCH',
+        body: { metadata: meta },
+        accessToken,
+      });
+
+      // Remover da lista de issues
+      setIssues(prev => prev ? prev.filter(i => i.id !== bizId) : prev);
+      setAiResults(prev => prev ? prev.filter(i => i.id !== bizId) : prev);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível aplicar a correcção.');
+    } finally {
+      setFixing(prev => ({ ...prev, [bizId]: false }));
+    }
+  }, [businesses, accessToken]);
+
+  const displayIssues = aiResults || issues;
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Qualidade dos Dados</Text>
+        <Text style={{ fontSize: 13, color: COLORS.grayText, marginBottom: 16, lineHeight: 18 }}>
+          Detecta negócios onde o nome não corresponde à categoria atribuída. Útil após importações em massa.
+        </Text>
+
+        <View style={{ gap: 10 }}>
+          <TouchableOpacity
+            style={[s.approveBtn, { paddingVertical: 14, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
+            onPress={runLocalAnalysis}
+            disabled={analysing || loading}
+            activeOpacity={0.8}
+          >
+            {analysing || loading
+              ? <ActivityIndicator size="small" color={COLORS.white} />
+              : <Icon name="search" size={16} color={COLORS.white} strokeWidth={2} />}
+            <Text style={[s.approveBtnText, { fontSize: 14 }]}>
+              {analysing ? 'A analisar...' : 'Análise Rápida (local)'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.approveBtn, { paddingVertical: 14, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED' }]}
+            onPress={runAiAnalysis}
+            disabled={aiLoading || loading}
+            activeOpacity={0.8}
+          >
+            {aiLoading
+              ? <ActivityIndicator size="small" color={COLORS.white} />
+              : <Text style={{ fontSize: 16 }}>✨</Text>}
+            <Text style={[s.approveBtnText, { fontSize: 14 }]}>
+              {aiLoading ? 'IA a analisar...' : 'Análise com IA (Claude)'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {businesses.length > 0 && (
+          <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 10, textAlign: 'center' }}>
+            {businesses.length} negócios carregados
+          </Text>
+        )}
+      </View>
+
+      {displayIssues !== null && (
+        <>
+          <View style={s.divider} />
+          <View style={s.section}>
+            {displayIssues.length === 0 ? (
+              <View style={{ alignItems: 'center', padding: 20 }}>
+                <Text style={{ fontSize: 40, marginBottom: 10 }}>✅</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText }}>Tudo em ordem!</Text>
+                <Text style={{ fontSize: 13, color: COLORS.grayText, marginTop: 6, textAlign: 'center' }}>
+                  Não foram detectadas inconsistências nos {businesses.length} negócios analisados.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text style={s.sectionTitle}>
+                    {displayIssues.length} inconsistência{displayIssues.length !== 1 ? 's' : ''} detectada{displayIssues.length !== 1 ? 's' : ''}
+                  </Text>
+                  {aiResults && (
+                    <View style={{ backgroundColor: '#EDE9FE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>✨ IA</Text>
+                    </View>
+                  )}
+                </View>
+                {displayIssues.map((item) => (
+                  <View key={item.id} style={[s.adminClaimCard, { marginBottom: 10 }]}>
+                    <Text style={s.adminClaimBizName} numberOfLines={1}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 6 }}>
+                      <View style={{ backgroundColor: '#FFF0F0', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.red }}>{item.category}</Text>
+                      </View>
+                      <Icon name="arrowRight" size={12} color={COLORS.grayText} strokeWidth={2} />
+                      <View style={{ backgroundColor: '#F0FDF4', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.green }}>
+                          {item.issue?.suggestedLabel || item.suggestedCategory || '—'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 12, color: COLORS.grayText, marginBottom: 10, lineHeight: 16 }}>
+                      {item.issue?.reason || item.reason || ''}
+                    </Text>
+                    <TouchableOpacity
+                      style={[s.approveBtn, { paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }]}
+                      onPress={() => applyFix(item.id, item.issue?.suggestedPid || item.suggestedCategory)}
+                      disabled={!!fixing[item.id]}
+                      activeOpacity={0.8}
+                    >
+                      {fixing[item.id]
+                        ? <ActivityIndicator size="small" color={COLORS.white} />
+                        : <Icon name="check" size={14} color={COLORS.white} strokeWidth={2.5} />}
+                      <Text style={[s.approveBtnText, { fontSize: 13 }]}>
+                        {fixing[item.id] ? 'A corrigir...' : 'Aplicar correcção'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
+          </View>
+        </>
+      )}
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 

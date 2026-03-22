@@ -245,6 +245,10 @@ export const backendApi = {
     return apiRequest(`/ht/map?${params}`, { accessToken });
   },
 
+  // ─── HT — iCal Sync (servidor)
+  syncHtIcal: (businessId, accessToken) =>
+    apiRequest(`/ht/ical/sync?businessId=${encodeURIComponent(businessId)}`, { method: 'POST', accessToken }),
+
   // ─── HT — Staff / Funcionários
   getHtStaff: (businessId, accessToken) =>
     apiRequest(`/ht/staff?businessId=${encodeURIComponent(businessId)}`, { accessToken }),

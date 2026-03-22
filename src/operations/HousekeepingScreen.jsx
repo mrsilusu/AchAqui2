@@ -118,7 +118,7 @@ function RoomTaskCard({ room, onMarkClean, onMarkMaintenance, loading }) {
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────────
-export function HousekeepingScreen({ businessId, accessToken, onClose }) {
+export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCompleted }) {
   const [rooms, setRooms]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -161,6 +161,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose }) {
       // Marcar o quarto como CLEAN
       await backendApi.updateHtRoom(roomId, { status: 'CLEAN' }, accessToken);
       await load(true);
+      onTaskCompleted?.(); // actualizar contador no Dashboard
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Operação falhou.');
     } finally {

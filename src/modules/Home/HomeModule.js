@@ -228,6 +228,7 @@ export function HomeModule({
   const carouselRef   = useRef(null);
   const carouselIndex = useRef(0);
   const [carouselActiveIndex, setCarouselActiveIndex] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(140);
 
   const unreadNotifs = notifications.filter(n => !n.read).length;
 
@@ -257,7 +258,7 @@ export function HomeModule({
 
   // ── RENDER HEADER ─────────────────────────────────────────────────────────
   const renderHeader = () => (
-    <View style={hS.headerWrapper}>
+    <View style={hS.headerWrapper} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
       <View style={[hS.header, { paddingTop: insets.top + 8 }]}>
         {/* Top row */}
         <View style={hS.headerTopRow}>
@@ -329,51 +330,6 @@ export function HomeModule({
           </View>
         </View>
       </View>
-
-      {/* Autocomplete dropdown */}
-      {showAutocomplete && (
-        <>
-          <TouchableOpacity style={acS.backdrop} activeOpacity={1} onPress={() => setShowAutocomplete(false)} />
-          <View style={acS.absoluteDropdown}>
-            <View style={acS.container}>
-              <ScrollView style={acS.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                {autocompleteSuggestions.length > 0 && (
-                  <>
-                    <Text style={acS.sectionTitle}>Sugestões</Text>
-                    {autocompleteSuggestions.map((s, i) => (
-                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                        <Icon name="search" size={14} color={COLORS.grayText} strokeWidth={1.5} />
-                        <Text style={acS.text}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-                {recentSearches.length > 0 && (
-                  <>
-                    <View style={acS.recentHeader}>
-                      <Text style={acS.sectionTitle}>Recentes</Text>
-                      <TouchableOpacity onPress={clearRecentSearches}><Text style={acS.clearText}>Limpar</Text></TouchableOpacity>
-                    </View>
-                    {recentSearches.map((s, i) => (
-                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                        <Icon name="clock" size={14} color={COLORS.grayText} strokeWidth={1.5} />
-                        <Text style={acS.text}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-                <Text style={acS.sectionTitle}>Trending</Text>
-                {TRENDING_SEARCHES.map((s, i) => (
-                  <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
-                    <Icon name="fire" size={14} color={COLORS.red} strokeWidth={1.5} />
-                    <Text style={acS.text}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </>
-      )}
 
       {/* Category chips */}
       <View style={hS.categoryRowWrapper}>
@@ -537,6 +493,54 @@ export function HomeModule({
     <View style={hS.container}>
       {renderHeader()}
       {renderHome()}
+      {/* Autocomplete — fora do FlatList para funcionar correctamente no iOS */}
+      {showAutocomplete && (
+        <>
+          <TouchableOpacity
+            style={[acS.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }]}
+            activeOpacity={1}
+            onPress={() => setShowAutocomplete(false)}
+          />
+          <View style={[acS.absoluteDropdown, { zIndex: 999, top: headerHeight }]}>
+            <View style={acS.container}>
+              <ScrollView style={acS.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {autocompleteSuggestions.length > 0 && (
+                  <>
+                    <Text style={acS.sectionTitle}>Sugestões</Text>
+                    {autocompleteSuggestions.map((s, i) => (
+                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                        <Icon name="search" size={14} color={COLORS.grayText} strokeWidth={1.5} />
+                        <Text style={acS.text}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+                {recentSearches.length > 0 && (
+                  <>
+                    <View style={acS.recentHeader}>
+                      <Text style={acS.sectionTitle}>Recentes</Text>
+                      <TouchableOpacity onPress={clearRecentSearches}><Text style={acS.clearText}>Limpar</Text></TouchableOpacity>
+                    </View>
+                    {recentSearches.map((s, i) => (
+                      <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                        <Icon name="clock" size={14} color={COLORS.grayText} strokeWidth={1.5} />
+                        <Text style={acS.text}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+                <Text style={acS.sectionTitle}>Trending</Text>
+                {TRENDING_SEARCHES.map((s, i) => (
+                  <TouchableOpacity key={i} style={acS.item} onPress={() => { setSearchWhat(s); saveRecentSearch(s); setShowAutocomplete(false); Keyboard.dismiss(); }}>
+                    <Icon name="fire" size={14} color={COLORS.red} strokeWidth={1.5} />
+                    <Text style={acS.text}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }

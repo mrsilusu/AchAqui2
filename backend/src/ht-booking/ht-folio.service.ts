@@ -138,8 +138,21 @@ export class HtFolioService {
   async addItem(bookingId: string, ownerId: string, dto: AddFolioItemDto) {
     const booking = await this.assertOwner(bookingId, ownerId);
 
-    if (booking.status === 'CHECKED_OUT' || booking.status === 'CANCELLED') {
-      throw new BadRequestException('Não é possível adicionar itens a uma reserva encerrada.');
+    // [RULE] Lançamentos no folio só são permitidos quando o hóspede está fisicamente
+    // presente no hotel (CHECKED_IN). Aceitar PENDING ou CONFIRMED permitiria cobrar
+    // consumos a hóspedes que ainda não chegaram ou que nunca chegaram (no-show).
+    if (booking.status !== 'CHECKED_IN') {
+      const statusLabel: Record<string, string> = {
+        PENDING:     'pendente (hóspede ainda não chegou)',
+        CONFIRMED:   'confirmada (hóspede ainda não fez check-in)',
+        CHECKED_OUT: 'encerrada (hóspede já saiu)',
+        CANCELLED:   'cancelada',
+        NO_SHOW:     'no-show',
+      };
+      const label = statusLabel[booking.status] ?? booking.status;
+      throw new BadRequestException(
+        `Não é possível lançar consumos: reserva ${label}. Só é possível em reservas com check-in activo.`
+      );
     }
 
     const amount = dto.quantity * dto.unitPrice;

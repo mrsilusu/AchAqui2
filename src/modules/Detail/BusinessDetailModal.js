@@ -134,6 +134,7 @@ export function BusinessDetailModal({
   onClose,
   layer,  // useOperationalLayer() criado externamente (Main) — Nível 2 acima
   authSession = null,  // { accessToken, userId, role }
+  onOpenAuth = null,   // () => void — abre modal de login
 }) {
   const insets  = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
@@ -345,6 +346,18 @@ export function BusinessDetailModal({
     if (offset !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, offset - 48), animated: true });
   }, []);
 
+  const requireAuth = useCallback((action) => {
+    if (authSession?.accessToken) { action(); return; }
+    Alert.alert(
+      'Iniciar sessão',
+      'Para aceder a esta funcionalidade precisas de ter uma conta.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Entrar / Criar conta', onPress: () => onOpenAuth?.() },
+      ],
+    );
+  }, [authSession, onOpenAuth]);
+
   const toggleHelpful = (id) => setHelpfulReviews(p => ({ ...p, [id]: !p[id] }));
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -495,7 +508,7 @@ export function BusinessDetailModal({
             <Text style={s.ratingTitle}>Avaliar</Text>
             <View style={s.starsRow}>
               {[1,2,3,4,5].map(i => (
-                <TouchableOpacity key={i} onPress={() => setRatingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <TouchableOpacity key={i} onPress={() => requireAuth(() => setRatingStars(i))} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                   <Text style={{ fontSize: 20, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
                 </TouchableOpacity>
               ))}
@@ -516,7 +529,7 @@ export function BusinessDetailModal({
           <View style={s.socialBtnsRow}>
             <TouchableOpacity
               style={[s.socialBtn, followed && s.socialBtnActive]}
-              onPress={() => setFollowed(p => !p)}
+              onPress={() => requireAuth(() => setFollowed(p => !p))}
               activeOpacity={0.8}
             >
               <Icon name={followed ? 'check' : 'save'} size={13} color={followed ? COLORS.white : COLORS.darkText} strokeWidth={2} />
@@ -524,13 +537,13 @@ export function BusinessDetailModal({
             </TouchableOpacity>
             <TouchableOpacity
               style={s.socialBtn}
-              onPress={() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); }}
+              onPress={() => requireAuth(() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); })}
               activeOpacity={0.8}
             >
               <Icon name="checkin" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Check-in</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.socialBtn} onPress={() => onToggleBookmark?.(business.id)} activeOpacity={0.8}>
+            <TouchableOpacity style={s.socialBtn} onPress={() => requireAuth(() => onToggleBookmark?.(business.id))} activeOpacity={0.8}>
               <Icon name="bookmark" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Guardar</Text>
             </TouchableOpacity>
@@ -557,7 +570,7 @@ export function BusinessDetailModal({
               <TouchableOpacity
                 key={btn.layer}
                 style={s.actionBtn}
-                onPress={() => layer.open(btn.layer, business)}
+                onPress={() => requireAuth(() => layer.open(btn.layer, business))}
                 activeOpacity={0.82}
               >
                 <Text style={s.actionEmoji}>{btn.emoji}</Text>
@@ -640,12 +653,30 @@ export function BusinessDetailModal({
           )}
           {business.description && <Text style={s.description}>{business.description}</Text>}
 
-          {/* Mapa placeholder */}
-          {business.address && (
-            <View style={s.mapPlaceholder}>
-              <Text style={s.mapPlaceholderText}>Mini mapa</Text>
-            </View>
-          )}
+          {/* Mini mapa clicável */}
+          {(business.latitude || business.longitude) && (() => {
+            const lat = business.latitude || -8.8368;
+            const lng = business.longitude || 13.2343;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[s.mapPlaceholder, { overflow: 'hidden', justifyContent: 'center', alignItems: 'center', backgroundColor: '#E8F0FE' }]}
+                onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`).catch(() => {})}
+              >
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.25 }}>
+                  {[0,1,2,3].map(i => <View key={'h'+i} style={{ position: 'absolute', left: 0, right: 0, top: `${i*33}%`, height: 1, backgroundColor: '#6B7280' }} />)}
+                  {[0,1,2,3].map(i => <View key={'v'+i} style={{ position: 'absolute', top: 0, bottom: 0, left: `${i*33}%`, width: 1, backgroundColor: '#6B7280' }} />)}
+                </View>
+                <Icon name="mapPin" size={32} color={COLORS.red} strokeWidth={2} />
+                <Text style={{ fontSize: 11, color: '#1F2937', fontWeight: '600', marginTop: 6, textAlign: 'center', paddingHorizontal: 12 }} numberOfLines={2}>
+                  {business.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#1565C0', marginTop: 4, fontWeight: '600' }}>
+                  Toca para abrir no Google Maps ↗
+                </Text>
+              </TouchableOpacity>
+            );
+          })()}
 
           {/* Morada */}
           {business.address && (
@@ -654,8 +685,13 @@ export function BusinessDetailModal({
                 <Text style={s.addressMain}>{business.address}</Text>
                 {business.neighborhood && <Text style={s.addressSub}>{business.neighborhood}</Text>}
               </View>
-              <TouchableOpacity style={s.directionsBtn} onPress={() => Alert.alert('Direções', 'Em breve...')}>
-                <Text style={s.directionsBtnText}>Direcoes →</Text>
+              <TouchableOpacity style={s.directionsBtn} onPress={() => {
+                const lat = business.latitude || -8.8368;
+                const lng = business.longitude || 13.2343;
+                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`)
+                  .catch(() => Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`));
+              }}>
+                <Text style={s.directionsBtnText}>Direções →</Text>
               </TouchableOpacity>
             </View>
           )}
