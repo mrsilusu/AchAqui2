@@ -185,6 +185,36 @@ const BusinessListCell = React.memo(function BusinessListCell({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PREMIUM INTERSTITIAL BLOCK — bloco de 5 negócios premium entre grupos de 15
+// ─────────────────────────────────────────────────────────────────────────────
+const piS = StyleSheet.create({
+  wrapper:    { marginVertical: 8, backgroundColor: '#111111', paddingBottom: 16 },
+  header:     { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, gap: 6 },
+  title:      { fontSize: 16, fontWeight: '800', color: '#FFD700', letterSpacing: -0.3 },
+  subtitle:   { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.5)', letterSpacing: 0.2 },
+  cardWrap:   { paddingHorizontal: 16, marginBottom: 10 },
+});
+
+const PremiumInterstitialBlock = React.memo(function PremiumInterstitialBlock({ businesses, onSelectBusiness }) {
+  if (!businesses || businesses.length === 0) return null;
+  return (
+    <View style={piS.wrapper}>
+      <View style={piS.header}>
+        <Text style={piS.title}>👑 Em Destaque</Text>
+        <Text style={piS.subtitle}>Negócios Premium</Text>
+      </View>
+      {businesses.map(b => (
+        <View key={b.id} style={piS.cardWrap}>
+          <SponsoredCard business={b} onPress={() => onSelectBusiness(b)} />
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const PREMIUM_EVERY = 15;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HOME MODULE — componente principal exportado
 // ─────────────────────────────────────────────────────────────────────────────
 export function HomeModule({
@@ -239,6 +269,24 @@ export function HomeModule({
       .slice(0, 5),
     [featuredBusinesses, businesses],
   );
+
+  const premiumBiz = useMemo(
+    () => (featuredBusinesses.length > 0 ? featuredBusinesses : businesses)
+      .filter(b => b.isPublic !== false && b.id !== OWNER_BUSINESS.id && b.isPremium)
+      .slice(0, 5),
+    [featuredBusinesses, businesses],
+  );
+
+  const interleavedItems = useMemo(() => {
+    const items = [];
+    for (let i = 0; i < businesses.length; i += PREMIUM_EVERY) {
+      businesses.slice(i, i + PREMIUM_EVERY).forEach(b => items.push({ type: 'biz', b }));
+      if (premiumBiz.length > 0 && i + PREMIUM_EVERY < businesses.length) {
+        items.push({ type: 'premium' });
+      }
+    }
+    return items;
+  }, [businesses, premiumBiz]);
 
   useEffect(() => {
     carouselIndex.current = 0;
@@ -518,18 +566,20 @@ export function HomeModule({
         <Text style={hS.sectionCount}>({businesses.length} resultados)</Text>
       </View>
 
-      {/* Business list */}
-      {businesses.map(b => (
-        <BusinessListCell
-          key={b.id}
-          business={b}
-          bookmarked={bookmarkedIds.includes(b.id)}
-          isComparing={compareList.includes(b.id)}
-          onPress={onSelectBusiness}
-          onToggleBookmark={onToggleBookmark}
-          onToggleCompare={toggleCompare}
-        />
-      ))}
+      {/* Business list — intercalado com blocos premium a cada 15 negócios */}
+      {interleavedItems.map((item, idx) =>
+        item.type === 'premium'
+          ? <PremiumInterstitialBlock key={`prem-${idx}`} businesses={premiumBiz} onSelectBusiness={onSelectBusiness} />
+          : <BusinessListCell
+              key={item.b.id}
+              business={item.b}
+              bookmarked={bookmarkedIds.includes(item.b.id)}
+              isComparing={compareList.includes(item.b.id)}
+              onPress={onSelectBusiness}
+              onToggleBookmark={onToggleBookmark}
+              onToggleCompare={toggleCompare}
+            />
+      )}
     </ScrollView>
   );
 
