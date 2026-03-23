@@ -232,6 +232,15 @@ export class AuthService {
     };
   }
 
+  async updateProfile(userId: string, dto: { name: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { name: dto.name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+    return user;
+  }
+
   async updateSettings(userId: string, settingsDto: any) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

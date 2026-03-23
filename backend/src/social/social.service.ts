@@ -205,6 +205,35 @@ export class SocialService {
     });
   }
 
+  // ─── My Profile ──────────────────────────────────────────────────────────────
+
+  async getMyStats(userId: string) {
+    const [reviews, checkIns, bookmarks, businesses] = await Promise.all([
+      this.prisma.review.count({ where: { userId } }),
+      this.prisma.checkIn.count({ where: { userId } }),
+      this.prisma.bookmark.count({ where: { userId } }),
+      this.prisma.business.count({ where: { ownerId: userId } }),
+    ]);
+    return { reviews, checkIns, bookmarks, businesses };
+  }
+
+  async getMyReviews(userId: string) {
+    return this.prisma.review.findMany({
+      where: { userId },
+      include: { business: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getMyCheckIns(userId: string) {
+    return this.prisma.checkIn.findMany({
+      where: { userId },
+      include: { business: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+  }
+
   async toggleQuestionHelpful(userId: string, questionId: string) {
     const q = await this.prisma.question.findUnique({ where: { id: questionId }, select: { id: true } });
     if (!q) throw new NotFoundException('Pergunta não encontrada.');

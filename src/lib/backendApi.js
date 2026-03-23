@@ -241,6 +241,13 @@ export const backendApi = {
   htNoShow: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
 
+  // ─── Social — My Profile
+  getMyStats: (accessToken) => apiRequest('/social/me/stats', { accessToken }),
+  getMyReviews: (accessToken) => apiRequest('/social/me/reviews', { accessToken }),
+  getMyCheckIns: (accessToken) => apiRequest('/social/me/checkins', { accessToken }),
+  updateProfile: (payload, accessToken) =>
+    apiRequest('/auth/profile', { method: 'PATCH', body: payload, accessToken }),
+
   getNotifications: (accessToken) => apiRequest('/notifications', { accessToken }),
   markNotificationRead: (id, accessToken) =>
     apiRequest(`/notifications/${id}/read`, { method: 'PATCH', accessToken }),

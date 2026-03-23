@@ -126,4 +126,21 @@ export class SocialController {
   toggleQuestionHelpful(@Req() req: AuthReq, @Param('id') id: string) {
     return this.social.toggleQuestionHelpful(req.user.userId, id);
   }
+
+  // ─── My Profile ──────────────────────────────────────────────────────────────
+
+  @Get('social/me/stats')
+  getMyStats(@Req() req: AuthReq) {
+    return this.social.getMyStats(req.user.userId);
+  }
+
+  @Get('social/me/reviews')
+  getMyReviews(@Req() req: AuthReq) {
+    return this.social.getMyReviews(req.user.userId);
+  }
+
+  @Get('social/me/checkins')
+  getMyCheckIns(@Req() req: AuthReq) {
+    return this.social.getMyCheckIns(req.user.userId);
+  }
 }

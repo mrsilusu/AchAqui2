@@ -702,6 +702,8 @@ function AppContent() {
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
               authUser={authSession.accessToken ? authSession.user : null}
+              accessToken={authSession.accessToken}
+              liveBookings={liveSync.bookings}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
             />
