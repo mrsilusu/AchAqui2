@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Patch, Query, Req } from '@nestjs/common';
+import { Body, Post } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 
 @Controller('notifications')
@@ -27,5 +28,13 @@ export class NotificationsController {
   @Patch('read-all')
   markAllAsRead(@Req() req: { user: { userId: string } }) {
     return this.notificationsService.markAllAsRead(req.user.userId);
+  }
+
+  @Post('device-token')
+  registerDeviceToken(
+    @Req() req: { user: { userId: string } },
+    @Body() body: { token: string; provider?: string; platform?: string; appVersion?: string },
+  ) {
+    return this.notificationsService.registerDeviceToken(req.user.userId, body);
   }
 }

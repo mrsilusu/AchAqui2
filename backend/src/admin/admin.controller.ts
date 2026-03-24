@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -72,6 +73,26 @@ export class AdminController {
     return this.adminService.updateBusinessMetadata(id, body.metadata);
   }
 
+  @Patch('businesses/:id/toggle-active')
+  toggleBusinessActive(@Param('id') id: string) {
+    return this.adminService.toggleBusinessActive(id);
+  }
+
+  @Patch('businesses/:id/toggle-premium')
+  toggleBusinessPremium(@Param('id') id: string) {
+    return this.adminService.toggleBusinessPremium(id);
+  }
+
+  @Patch('businesses/:id/unclaim')
+  unclaimBusiness(@Param('id') id: string) {
+    return this.adminService.unclaimBusiness(id);
+  }
+
+  @Delete('businesses/:id')
+  deleteBusiness(@Param('id') id: string) {
+    return this.adminService.deleteBusiness(id);
+  }
+
   // ─── Imports ───────────────────────────────────────────────────────────────
 
   @Post('import/google-places')
@@ -99,10 +120,28 @@ export class AdminController {
   // ─── Users ─────────────────────────────────────────────────────────────────
 
   @Get('users')
-  getAllUsers(@Query('page') page?: string, @Query('limit') limit?: string) {
+  getAllUsers(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
     return this.adminService.getAllUsers(
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
+      search,
     );
+  }
+
+  @Patch('users/:id/role')
+  changeUserRole(
+    @Param('id') id: string,
+    @Body() body: { role: string },
+  ) {
+    return this.adminService.changeUserRole(id, body.role as any);
+  }
+
+  @Delete('users/:id')
+  deleteUser(@Param('id') id: string) {
+    return this.adminService.deleteUser(id);
   }
 }

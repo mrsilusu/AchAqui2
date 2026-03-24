@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -11,13 +12,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {}
+
+  // In-memory store for password-reset tokens { tokenHash -> { userId, expiresAt } }
+  private readonly resetTokens = new Map<string, { userId: string; expiresAt: Date }>();
 
   private readonly refreshTokenExpiresIn = '7d';
 
@@ -250,5 +256,41 @@ export class AuthService {
       message: 'Configurações actualizadas com sucesso.',
       settings: settingsDto,
     };
+  }
+
+  async updateProfile(userId: string, data: { name: string }) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { name: data.name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+    return updated;
+  }
+
+  async forgotPassword(email: string) {
+    // Always return success to avoid user enumeration
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (user) {
+      const rawToken = randomUUID();
+      const tokenHash = this.hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Clean up any expired tokens for this user
+      for (const [hash, entry] of this.resetTokens.entries()) {
+        if (entry.userId === user.id || entry.expiresAt < new Date()) {
+          this.resetTokens.delete(hash);
+        }
+      }
+
+      this.resetTokens.set(tokenHash, { userId: user.id, expiresAt });
+
+      const appUrl = process.env.APP_URL ?? 'https://achaqui.app';
+      const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
+
+      await this.mailService.sendPasswordResetEmail({ to: email, resetLink }).catch(() => {
+        // Silent fail — email service may not be configured in dev
+      });
+    }
+    return { message: 'Se existir uma conta com este email, receberás um link para redefinir a senha.' };
   }
 }

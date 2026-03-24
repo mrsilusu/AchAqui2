@@ -10,7 +10,7 @@ import {
 export function useBusinessFilters(businesses, isBusinessMode) {
   // ── Search ────────────────────────────────────────────────────────────────
   const [searchWhat, setSearchWhat]             = useState('');
-  const [searchWhere, setSearchWhere]           = useState('Talatona, Luanda');
+  const [searchWhere, setSearchWhere]           = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [recentSearches, setRecentSearches]     = useState([]);
 

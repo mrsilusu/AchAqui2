@@ -19,6 +19,8 @@ import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessInfoDto } from './dto/update-business-info.dto';
 import { CreatePromoDto } from './dto/create-promo.dto';
 import { UpdatePromoDto } from './dto/update-promo.dto';
+import { CreateFeedPostDto } from './dto/create-feed-post.dto';
+import { RedeemLoyaltyDto } from './dto/redeem-loyalty.dto';
 
 @Controller(['business', 'businesses'])
 export class BusinessController {
@@ -129,6 +131,157 @@ export class BusinessController {
     @Param('promoId') promoId: string,
   ) {
     return this.businessService.deletePromo(promoId, req.user.userId);
+  }
+
+
+  // ─── SPRINT A — Interacções sociais ──────────────────────────────────────
+
+  @Get(':id/social-state')
+  getSocialState(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.getSocialState(id, req.user.userId);
+  }
+
+  @Post(':id/bookmark')
+  toggleBookmark(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.toggleBookmark(id, req.user.userId);
+  }
+
+  @Post(':id/checkin')
+  checkIn(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.checkIn(id, req.user.userId);
+  }
+
+  @Get(':id/feed')
+  @Public()
+  getFeed(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.businessService.getFeed(id, limit ? Number(limit) : 20);
+  }
+
+  @Post(':id/feed')
+  @Roles(UserRole.OWNER)
+  createFeedPost(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: CreateFeedPostDto,
+  ) {
+    return this.businessService.createFeedPost(id, req.user.userId, body);
+  }
+
+  @Get(':id/loyalty-state')
+  getLoyaltyState(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.getLoyaltyState(id, req.user.userId);
+  }
+
+  @Post(':id/loyalty/redeem')
+  redeemLoyalty(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: RedeemLoyaltyDto,
+  ) {
+    return this.businessService.redeemLoyalty(id, req.user.userId, body.points, body.rewardCode);
+  }
+
+  @Get('recommendations/me')
+  getRecommendations(
+    @Req() req: { user: { userId: string } },
+    @Query('limit') limit?: string,
+  ) {
+    return this.businessService.getRecommendations(req.user.userId, limit ? Number(limit) : 20);
+  }
+
+  // ─── SPRINT B — Follow ────────────────────────────────────────────────────
+
+  @Post(':id/follow')
+  toggleFollow(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.toggleFollow(id, req.user.userId);
+  }
+
+  // ─── SPRINT B — Reviews ───────────────────────────────────────────────────
+
+  @Get(':id/reviews')
+  @Public()
+  getReviews(@Param('id') id: string) {
+    return this.businessService.getReviews(id);
+  }
+
+  @Post(':id/reviews')
+  createReview(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { rating: number; comment: string },
+  ) {
+    return this.businessService.createReview(id, req.user.userId, body);
+  }
+
+  @Post('reviews/:id/helpful')
+  toggleReviewHelpful(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.toggleReviewHelpful(id, req.user.userId);
+  }
+
+  @Post('reviews/:id/reply')
+  @Roles(UserRole.OWNER)
+  addOwnerReply(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { reply: string },
+  ) {
+    return this.businessService.addOwnerReply(id, req.user.userId, body.reply);
+  }
+
+  // ─── SPRINT B/C — Q&A ────────────────────────────────────────────────────
+
+  @Get(':id/questions')
+  @Public()
+  getQuestions(@Param('id') id: string) {
+    return this.businessService.getQuestions(id);
+  }
+
+  @Post(':id/questions')
+  askQuestion(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { question: string },
+  ) {
+    return this.businessService.askQuestion(id, req.user.userId, body.question);
+  }
+
+  @Post('questions/:id/answer')
+  @Roles(UserRole.OWNER)
+  answerQuestion(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { answer: string },
+  ) {
+    return this.businessService.answerQuestion(id, req.user.userId, body.answer);
+  }
+
+  @Post('questions/:id/helpful')
+  toggleQuestionHelpful(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.businessService.toggleQuestionHelpful(id, req.user.userId);
   }
 
   @Delete(':id')

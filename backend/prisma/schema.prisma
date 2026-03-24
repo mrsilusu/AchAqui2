@@ -180,6 +180,16 @@ enum AuditAction {
 }
 
 // =============================================================================
+// ENUMS — INTERACÇÕES SOCIAIS
+// =============================================================================
+
+enum InteractionType {
+  BOOKMARK  // utilizador guardou o negócio
+  FOLLOW    // utilizador segue o negócio
+  CHECKIN   // utilizador fez check-in físico
+}
+
+// =============================================================================
 // MODELOS CORE (sem prefixo — infraestrutura partilhada)
 // =============================================================================
 
@@ -193,7 +203,15 @@ model User {
   businesses    Business[]
   refreshTokens RefreshToken[]
   notifications Notification[]
+  deviceTokens  DeviceToken[]
   claimRequests ClaimRequest[]
+  // Interacções sociais
+  interactions  UserBusinessInteraction[]
+  feedPosts     BusinessFeedPost[]
+  loyaltyLedger LoyaltyLedger[]
+  // Avaliações & Q&A
+  reviews       Review[]
+  questions     BusinessQuestion[]
   // PMS / módulos
   htBookings    HtRoomBooking[]
   staffRoles    CoreBusinessStaff[]
@@ -218,6 +236,13 @@ model Business {
   claimedAt      DateTime?
   source         BusinessSource         @default(MANUAL)
   googlePlaceId  String?                @unique
+  // Interacções sociais
+  interactions   UserBusinessInteraction[]
+  feedPosts      BusinessFeedPost[]
+  loyaltyLedger  LoyaltyLedger[]
+  // Avaliações & Q&A
+  reviews        Review[]
+  questions      BusinessQuestion[]
   // Core relations
   operatingHours OperatingHour[]
   notifications  Notification[]
@@ -379,6 +404,150 @@ model DataUpdateSuggestion {
   updatedAt     DateTime         @updatedAt
 
   @@map("data_update_suggestions")
+}
+
+// =============================================================================
+// INTERACÇÕES SOCIAIS — Bookmark, Follow, Check-in
+// Many-to-Many entre User e Business com tipo e deduplicação nativa
+// =============================================================================
+
+model UserBusinessInteraction {
+  id         String          @id @default(uuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type       InteractionType
+  // date só preenchida para CHECKIN (YYYY-MM-DD) — limita 1 check-in por dia
+  date       String?
+  createdAt  DateTime        @default(now())
+
+  // Previne duplicados:
+  // BOOKMARK/FOLLOW: unique por userId + businessId + type
+  // CHECKIN:         unique por userId + businessId + type + date
+  @@unique([userId, businessId, type, date])
+  @@index([userId, type])       // "todos os bookmarks do user X"
+  @@index([businessId, type])   // "todos os seguidores do negócio Y"
+}
+
+// Feed social do negócio para descoberta e prova social.
+model BusinessFeedPost {
+  id         String    @id @default(uuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  content    String
+  mediaUrl   String?
+  isPinned   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([businessId, createdAt])
+  @@map("business_feed_posts")
+}
+
+// Ledger de pontos de fidelidade para auditoria e saldo acumulado por negócio.
+model LoyaltyLedger {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pointsDelta Int
+  reason     String
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, businessId, createdAt])
+  @@index([businessId, createdAt])
+  @@map("loyalty_ledger")
+}
+
+// =============================================================================
+// AVALIAÇÕES — Reviews + Helpful + Resposta do proprietário
+// =============================================================================
+
+model Review {
+  id             String          @id @default(uuid())
+  businessId     String
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating         Int             // 1-5
+  comment        String
+  helpfulCount   Int             @default(0)
+  ownerReply     String?
+  ownerReplyDate DateTime?
+  helpful        ReviewHelpful[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([userId, businessId])
+  @@index([businessId, createdAt])
+  @@map("reviews")
+}
+
+// Um utilizador só pode marcar "útil" uma vez por avaliação
+model ReviewHelpful {
+  id       String @id @default(uuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@unique([reviewId, userId])
+  @@map("review_helpful")
+}
+
+// =============================================================================
+// Q&A — Perguntas & Respostas
+// =============================================================================
+
+model BusinessQuestion {
+  id           String            @id @default(uuid())
+  businessId   String
+  business     Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String?
+  answeredAt   DateTime?
+  helpfulCount Int               @default(0)
+  helpful      QuestionHelpful[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([businessId, createdAt])
+  @@map("business_questions")
+}
+
+// Um utilizador só pode votar uma vez por pergunta
+model QuestionHelpful {
+  id         String           @id @default(uuid())
+  questionId String
+  question   BusinessQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId     String
+
+  @@unique([questionId, userId])
+  @@map("question_helpful")
+}
+
+// Registo de tokens para push (Expo/FCM), compatível com múltiplos devices por utilizador.
+model DeviceToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String
+  provider   String    @default("expo")
+  platform   String?
+  appVersion String?
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, token])
+  @@index([provider, updatedAt])
+  @@map("device_tokens")
 }
 
 // =============================================================================

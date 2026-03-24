@@ -166,6 +166,44 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
+function parseOutscraperHours(meta) {
+  const wh = meta.working_hours || meta.workingHours || meta.hours_raw;
+  if (!wh) return { isOpen: null, statusText: null };
+
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const now  = new Date();
+  const day  = DAYS[now.getDay()];
+
+  let todayStr = null;
+  if (typeof wh === 'object' && !Array.isArray(wh)) {
+    todayStr = wh[day] || null;
+  } else if (Array.isArray(wh)) {
+    const found = wh.find(s => s.startsWith(day));
+    todayStr = found ? found.replace(`${day}: `, '') : null;
+  }
+
+  if (!todayStr) return { isOpen: false, statusText: 'Fechado hoje' };
+  if (/closed|fechado/i.test(todayStr)) return { isOpen: false, statusText: 'Fechado' };
+  if (/24|open 24/i.test(todayStr))    return { isOpen: true,  statusText: 'Aberto 24 horas' };
+
+  const match = todayStr.match(/[\u2013\-]\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return { isOpen: true, statusText: todayStr };
+
+  let closeH = parseInt(match[1]);
+  const closeM = parseInt(match[2]);
+  const ampm = match[3]?.toUpperCase();
+  if (ampm === 'PM' && closeH !== 12) closeH += 12;
+  if (ampm === 'AM' && closeH === 12) closeH = 0;
+
+  const closing = new Date();
+  closing.setHours(closeH, closeM, 0, 0);
+  const diffMs = closing - now;
+
+  if (diffMs < 0) return { isOpen: false, statusText: 'Fechado' };
+  if (diffMs <= 30 * 60 * 1000) return { isOpen: true, statusText: `Fecha em ${Math.floor(diffMs/60000)} min` };
+  return { isOpen: true, statusText: `Aberto até ${String(closeH).padStart(2,'0')}:${String(closeM).padStart(2,'0')}` };
+}
+
 function normalizeBusiness(rawBusiness) {
   if (!rawBusiness?.id) return null;
 
@@ -176,6 +214,7 @@ function normalizeBusiness(rawBusiness) {
 
   // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
   const meta = rawBusiness.metadata || {};
+  const hoursState = parseOutscraperHours(meta);
 
   return {
     ...base,
@@ -237,8 +276,8 @@ function normalizeBusiness(rawBusiness) {
     promo: base.promo || meta.promo || null,
     distance: base.distance || meta.distance || 0,
     distanceText: base.distanceText || meta.distanceText || '—',
-    isOpen: base.isOpen ?? meta.isOpen ?? true,
-    statusText: base.statusText || meta.statusText || 'Aberto',
+    isOpen:     base.isOpen     ?? hoursState.isOpen     ?? meta.isOpen     ?? true,
+    statusText: base.statusText || hoursState.statusText || meta.statusText || 'Aberto',
     isPublic: true,
     latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
     longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
@@ -295,76 +334,6 @@ function AppContent() {
   });
   const [profileData, setProfileData] = useState(null);
   const [ownerDashboardData, setOwnerDashboardData] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadProfileData = async () => {
-      if (!authSession.accessToken) {
-        setProfileData(null);
-        return;
-      }
-
-      try {
-        const response = await backendApi.getMe(authSession.accessToken);
-        if (!cancelled) {
-          setProfileData(response || null);
-        }
-      } catch (error) {
-        console.error('[Profile][API_FAIL]', {
-          reason: error?.type || 'unknown',
-          status: error?.status || null,
-          url: error?.url || null,
-          message: error?.message || 'Falha ao carregar perfil.',
-        });
-
-        if (!cancelled) {
-          setProfileData(null);
-        }
-      }
-    };
-
-    loadProfileData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession.accessToken, authSession.user?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadOwnerDashboard = async () => {
-      if (!authSession.accessToken || !authSession.isOwner) {
-        setOwnerDashboardData(null);
-        return;
-      }
-
-      try {
-        const response = await backendApi.getOwnerDashboard(authSession.accessToken);
-        if (!cancelled) {
-          setOwnerDashboardData(response || null);
-        }
-      } catch (error) {
-        console.error('[OwnerDashboard][API_FAIL]', {
-          reason: error?.type || 'unknown',
-          status: error?.status || null,
-          url: error?.url || null,
-          message: error?.message || 'Falha ao carregar dashboard do dono.',
-        });
-
-        if (!cancelled) {
-          setOwnerDashboardData(null);
-        }
-      }
-    };
-
-    loadOwnerDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession.accessToken, authSession.isOwner]);
 
   const userProfile = useMemo(() => {
     const createdAt = profileData?.createdAt
@@ -444,6 +413,7 @@ function AppContent() {
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
+  const [isStartupLoading, setIsStartupLoading] = useState(true);
 
   // ── Reservas de quartos partilhadas (dono ↔ cliente) ──────────────────────
   // Deriva directamente de liveSync.bookings (actualizado pelo Supabase Realtime).
@@ -694,47 +664,85 @@ function AppContent() {
       const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
       return { ...b, distance: km, distanceText };
     }));
-  }, [userLocation]);
 
+    // Reverse geocode to update the search location label (only if user hasn't typed a custom location)
+    Location.reverseGeocodeAsync(userLocation)
+      .then(results => {
+        if (!results?.length) return;
+        const r = results[0];
+        const parts = [r.district || r.subregion, r.city || r.region].filter(Boolean);
+        const label = parts.join(', ');
+        if (label) filters.setSearchWhere(prev => prev === '' || prev === 'Talatona, Luanda' ? label : prev);
+      })
+      .catch(() => {});
+  }, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
     let cancelled = false;
 
-    const loadBusinesses = async () => {
+    const startup = async () => {
       try {
-        const response = await backendApi.getBusinesses();
-        const fromApi = (Array.isArray(response) ? response : [])
+        const [meRes, dashRes, bizRes, recRes] = await Promise.all([
+          authSession.accessToken
+            ? backendApi.getMe(authSession.accessToken)
+            : Promise.resolve(null),
+          authSession.accessToken && authSession.isOwner
+            ? backendApi.getOwnerDashboard(authSession.accessToken)
+            : Promise.resolve(null),
+          backendApi.getBusinesses(),
+          authSession.accessToken
+            ? backendApi.getRecommendations(40, authSession.accessToken).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+
+        if (cancelled) return;
+
+        setProfileData(meRes || null);
+        setOwnerDashboardData(authSession.isOwner ? (dashRes || null) : null);
+
+        const fromApi = (Array.isArray(bizRes) ? bizRes : [])
           .map(normalizeBusiness)
           .filter(Boolean);
-
-        // Negócios da API têm prioridade; mocks preenchem os que não existem na API
+        const recMap = new Map((Array.isArray(recRes) ? recRes : []).map(r => [r.id, r]));
         const apiIds = new Set(fromApi.map(b => b.id));
-        const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
-        const merged = [...fromApi, ...mocksNotInApi];
-
-        if (!cancelled) {
-          setBusinesses(merged);
-        }
+        const merged = [...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]
+          .map((biz) => {
+            const rec = recMap.get(biz.id);
+            return rec
+              ? { ...biz, recommendationScore: rec.recommendationScore, recommendationReason: rec.reason }
+              : biz;
+          })
+          .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
+        setBusinesses(merged);
       } catch (error) {
-        console.error('[Businesses][API_FAIL]', {
+        console.error('[Startup][API_FAIL]', {
           reason: error?.type || 'unknown',
           status: error?.status || null,
           url: error?.url || null,
-          message: error?.message || 'Falha ao carregar negócios da API.',
+          message: error?.message || 'Falha no startup.',
         });
-
-        // Em caso de falha total, mostrar os mocks completos
         if (!cancelled) {
+          setProfileData(null);
+          setOwnerDashboardData(null);
           setBusinesses(MOCK_BUSINESSES_INITIAL);
         }
+      } finally {
+        if (!cancelled) setIsStartupLoading(false);
       }
     };
 
-    loadBusinesses();
+    startup();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authSession.accessToken]);
+
+  useEffect(() => {
+    if (!authSession.accessToken) return;
+    backendApi.syncOfflineMutations(authSession.accessToken).catch(() => {});
+  }, [authSession.accessToken]);
 
   const handleTabPress = useCallback((tabId) => {
     if (tabId === 'exitbusiness') { setIsBusinessMode(false); setActiveNavTab('home'); return; }
@@ -752,11 +760,12 @@ function AppContent() {
   }, [authSession.isOwner]);
 
   useEffect(() => {
+    if (authSession.loading) return;
     if (!authSession.isOwner && isBusinessMode) {
       setIsBusinessMode(false);
       setActiveNavTab('home');
     }
-  }, [authSession.isOwner, isBusinessMode]);
+  }, [authSession.loading, authSession.isOwner, isBusinessMode]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -798,10 +807,13 @@ function AppContent() {
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
               authUser={authSession.accessToken ? authSession.user : null}
+              accessToken={authSession.accessToken}
+              liveBookings={liveSync.bookings}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
               onRefresh={handleHomeRefresh}
               refreshing={homeRefreshing}
+              isLoading={isStartupLoading}
             />
           )}
 
@@ -971,7 +983,7 @@ function AppContent() {
 
       {/* ── NÍVEL 2: MÓDULOS OPERACIONAIS ─────────────────────────────── */}
       {/* Sobrepõe o BusinessDetailModal (Nível 1) — absoluteFill completo  */}
-      {showDetail && selectedBusiness && layer.activeLayer && (
+      {showDetail && selectedBusiness && layer.activeLayer && authSession.accessToken && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <OperationalLayerRenderer
             layer={layer}

@@ -143,8 +143,9 @@ function DashboardTab({ accessToken }) {
         <View style={s.kpiGrid}>
           <KpiCard label="Utilizadores"  value={stats?.users?.total ?? '—'}          icon="👥" color="#3B82F6" />
           <KpiCard label="Negócios"      value={stats?.businesses?.total ?? '—'}      icon="🏢" color="#10B981" />
+          <KpiCard label="Premium"       value={stats?.businesses?.premium ?? '—'}    icon="👑" color="#F59E0B" />
           <KpiCard label="Reclamados"    value={`${stats?.businesses?.claimedPercent ?? 0}%`} icon="✅" color="#22A06B" />
-          <KpiCard label="Claims pend."  value={stats?.claims?.pending ?? '—'}        icon="⏳" color="#F59E0B" />
+          <KpiCard label="Claims pend."  value={stats?.claims?.pending ?? '—'}        icon="⏳" color="#EF4444" />
         </View>
       </View>
 
@@ -317,14 +318,27 @@ function ClaimsTab({ accessToken }) {
 
 // ─── Tab: Businesses ─────────────────────────────────────────────────────────
 
+const BIZ_FILTERS = [
+  { id: 'all',        label: 'Todos'       },
+  { id: 'claimed',    label: '✅ Reclamado' },
+  { id: 'unclaimed',  label: '📋 Por reclamar' },
+  { id: 'active',     label: '👁 Activo'  },
+  { id: 'inactive',   label: '🚫 Inactivo' },
+  { id: 'premium',    label: '👑 Premium'  },
+  { id: 'google',     label: '🔵 Google'  },
+  { id: 'manual',     label: '⚪ Manual'   },
+];
+
 function BusinessesTab({ accessToken }) {
   const [businesses, setBusinesses] = useState([]);
-  const [meta, setMeta]     = useState(null);
-  const [loading, setLoading]   = useState(true);
+  const [meta, setMeta]             = useState(null);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [page, setPage]     = useState(1);
+  const [search, setSearch]         = useState('');
+  const [filter, setFilter]         = useState('all');
+  const [page, setPage]             = useState(1);
   const [showImport, setShowImport] = useState(false);
+  const [acting, setActing]         = useState({}); // { [id]: 'active'|'premium'|'unclaim'|'delete' }
   const debounceRef = React.useRef(null);
 
   const load = useCallback(async (pg = 1, q = search, isRefresh = false) => {
@@ -333,11 +347,8 @@ function BusinessesTab({ accessToken }) {
       const params = new URLSearchParams({ page: pg, limit: 20 });
       if (q.trim()) params.append('search', q.trim());
       const data = await apiRequest(`/admin/businesses?${params}`, { accessToken });
-      if (pg === 1) {
-        setBusinesses(data.data || []);
-      } else {
-        setBusinesses((prev) => [...prev, ...(data.data || [])]);
-      }
+      if (pg === 1) setBusinesses(data.data || []);
+      else setBusinesses((prev) => [...prev, ...(data.data || [])]);
       setMeta(data.meta);
       setPage(pg);
     } catch (err) {
@@ -356,27 +367,96 @@ function BusinessesTab({ accessToken }) {
     debounceRef.current = setTimeout(() => load(1, text), 400);
   }
 
+  // Local filter applied on top of server-side search
+  const displayed = businesses.filter(biz => {
+    if (filter === 'claimed')   return biz.isClaimed;
+    if (filter === 'unclaimed') return !biz.isClaimed;
+    if (filter === 'active')    return biz.isActive !== false;
+    if (filter === 'inactive')  return biz.isActive === false;
+    if (filter === 'premium')   return biz.metadata?.isPremium;
+    if (filter === 'google')    return biz.source === 'GOOGLE';
+    if (filter === 'manual')    return biz.source !== 'GOOGLE';
+    return true;
+  });
+
+  const setAct = (id, type, val) => setActing(p => val ? { ...p, [id]: type } : { ...p, [id]: undefined });
+
+  async function handleToggleActive(biz) {
+    setAct(biz.id, 'active', true);
+    try {
+      const res = await apiRequest(`/admin/businesses/${biz.id}/toggle-active`, { method: 'PATCH', accessToken });
+      setBusinesses(prev => prev.map(b => b.id === biz.id ? { ...b, isActive: res.isActive } : b));
+    } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+    finally { setAct(biz.id, 'active', false); }
+  }
+
+  async function handleTogglePremium(biz) {
+    setAct(biz.id, 'premium', true);
+    try {
+      const res = await apiRequest(`/admin/businesses/${biz.id}/toggle-premium`, { method: 'PATCH', accessToken });
+      setBusinesses(prev => prev.map(b => b.id === biz.id ? { ...b, metadata: res.metadata } : b));
+    } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+    finally { setAct(biz.id, 'premium', false); }
+  }
+
+  function handleUnclaim(biz) {
+    if (!biz.isClaimed) return;
+    Alert.alert('Remover dono', `Remover o dono de "${biz.name}"? O negócio ficará por reclamar.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Remover', style: 'destructive', onPress: async () => {
+        setAct(biz.id, 'unclaim', true);
+        try {
+          await apiRequest(`/admin/businesses/${biz.id}/unclaim`, { method: 'PATCH', accessToken });
+          setBusinesses(prev => prev.map(b => b.id === biz.id ? { ...b, isClaimed: false, owner: null } : b));
+        } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+        finally { setAct(biz.id, 'unclaim', false); }
+      }},
+    ]);
+  }
+
+  function handleDelete(biz) {
+    Alert.alert('Eliminar negócio', `Tens a certeza que queres eliminar "${biz.name}"? Esta acção é irreversível.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+        setAct(biz.id, 'delete', true);
+        try {
+          await apiRequest(`/admin/businesses/${biz.id}`, { method: 'DELETE', accessToken });
+          setBusinesses(prev => prev.filter(b => b.id !== biz.id));
+          setMeta(prev => prev ? { ...prev, total: prev.total - 1 } : prev);
+        } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+        finally { setAct(biz.id, 'delete', false); }
+      }},
+    ]);
+  }
+
   return (
     <View style={{ flex: 1 }}>
+      {/* Search + Import */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 8 }}>
         <View style={[s.searchBoxInTab, { flex: 1 }]}>
-        <Icon name="search" size={16} color={COLORS.grayText} strokeWidth={2} />
-        <TextInput
-          style={s.searchInputInTab}
-          placeholder="Pesquisar negócio..."
-          placeholderTextColor={COLORS.grayText}
-          value={search}
-          onChangeText={handleSearch}
-        />
+          <Icon name="search" size={16} color={COLORS.grayText} strokeWidth={2} />
+          <TextInput
+            style={s.searchInputInTab}
+            placeholder="Pesquisar negócio..."
+            placeholderTextColor={COLORS.grayText}
+            value={search}
+            onChangeText={handleSearch}
+          />
         </View>
-        <TouchableOpacity
-          style={s.importBtn}
-          onPress={() => setShowImport(true)}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={s.importBtn} onPress={() => setShowImport(true)} activeOpacity={0.7}>
           <Icon name="upload" size={18} color={COLORS.white} strokeWidth={2} />
         </TouchableOpacity>
       </View>
+
+      {/* Filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScrollRow} contentContainerStyle={{ gap: 6, paddingHorizontal: 12 }}>
+        {BIZ_FILTERS.map(f => (
+          <TouchableOpacity key={f.id} style={[s.filterChip, filter === f.id && s.filterChipActive]} onPress={() => setFilter(f.id)}>
+            <Text style={[s.filterChipText, filter === f.id && s.filterChipTextActive]}>{f.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <ImportModal
         visible={showImport}
         onClose={() => { setShowImport(false); load(1, search, true); }}
@@ -388,29 +468,64 @@ function BusinessesTab({ accessToken }) {
           style={{ flex: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(1, search, true)} tintColor={COLORS.red} />}
         >
-          {meta && (
-            <Text style={s.metaText}>{meta.total} negócios</Text>
-          )}
-          {businesses.map((biz) => (
-            <View key={biz.id} style={s.bizRow}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={s.bizRowName}>{biz.name}</Text>
-                  {biz.isClaimed && (
-                    <View style={s.claimedDot} />
-                  )}
+          {meta && <Text style={s.metaText}>{meta.total} negócios{filter !== 'all' ? ` · ${displayed.length} filtrados` : ''}</Text>}
+          {displayed.map((biz) => {
+            const isActive   = biz.isActive !== false;
+            const isPremium  = !!(biz.metadata?.isPremium);
+            const actId      = acting[biz.id];
+            return (
+              <View key={biz.id} style={[s.bizRow, !isActive && { opacity: 0.55 }]}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={s.bizRowName}>{biz.name}</Text>
+                    {biz.isClaimed && <View style={s.claimedDot} />}
+                    {isPremium && <Text style={{ fontSize: 11 }}>👑</Text>}
+                    {!isActive && <Text style={{ fontSize: 10, color: COLORS.red, fontWeight: '700' }}>INACTIVO</Text>}
+                  </View>
+                  <Text style={s.bizRowSub}>
+                    {biz.category}{biz.owner ? ` · ${biz.owner.name || biz.owner.email}` : ' · Sem dono'}
+                  </Text>
+                  <Text style={s.bizRowMeta}>
+                    {biz.source === 'GOOGLE' ? '🔵 Google' : '⚪ Manual'}
+                    {biz.isClaimed ? ' · ✅ Reclamado' : ' · 📋 Por reclamar'}
+                  </Text>
                 </View>
-                <Text style={s.bizRowSub}>
-                  {biz.category}
-                  {biz.owner ? ` · ${biz.owner.name || biz.owner.email}` : ' · Sem dono'}
-                </Text>
-                <Text style={s.bizRowMeta}>
-                  {biz.source === 'GOOGLE' ? '🔵 Google' : '⚪ Manual'}
-                  {biz.isClaimed ? ' · ✅ Reclamado' : ' · 📋 Por reclamar'}
-                </Text>
+                {/* Action buttons */}
+                <View style={s.rowActions}>
+                  <ActionIconBtn
+                    icon={isActive ? 'eye' : 'eyeOff'}
+                    color={isActive ? COLORS.green : COLORS.grayText}
+                    loading={actId === 'active'}
+                    tooltip={isActive ? 'Desactivar' : 'Activar'}
+                    onPress={() => handleToggleActive(biz)}
+                  />
+                  <ActionIconBtn
+                    icon="star"
+                    color={isPremium ? '#F59E0B' : COLORS.grayText}
+                    loading={actId === 'premium'}
+                    tooltip={isPremium ? 'Remover premium' : 'Tornar premium'}
+                    onPress={() => handleTogglePremium(biz)}
+                  />
+                  {biz.isClaimed && (
+                    <ActionIconBtn
+                      icon="link"
+                      color="#0EA5E9"
+                      loading={actId === 'unclaim'}
+                      tooltip="Remover dono"
+                      onPress={() => handleUnclaim(biz)}
+                    />
+                  )}
+                  <ActionIconBtn
+                    icon="trash"
+                    color={COLORS.red}
+                    loading={actId === 'delete'}
+                    tooltip="Eliminar"
+                    onPress={() => handleDelete(biz)}
+                  />
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
           {meta && page < meta.totalPages && (
             <TouchableOpacity style={s.loadMoreBtn} onPress={() => load(page + 1)}>
               <Text style={s.loadMoreText}>Carregar mais</Text>
@@ -425,22 +540,31 @@ function BusinessesTab({ accessToken }) {
 
 // ─── Tab: Users ──────────────────────────────────────────────────────────────
 
-function UsersTab({ accessToken }) {
-  const [users, setUsers]       = useState([]);
-  const [meta, setMeta]         = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [page, setPage]         = useState(1);
+const ROLE_CYCLE = { CLIENT: 'OWNER', OWNER: 'ADMIN', ADMIN: 'CLIENT' };
+const ROLE_BADGE = {
+  ADMIN:  { label: 'Admin',   color: COLORS.red,   bg: '#FFF0F0' },
+  OWNER:  { label: 'Dono',    color: '#0EA5E9',    bg: '#F0F9FF' },
+  CLIENT: { label: 'Cliente', color: COLORS.green, bg: '#F0FDF4' },
+};
 
-  const load = useCallback(async (pg = 1, isRefresh = false) => {
+function UsersTab({ accessToken }) {
+  const [users, setUsers]           = useState([]);
+  const [meta, setMeta]             = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage]             = useState(1);
+  const [search, setSearch]         = useState('');
+  const [acting, setActing]         = useState({}); // { [id]: 'role'|'delete' }
+  const debounceRef = React.useRef(null);
+
+  const load = useCallback(async (pg = 1, q = search, isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else if (pg === 1) setLoading(true);
     try {
-      const data = await apiRequest(`/admin/users?page=${pg}&limit=20`, { accessToken });
-      if (pg === 1) {
-        setUsers(data.data || []);
-      } else {
-        setUsers((prev) => [...prev, ...(data.data || [])]);
-      }
+      const params = new URLSearchParams({ page: pg, limit: 20 });
+      if (q.trim()) params.append('search', q.trim());
+      const data = await apiRequest(`/admin/users?${params}`, { accessToken });
+      if (pg === 1) setUsers(data.data || []);
+      else setUsers((prev) => [...prev, ...(data.data || [])]);
       setMeta(data.meta);
       setPage(pg);
     } catch (err) {
@@ -449,26 +573,76 @@ function UsersTab({ accessToken }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [accessToken]);
+  }, [accessToken, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  const ROLE_BADGE = {
-    ADMIN:  { label: 'Admin',   color: COLORS.red,   bg: '#FFF0F0' },
-    OWNER:  { label: 'Dono',    color: '#0EA5E9',    bg: '#F0F9FF' },
-    CLIENT: { label: 'Cliente', color: COLORS.green, bg: '#F0FDF4' },
-  };
+  function handleSearch(text) {
+    setSearch(text);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(1, text), 400);
+  }
+
+  const setAct = (id, type, val) => setActing(p => val ? { ...p, [id]: type } : { ...p, [id]: undefined });
+
+  async function handleChangeRole(user) {
+    const nextRole = ROLE_CYCLE[user.role] || 'CLIENT';
+    Alert.alert('Alterar role', `Alterar ${user.name || user.email} de ${user.role} para ${nextRole}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Alterar', onPress: async () => {
+        setAct(user.id, 'role', true);
+        try {
+          const res = await apiRequest(`/admin/users/${user.id}/role`, { method: 'PATCH', body: { role: nextRole }, accessToken });
+          setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: res.role } : u));
+        } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+        finally { setAct(user.id, 'role', false); }
+      }},
+    ]);
+  }
+
+  function handleDelete(user) {
+    Alert.alert('Eliminar conta', `Eliminar a conta de "${user.name || user.email}"? Esta acção é irreversível.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+        setAct(user.id, 'delete', true);
+        try {
+          await apiRequest(`/admin/users/${user.id}`, { method: 'DELETE', accessToken });
+          setUsers(prev => prev.filter(u => u.id !== user.id));
+          setMeta(prev => prev ? { ...prev, total: prev.total - 1 } : prev);
+        } catch (err) { Alert.alert('Erro', err?.message || 'Falhou'); }
+        finally { setAct(user.id, 'delete', false); }
+      }},
+    ]);
+  }
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Search bar */}
+      <View style={[s.searchBoxInTab, { marginRight: 16 }]}>
+        <Icon name="search" size={16} color={COLORS.grayText} strokeWidth={2} />
+        <TextInput
+          style={s.searchInputInTab}
+          placeholder="Pesquisar por nome ou email..."
+          placeholderTextColor={COLORS.grayText}
+          value={search}
+          onChangeText={handleSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => { setSearch(''); load(1, ''); }}>
+            <Icon name="x" size={14} color={COLORS.grayText} strokeWidth={2} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {loading ? <Loader /> : (
         <ScrollView
           style={{ flex: 1 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(1, true)} tintColor={COLORS.red} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(1, search, true)} tintColor={COLORS.red} />}
         >
           {meta && <Text style={s.metaText}>{meta.total} utilizadores</Text>}
           {users.map((user) => {
-            const rb = ROLE_BADGE[user.role] || ROLE_BADGE.CLIENT;
+            const rb    = ROLE_BADGE[user.role] || ROLE_BADGE.CLIENT;
+            const actId = acting[user.id];
             return (
               <View key={user.id} style={s.bizRow}>
                 <View style={{ flex: 1 }}>
@@ -481,7 +655,25 @@ function UsersTab({ accessToken }) {
                   <Text style={s.bizRowSub}>{user.email}</Text>
                   <Text style={s.bizRowMeta}>
                     {user._count?.businesses ?? 0} negócios · {user._count?.claimRequests ?? 0} claims
+                    {user.createdAt ? ` · ${new Date(user.createdAt).toLocaleDateString('pt-PT')}` : ''}
                   </Text>
+                </View>
+                {/* Action buttons */}
+                <View style={s.rowActions}>
+                  <ActionIconBtn
+                    icon="refreshCw"
+                    color="#0EA5E9"
+                    loading={actId === 'role'}
+                    tooltip={`→ ${ROLE_CYCLE[user.role] || 'CLIENT'}`}
+                    onPress={() => handleChangeRole(user)}
+                  />
+                  <ActionIconBtn
+                    icon="trash"
+                    color={COLORS.red}
+                    loading={actId === 'delete'}
+                    tooltip="Eliminar conta"
+                    onPress={() => handleDelete(user)}
+                  />
                 </View>
               </View>
             );
@@ -818,6 +1010,11 @@ function AdminClaimCard({ claim, onApprove, onReject, isReviewing }) {
         <View style={{ flex: 1 }}>
           <Text style={s.adminClaimBizName}>{claim.business?.name || 'Negócio'}</Text>
           <Text style={s.adminClaimSub}>{claim.business?.category}</Text>
+          {claim.createdAt && (
+            <Text style={s.claimTimestamp}>
+              {new Date(claim.createdAt).toLocaleString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          )}
         </View>
         <View style={[s.statusBadge, { backgroundColor: st.bg }]}>
           <Text style={[s.statusBadgeText, { color: st.color }]}>{st.label}</Text>
@@ -873,6 +1070,22 @@ function AdminClaimCard({ claim, onApprove, onReject, isReviewing }) {
         </View>
       )}
     </View>
+  );
+}
+
+function ActionIconBtn({ icon, color, loading, onPress }) {
+  return (
+    <TouchableOpacity
+      style={s.actionIconBtn}
+      onPress={onPress}
+      disabled={loading}
+      activeOpacity={0.7}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      {loading
+        ? <ActivityIndicator size="small" color={color} />
+        : <Icon name={icon} size={16} color={color} strokeWidth={2} />}
+    </TouchableOpacity>
   );
 }
 
@@ -974,6 +1187,7 @@ const s = StyleSheet.create({
   adminClaimTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
   adminClaimBizName: { fontSize: 15, fontWeight: '700', color: COLORS.darkText, marginBottom: 2 },
   adminClaimSub: { fontSize: 12, color: COLORS.grayText },
+  claimTimestamp: { fontSize: 11, color: COLORS.grayText, marginTop: 2 },
   adminClaimUser: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   adminClaimUserText: { fontSize: 13, color: COLORS.grayText },
   adminClaimEvidence: { fontSize: 12, color: COLORS.grayText, fontStyle: 'italic', lineHeight: 17, marginBottom: 8 },
@@ -1051,6 +1265,17 @@ const s = StyleSheet.create({
   },
   searchInputInTab: { flex: 1, fontSize: 14, color: COLORS.darkText },
   importBtn: { width: 44, height: 44, borderRadius: 10, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center', marginVertical: 10 },
+
+  // Filter scroll row (horizontal chips in BusinessesTab)
+  filterScrollRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine },
+
+  // Row action buttons
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 },
+  actionIconBtn: {
+    width: 34, height: 34, borderRadius: 8,
+    backgroundColor: COLORS.grayBg,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   // Empty
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },

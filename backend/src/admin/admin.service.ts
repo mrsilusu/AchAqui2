@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ImportService } from '../import/import.service';
-import { ClaimStatus } from '@prisma/client';
+import { ClaimStatus, UserRole } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -28,6 +28,7 @@ export class AdminService {
       approvedClaims,
       rejectedClaims,
       googleBusinesses,
+      premiumBusinesses,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.business.count(),
@@ -36,6 +37,7 @@ export class AdminService {
       this.prisma.claimRequest.count({ where: { status: 'APPROVED' } }),
       this.prisma.claimRequest.count({ where: { status: 'REJECTED' } }),
       this.prisma.business.count({ where: { source: 'GOOGLE' } }),
+      this.prisma.business.count({ where: { metadata: { path: ['isPremium'], equals: true } } }),
     ]);
 
     return {
@@ -47,6 +49,7 @@ export class AdminService {
         claimedPercent: totalBusinesses > 0 ? Math.round((claimedBusinesses / totalBusinesses) * 100) : 0,
         fromGoogle: googleBusinesses,
         manual: totalBusinesses - googleBusinesses,
+        premium: premiumBusinesses,
       },
       claims: {
         pending: pendingClaims,
@@ -119,6 +122,45 @@ export class AdminService {
       this.prisma.business.count({ where }),
     ]);
     return { data: businesses, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async toggleBusinessActive(id: string) {
+    const biz = await this.prisma.business.findUnique({ where: { id }, select: { isActive: true } });
+    if (!biz) throw new NotFoundException('Negócio não encontrado.');
+    return this.prisma.business.update({
+      where: { id },
+      data: { isActive: !biz.isActive },
+      select: { id: true, name: true, isActive: true },
+    });
+  }
+
+  async toggleBusinessPremium(id: string) {
+    const biz = await this.prisma.business.findUnique({ where: { id }, select: { metadata: true } });
+    if (!biz) throw new NotFoundException('Negócio não encontrado.');
+    const meta: any = (biz.metadata as any) || {};
+    meta.isPremium = !meta.isPremium;
+    return this.prisma.business.update({
+      where: { id },
+      data: { metadata: meta },
+      select: { id: true, name: true, metadata: true },
+    });
+  }
+
+  async unclaimBusiness(id: string) {
+    const biz = await this.prisma.business.findUnique({ where: { id }, select: { isClaimed: true } });
+    if (!biz) throw new NotFoundException('Negócio não encontrado.');
+    return this.prisma.business.update({
+      where: { id },
+      data: { ownerId: null, isClaimed: false, claimedAt: null },
+      select: { id: true, name: true, isClaimed: true, ownerId: true },
+    });
+  }
+
+  async deleteBusiness(id: string) {
+    const biz = await this.prisma.business.findUnique({ where: { id } });
+    if (!biz) throw new NotFoundException('Negócio não encontrado.');
+    await this.prisma.business.delete({ where: { id } });
+    return { deleted: true, id };
   }
 
   // ─── Outscraper Import ────────────────────────────────────────────────────────
@@ -211,10 +253,17 @@ export class AdminService {
 
   // ─── User Management ─────────────────────────────────────────────────────────
 
-  async getAllUsers(page = 1, limit = 20) {
+  async getAllUsers(page = 1, limit = 20, search?: string) {
     const skip = (page - 1) * limit;
+    const where: any = search
+      ? { OR: [
+          { name:  { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+        ]}
+      : {};
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
+        where,
         skip, take: limit,
         select: {
           id: true, name: true, email: true, role: true, createdAt: true,
@@ -222,9 +271,27 @@ export class AdminService {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where }),
     ]);
     return { data: users, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async changeUserRole(id: string, role: UserRole) {
+    if (!Object.values(UserRole).includes(role)) throw new BadRequestException('Role inválido.');
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!user) throw new NotFoundException('Utilizador não encontrado.');
+    return this.prisma.user.update({
+      where: { id },
+      data: { role },
+      select: { id: true, name: true, email: true, role: true },
+    });
+  }
+
+  async deleteUser(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Utilizador não encontrado.');
+    await this.prisma.user.delete({ where: { id } });
+    return { deleted: true, id };
   }
 
   async reportMissingBusiness(userId: string, note: string, businessName?: string) {
