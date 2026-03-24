@@ -24,8 +24,8 @@ export interface OutscraperRow {
   reviews?: string | number;
   photo?: string;
   logo?: string;
-  working_hours?: string;
-  working_hours_old_format?: string;
+  working_hours?: string | Record<string, unknown>;
+  working_hours_old_format?: string | Record<string, unknown>;
   description?: string;
   about?: string;
   business_status?: string;
@@ -102,6 +102,247 @@ export class ImportService {
     }
     result.push(current);
     return result;
+  }
+
+  // ── Parser de horários Outscraper ────────────────────────────────────────────
+
+  /**
+   * Converte uma string de horário individual (e.g. "9:00 AM – 6:00 PM") para
+   * formato 24h estruturado. Devolve null se o dia estiver fechado ou indecifrável.
+   */
+  private parseHoursString(str: string): { open: string; close: string } | null {
+    if (!str) return null;
+    const lower = str.toLowerCase().trim();
+
+    // Fechado — inclui variantes portuguesas e inglesas
+    if (['encerrado', 'closed', 'fechado', 'cerrado'].some(w => lower.includes(w))) return null;
+
+    // 24 horas
+    if (lower.includes('24 hour') || lower.includes('24h') || lower.includes('24 hora')) {
+      return { open: '00:00', close: '23:59' };
+    }
+
+    const normalized = str.replace(/[\u2013\u2014\u2012]/g, '-').replace(/\u202f|\u2009/g, ' ');
+
+    // "9:00 AM - 6:00 PM" ou "9 AM - 6 PM"
+    const ampm = normalized.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+    if (ampm) {
+      return {
+        open:  this.to24h(+ampm[1], +(ampm[2] ?? '0'), ampm[3].toUpperCase() as 'AM' | 'PM'),
+        close: this.to24h(+ampm[4], +(ampm[5] ?? '0'), ampm[6].toUpperCase() as 'AM' | 'PM'),
+      };
+    }
+
+    // "09:00-18:00" (24h)
+    const h24 = normalized.match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
+    if (h24) {
+      return {
+        open:  `${h24[1].padStart(2, '0')}:${h24[2]}`,
+        close: `${h24[3].padStart(2, '0')}:${h24[4]}`,
+      };
+    }
+
+    // "9h-18h" ou "9h às 18h"
+    const hFmt = normalized.match(/(\d{1,2})h\s*(?:[-–]|às|as)\s*(\d{1,2})h/i);
+    if (hFmt) {
+      return {
+        open:  `${hFmt[1].padStart(2, '0')}:00`,
+        close: `${hFmt[2].padStart(2, '0')}:00`,
+      };
+    }
+
+    return null; // formato não reconhecido → trata como desconhecido
+  }
+
+  private to24h(hours: number, minutes: number, period: 'AM' | 'PM'): string {
+    let h = hours;
+    if (period === 'AM' && h === 12) h = 0;
+    if (period === 'PM' && h !== 12) h += 12;
+    return `${String(h).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  /**
+   * Parseia o campo working_hours do Outscraper para um horário semanal estruturado.
+   *
+   * Suporta três formatos:
+   *  1. Objeto já estruturado com nomes em português e valores array
+   *     {"domingo": ["Encerrado"], "sábado": ["12:30-23:30"], ...}
+   *  2. Python dict string com aspas simples
+   *     "{'Monday': '9:00 AM – 6:00 PM', 'Sunday': 'Closed'}"
+   *  3. Separado por ';': "Mo-Fr 09:00-18:00; Sa 09:00-14:00"
+   */
+  private parseWorkingHours(
+    raw: string | Record<string, unknown> | null,
+  ): Record<string, { open: string; close: string } | null> | null {
+    if (!raw) return null;
+
+    const DAY_MAP: Record<string, string> = {
+      // English
+      monday: 'monday', tuesday: 'tuesday', wednesday: 'wednesday',
+      thursday: 'thursday', friday: 'friday', saturday: 'saturday', sunday: 'sunday',
+      mon: 'monday', tue: 'tuesday', wed: 'wednesday',
+      thu: 'thursday', fri: 'friday', sat: 'saturday', sun: 'sunday',
+      mo: 'monday', tu: 'tuesday', we: 'wednesday',
+      th: 'thursday', fr: 'friday', sa: 'saturday', su: 'sunday',
+      // Portuguese
+      'segunda-feira': 'monday', segunda: 'monday',
+      'terça-feira': 'tuesday', 'terca-feira': 'tuesday', terça: 'tuesday', terca: 'tuesday',
+      'quarta-feira': 'wednesday', quarta: 'wednesday',
+      'quinta-feira': 'thursday', quinta: 'thursday',
+      'sexta-feira': 'friday', sexta: 'friday',
+      sábado: 'saturday', sabado: 'saturday',
+      domingo: 'sunday',
+    };
+
+    // ── Formato 1: Objeto já estruturado (formato real do DB / Outscraper JSON) ─
+    // {"domingo": ["Encerrado"], "sábado": ["12:30-23:30"], ...}
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      const schedule: Record<string, { open: string; close: string } | null> = {};
+      for (const [day, val] of Object.entries(raw)) {
+        const key = DAY_MAP[day.toLowerCase().trim()];
+        if (!key) continue;
+        // O valor pode ser array ou string directa
+        const hoursStr = Array.isArray(val) ? String(val[0] ?? '') : String(val ?? '');
+        schedule[key] = this.parseHoursString(hoursStr);
+      }
+      if (Object.keys(schedule).length > 0) return schedule;
+    }
+
+    // A partir daqui o raw é string
+    const rawStr = String(raw);
+
+    // ── Formato 2: Python dict com aspas simples ──────────────────────────────
+    // {'Monday': '9:00 AM – 6:00 PM', 'Sunday': 'Closed'}
+    try {
+      const jsonStr = rawStr
+        .replace(/'/g, '"')
+        .replace(/[\u2013\u2014\u2012]/g, '-')
+        .replace(/\u202f|\u2009/g, ' ');
+
+      const parsed: Record<string, string> = JSON.parse(jsonStr);
+      const schedule: Record<string, { open: string; close: string } | null> = {};
+
+      for (const [day, hoursStr] of Object.entries(parsed)) {
+        const key = DAY_MAP[day.toLowerCase().trim()];
+        if (!key) continue;
+        // Pode vir como array após parse (e.g. {"domingo": ["Encerrado"]})
+        const str = Array.isArray(hoursStr) ? String((hoursStr as unknown[])[0] ?? '') : String(hoursStr ?? '');
+        schedule[key] = this.parseHoursString(str);
+      }
+
+      if (Object.keys(schedule).length > 0) return schedule;
+    } catch { /* tenta próximo formato */ }
+
+    // ── Formato 3: Separado por ';': "Mo-Fr 09:00-18:00; Sa 09:00-14:00" ──────
+    if (rawStr.includes(';') || /\b(mo|tu|we|th|fr|sa|su)\b/i.test(rawStr)) {
+      try {
+        const schedule: Record<string, { open: string; close: string } | null> = {};
+        const allDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const parts = rawStr.split(';').map((p) => p.trim()).filter(Boolean);
+
+        for (const part of parts) {
+          const match = part.match(/^([A-Za-záàâãéèêíïóôõöúùüçÇ\-]+)[:\s]+(.+)$/);
+          if (!match) continue;
+
+          const daysPart  = match[1].trim().toLowerCase();
+          const hoursPart = match[2].trim();
+          const dayHours  = this.parseHoursString(hoursPart);
+
+          if (daysPart.includes('-')) {
+            const [startKey, endKey] = daysPart.split('-');
+            const startIdx = allDays.indexOf(DAY_MAP[startKey] ?? '');
+            const endIdx   = allDays.indexOf(DAY_MAP[endKey]   ?? '');
+            if (startIdx !== -1 && endIdx !== -1) {
+              for (let i = startIdx; i <= endIdx; i++) schedule[allDays[i]] = dayHours;
+            }
+          } else {
+            const key = DAY_MAP[daysPart];
+            if (key) schedule[key] = dayHours;
+          }
+        }
+
+        if (Object.keys(schedule).length > 0) return schedule;
+      } catch { /* ignora */ }
+    }
+
+    return null;
+  }
+
+  /**
+   * Calcula isOpen e statusText a partir do horário estruturado e do status
+   * do negócio no momento da importação.
+   */
+  private computeIsOpen(
+    schedule: Record<string, { open: string; close: string } | null> | null,
+    isTemporarilyClosed: boolean,
+  ): { isOpen: boolean; statusText: string } {
+    if (isTemporarilyClosed) {
+      return { isOpen: false, statusText: 'Temporariamente fechado' };
+    }
+
+    if (!schedule) {
+      // Sem horário disponível — assume aberto para não esconder o negócio
+      return { isOpen: true, statusText: 'Aberto' };
+    }
+
+    const now = new Date();
+    const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const todayKey   = DAYS[now.getDay()];
+    const todayHours = schedule[todayKey];
+
+    // Dia explicitamente fechado (null) vs. dia não presente no horário (undefined)
+    if (todayHours === null) {
+      // Encontra próxima abertura
+      for (let i = 1; i <= 7; i++) {
+        const nextKey   = DAYS[(now.getDay() + i) % 7];
+        const nextHours = schedule[nextKey];
+        if (nextHours) {
+          const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+          const label  = i === 1 ? `amanhã às ${nextHours.open}` : `${labels[(now.getDay() + i) % 7]} às ${nextHours.open}`;
+          return { isOpen: false, statusText: `Abre ${label}` };
+        }
+      }
+      return { isOpen: false, statusText: 'Fechado hoje' };
+    }
+
+    if (!todayHours) {
+      // Dia não especificado no horário — não sabemos, assume aberto
+      return { isOpen: true, statusText: 'Aberto' };
+    }
+
+    const nowMin   = now.getHours() * 60 + now.getMinutes();
+    const [oh, om] = todayHours.open.split(':').map(Number);
+    const [ch, cm] = todayHours.close.split(':').map(Number);
+    const openMin  = oh * 60 + om;
+    const closeMin = ch * 60 + cm;
+
+    if (nowMin >= openMin && nowMin < closeMin) {
+      const minsLeft = closeMin - nowMin;
+      return {
+        isOpen: true,
+        statusText: minsLeft <= 60
+          ? `Fecha em ${minsLeft} min`
+          : `Aberto até ${todayHours.close}`,
+      };
+    }
+
+    // Fechado agora — quando abre?
+    if (nowMin < openMin) {
+      return { isOpen: false, statusText: `Abre às ${todayHours.open}` };
+    }
+
+    // Passou o horário de hoje — próximo dia
+    for (let i = 1; i <= 7; i++) {
+      const nextKey   = DAYS[(now.getDay() + i) % 7];
+      const nextHours = schedule[nextKey];
+      if (nextHours) {
+        const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        const label  = i === 1 ? `amanhã às ${nextHours.open}` : `${labels[(now.getDay() + i) % 7]} às ${nextHours.open}`;
+        return { isOpen: false, statusText: `Abre ${label}` };
+      }
+    }
+
+    return { isOpen: false, statusText: 'Fechado' };
   }
 
   // ── Mapear linha Outscraper → dados do negócio ───────────────────────────────
@@ -217,8 +458,11 @@ export class ImportService {
       ? String(row.email)
       : null;
 
-    // Horários — preserva formato raw do Outscraper para parsing posterior
-    const workingHours = row.working_hours || row.working_hours_old_format || null;
+    // Horários — parseia o formato Outscraper (string ou objecto já estruturado)
+    const rawHours = (row.working_hours ?? row.working_hours_old_format) as string | Record<string, unknown> | null ?? null;
+    const schedule = this.parseWorkingHours(rawHours);
+    const isTemporarilyClosed = status === 'CLOSED_TEMPORARILY';
+    const { isOpen, statusText } = this.computeIsOpen(schedule, isTemporarilyClosed);
 
     // Rating e reviews
     const rating       = row.rating  ? parseFloat(String(row.rating))  : null;
@@ -238,9 +482,12 @@ export class ImportService {
       email,
       rating,
       reviewsCount,
-      photos,                              // array com photo + logo
-      workingHours,                        // formato raw Outscraper
-      status,                              // OPERATIONAL | CLOSED_TEMPORARILY | etc.
+      photos,
+      hours:        schedule,          // horário semanal estruturado (ou null se não disponível)
+      workingHours: rawHours,          // string raw original do Outscraper (referência)
+      isOpen,                          // calculado a partir do schedule + hora actual
+      statusText,                      // texto legível: "Aberto até 18:00", "Abre amanhã às 09:00", etc.
+      status,                          // OPERATIONAL | CLOSED_TEMPORARILY
       verified:     row.verified === 'TRUE' || row.verified === true,
       placeTypes:   row.type          || null,
       locatedIn:    row.located_in    || null,
@@ -253,7 +500,9 @@ export class ImportService {
       latitude:     lat,
       longitude:    lng,
       municipality,
-      isActive:     status !== 'CLOSED_TEMPORARILY',
+      // CLOSED_TEMPORARILY mantém-se activo (isActive:true) mas com isOpen:false no metadata,
+      // para aparecer na listagem com o badge "Fechado" em vez de desaparecer completamente.
+      isActive:     true,
       googlePlaceId: row.place_id ? String(row.place_id) : null,
       metadata,
     };

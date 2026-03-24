@@ -59,6 +59,7 @@ import {
 } from '../../core/AchAqui_Core';
 
 import { hS, acS, fbS, spS, profS, bizS } from '../../styles/Main.styles';
+import { backendApi } from '../../lib/backendApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -184,6 +185,36 @@ const BusinessListCell = React.memo(function BusinessListCell({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PREMIUM INTERSTITIAL BLOCK — bloco de 5 negócios premium entre grupos de 15
+// ─────────────────────────────────────────────────────────────────────────────
+const piS = StyleSheet.create({
+  wrapper:    { marginVertical: 8, backgroundColor: '#111111', paddingBottom: 16 },
+  header:     { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, gap: 6 },
+  title:      { fontSize: 16, fontWeight: '800', color: '#FFD700', letterSpacing: -0.3 },
+  subtitle:   { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.5)', letterSpacing: 0.2 },
+  cardWrap:   { paddingHorizontal: 16, marginBottom: 10 },
+});
+
+const PremiumInterstitialBlock = React.memo(function PremiumInterstitialBlock({ businesses, onSelectBusiness }) {
+  if (!businesses || businesses.length === 0) return null;
+  return (
+    <View style={piS.wrapper}>
+      <View style={piS.header}>
+        <Text style={piS.title}>👑 Em Destaque</Text>
+        <Text style={piS.subtitle}>Negócios Premium</Text>
+      </View>
+      {businesses.map(b => (
+        <View key={b.id} style={piS.cardWrap}>
+          <SponsoredCard business={b} onPress={() => onSelectBusiness(b)} />
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const PREMIUM_EVERY = 15;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HOME MODULE — componente principal exportado
 // ─────────────────────────────────────────────────────────────────────────────
 export function HomeModule({
@@ -239,6 +270,24 @@ export function HomeModule({
       .slice(0, 5),
     [featuredBusinesses, businesses],
   );
+
+  const premiumBiz = useMemo(
+    () => (featuredBusinesses.length > 0 ? featuredBusinesses : businesses)
+      .filter(b => b.isPublic !== false && b.id !== OWNER_BUSINESS.id && b.isPremium)
+      .slice(0, 5),
+    [featuredBusinesses, businesses],
+  );
+
+  const interleavedItems = useMemo(() => {
+    const items = [];
+    for (let i = 0; i < businesses.length; i += PREMIUM_EVERY) {
+      businesses.slice(i, i + PREMIUM_EVERY).forEach(b => items.push({ type: 'biz', b }));
+      if (premiumBiz.length > 0 && i + PREMIUM_EVERY < businesses.length) {
+        items.push({ type: 'premium' });
+      }
+    }
+    return items;
+  }, [businesses, premiumBiz]);
 
   useEffect(() => {
     carouselIndex.current = 0;
@@ -473,18 +522,20 @@ export function HomeModule({
         <Text style={hS.sectionCount}>({businesses.length} resultados)</Text>
       </View>
 
-      {/* Business list */}
-      {businesses.map(b => (
-        <BusinessListCell
-          key={b.id}
-          business={b}
-          bookmarked={bookmarkedIds.includes(b.id)}
-          isComparing={compareList.includes(b.id)}
-          onPress={onSelectBusiness}
-          onToggleBookmark={onToggleBookmark}
-          onToggleCompare={toggleCompare}
-        />
-      ))}
+      {/* Business list — intercalado com blocos premium a cada 15 negócios */}
+      {interleavedItems.map((item, idx) =>
+        item.type === 'premium'
+          ? <PremiumInterstitialBlock key={`prem-${idx}`} businesses={premiumBiz} onSelectBusiness={onSelectBusiness} />
+          : <BusinessListCell
+              key={item.b.id}
+              business={item.b}
+              bookmarked={bookmarkedIds.includes(item.b.id)}
+              isComparing={compareList.includes(item.b.id)}
+              onPress={onSelectBusiness}
+              onToggleBookmark={onToggleBookmark}
+              onToggleCompare={toggleCompare}
+            />
+      )}
     </ScrollView>
   );
 
@@ -785,11 +836,58 @@ function ProfileTab({
   USER_PROFILE = USER_PROFILE_DEFAULT,
   isBusinessMode = false,
   authUser = null,
+  accessToken = null,
+  liveBookings = [],
   onOpenAuth = () => {},
   onLogout = () => {},
 }) {
   const isLoggedIn = Boolean(authUser);
   const isOwner    = authUser?.role === 'OWNER';
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [stats, setStats]             = useState(null);
+  const [myReviews, setMyReviews]     = useState([]);
+  const [expandedSection, setExpanded] = useState(null); // 'reviews'|'bookmarks'|'bookings'|'editProfile'|'help'|'settings'|'about'
+  const [editName, setEditName]       = useState('');
+  const [savingName, setSavingName]   = useState(false);
+  const [saveNameMsg, setSaveNameMsg] = useState('');
+
+  // ── Load profile data ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!accessToken) return;
+    Promise.all([
+      backendApi.getMyStats(accessToken).catch(() => null),
+      backendApi.getMyReviews(accessToken).catch(() => []),
+    ]).then(([s, r]) => {
+      if (s) setStats(s);
+      if (r) setMyReviews(Array.isArray(r) ? r : []);
+    });
+  }, [accessToken]);
+
+  // ── Derived data ───────────────────────────────────────────────────────────
+  const savedBusinesses = businesses.filter(b => bookmarkedIds.includes(b.id));
+  const myBookingsCount = liveBookings.filter(bk =>
+    bk.userId === authUser?.id || bk.clientId === authUser?.id
+  ).length;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const toggle = (key) => setExpanded(prev => prev === key ? null : key);
+
+  const handleSaveName = async () => {
+    if (!editName.trim() || !accessToken) return;
+    setSavingName(true);
+    setSaveNameMsg('');
+    try {
+      await backendApi.updateProfile({ name: editName.trim() }, accessToken);
+      setSaveNameMsg('Nome actualizado com sucesso!');
+    } catch {
+      setSaveNameMsg('Erro ao guardar. Tenta novamente.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const starsStr = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
 
   return (
 <View style={[profS.overlay, {
@@ -809,7 +907,6 @@ function ProfileTab({
             {/* ── GUEST: não logado ───────────────────────────────────────── */}
             {!isLoggedIn && (
               <View style={guestS.wrap}>
-                {/* Avatar placeholder */}
                 <View style={guestS.avatarWrap}>
                   <View style={profS.avatarLarge}>
                     <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
@@ -821,72 +918,39 @@ function ProfileTab({
                   Inicia sessão para guardar favoritos, fazer reservas e gerir o teu negócio.
                 </Text>
 
-                {/* Botão principal: Entrar */}
-                <TouchableOpacity
-                  style={guestS.loginBtn}
-                  activeOpacity={0.85}
-                  onPress={() => onOpenAuth('login')}
-                >
+                <TouchableOpacity style={guestS.loginBtn} activeOpacity={0.85} onPress={() => onOpenAuth('login')}>
                   <Icon name="user" size={18} color={COLORS.white} strokeWidth={2.5} />
                   <Text style={guestS.loginBtnTxt}>Entrar na conta</Text>
                 </TouchableOpacity>
 
-                {/* Botão secundário: Criar conta */}
-                <TouchableOpacity
-                  style={guestS.registerBtn}
-                  activeOpacity={0.85}
-                  onPress={() => onOpenAuth('register')}
-                >
+                <TouchableOpacity style={guestS.registerBtn} activeOpacity={0.85} onPress={() => onOpenAuth('register')}>
                   <Text style={guestS.registerBtnTxt}>Criar conta</Text>
                 </TouchableOpacity>
 
-                {/* Divisor */}
                 <View style={guestS.dividerRow}>
                   <View style={guestS.dividerLine} />
                   <Text style={guestS.dividerTxt}>ou continua a explorar</Text>
                   <View style={guestS.dividerLine} />
                 </View>
 
-                {/* Acções rápidas mesmo sem login */}
                 <View style={profS.actionGrid}>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => { onSetActiveNavTab('home'); }}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="search" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    </View>
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => onSetActiveNavTab('home')}>
+                    <View style={profS.actionIcon}><Icon name="search" size={22} color={COLORS.darkText} strokeWidth={2} /></View>
                     <Text style={profS.actionLabel}>Explorar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => onOpenAuth('login')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    </View>
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => onOpenAuth('login')}>
+                    <View style={profS.actionIcon}><Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} /></View>
                     <Text style={profS.actionLabel}>Avaliação</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => onOpenAuth('login')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    </View>
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => onOpenAuth('login')}>
+                    <View style={profS.actionIcon}><Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} /></View>
                     <Text style={profS.actionLabel}>Fotos e vídeos</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => onOpenAuth('register', 'OWNER')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    </View>
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => onOpenAuth('register', 'OWNER')}>
+                    <View style={profS.actionIcon}><Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} /></View>
                     <Text style={profS.actionLabel}>Adicionar negócio</Text>
                   </TouchableOpacity>
                 </View>
-
                 <View style={{ height: 32 }} />
               </View>
             )}
@@ -894,136 +958,260 @@ function ProfileTab({
             {/* ── LOGADO ──────────────────────────────────────────────────── */}
             {isLoggedIn && (
               <>
-                {/* Avatar + Nome + Stats */}
+                {/* Avatar + Nome + Stats Badges */}
                 <View style={profS.topSection}>
                   <View style={profS.avatarContainer}>
                     <View style={profS.avatarLarge}>
                       <Icon name="user" size={64} color={COLORS.grayText} strokeWidth={1.5} />
                     </View>
                   </View>
-                  <Text style={profS.userName}>{authUser.name || USER_PROFILE.name}</Text>
+                  <Text style={profS.userName}>{authUser.name || authUser.email}</Text>
+                  <Text style={{ fontSize: 13, color: COLORS.grayText, marginBottom: 12 }}>{authUser.email}</Text>
                   <View style={profS.statsBadges}>
                     <View style={profS.statBadge}>
-                      <Icon name="bell" size={14} color={COLORS.darkText} strokeWidth={2} />
-                      <Text style={profS.statBadgeText}>{USER_PROFILE.stats.reviewsWritten}</Text>
+                      <Icon name="star" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>{stats?.reviews ?? myReviews.length}</Text>
+                      <Text style={{ fontSize: 11, color: COLORS.grayText }}>avaliações</Text>
                     </View>
                     <View style={profS.statBadge}>
-                      <Icon name="camera" size={14} color={COLORS.darkText} strokeWidth={2} />
-                      <Text style={profS.statBadgeText}>{USER_PROFILE.stats.photosUploaded}</Text>
+                      <Icon name="check" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>{stats?.checkIns ?? 0}</Text>
+                      <Text style={{ fontSize: 11, color: COLORS.grayText }}>check-ins</Text>
                     </View>
                     <View style={profS.statBadge}>
-                      <Icon name="users" size={14} color={COLORS.darkText} strokeWidth={2} />
-                      <Text style={profS.statBadgeText}>0</Text>
+                      <Icon name="bookmark" size={14} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.statBadgeText}>{stats?.bookmarks ?? bookmarkedIds.length}</Text>
+                      <Text style={{ fontSize: 11, color: COLORS.grayText }}>guardados</Text>
                     </View>
                   </View>
                 </View>
 
                 {/* Acções rápidas */}
                 <View style={profS.actionGrid}>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Avaliações', 'Abra um negócio para avaliar.')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => toggle('reviews')}>
+                    <View style={[profS.actionIcon, expandedSection === 'reviews' && { backgroundColor: '#FFE8E8' }]}>
+                      <Icon name="star" size={22} color={expandedSection === 'reviews' ? COLORS.red : COLORS.darkText} strokeWidth={2} />
                     </View>
-                    <Text style={profS.actionLabel}>Avaliação</Text>
+                    <Text style={profS.actionLabel}>As minhas avaliações</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Fotos e vídeos', 'Abra um negócio para adicionar conteúdo.')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="camera" size={22} color={COLORS.darkText} strokeWidth={2} />
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => toggle('bookmarks')}>
+                    <View style={[profS.actionIcon, expandedSection === 'bookmarks' && { backgroundColor: '#FFE8E8' }]}>
+                      <Icon name="bookmark" size={22} color={expandedSection === 'bookmarks' ? COLORS.red : COLORS.darkText} strokeWidth={2} />
                     </View>
-                    <Text style={profS.actionLabel}>Fotos e vídeos</Text>
+                    <Text style={profS.actionLabel}>Negócios guardados</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Check-in', 'Abra um negócio para fazer check-in.')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="check" size={22} color={COLORS.darkText} strokeWidth={2} />
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => toggle('bookings')}>
+                    <View style={[profS.actionIcon, expandedSection === 'bookings' && { backgroundColor: '#FFE8E8' }]}>
+                      <Icon name="calendar" size={22} color={expandedSection === 'bookings' ? COLORS.red : COLORS.darkText} strokeWidth={2} />
                     </View>
-                    <Text style={profS.actionLabel}>Check-in</Text>
+                    <Text style={profS.actionLabel}>Reservas</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.actionButton} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Adicionar negócio', 'Ative o modo dono para cadastrar negócios.')}
-                  >
-                    <View style={profS.actionIcon}>
-                      <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
+                  <TouchableOpacity style={profS.actionButton} activeOpacity={0.7} onPress={() => toggle('editProfile')}>
+                    <View style={[profS.actionIcon, expandedSection === 'editProfile' && { backgroundColor: '#FFE8E8' }]}>
+                      <Icon name="user" size={22} color={expandedSection === 'editProfile' ? COLORS.red : COLORS.darkText} strokeWidth={2} />
                     </View>
-                    <Text style={profS.actionLabel}>Adicionar negócio</Text>
+                    <Text style={profS.actionLabel}>Editar perfil</Text>
                   </TouchableOpacity>
                 </View>
 
-                <View style={profS.divider} />
+                {/* ── As minhas avaliações ─────────────────────────────── */}
+                {expandedSection === 'reviews' && (
+                  <>
+                    <View style={profS.divider} />
+                    <View style={profS.section}>
+                      <Text style={profS.sectionTitle}>As minhas avaliações ({myReviews.length})</Text>
+                      {myReviews.length === 0 && (
+                        <Text style={{ color: COLORS.grayText, fontSize: 14 }}>Ainda não fizeste nenhuma avaliação.</Text>
+                      )}
+                      {myReviews.map(r => (
+                        <View key={r.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={{ fontWeight: '700', fontSize: 15, color: COLORS.darkText, flex: 1 }} numberOfLines={1}>
+                              {r.business?.name || 'Negócio'}
+                            </Text>
+                            <Text style={{ fontSize: 14, color: '#F59E0B', fontWeight: '700' }}>{starsStr(r.rating)}</Text>
+                          </View>
+                          {r.comment ? <Text style={{ fontSize: 13, color: COLORS.darkText, lineHeight: 18 }}>{r.comment}</Text> : null}
+                          <Text style={{ fontSize: 11, color: COLORS.grayText, marginTop: 4 }}>
+                            {new Date(r.createdAt).toLocaleDateString('pt-AO')}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
 
-                {/* Visualizados recentemente */}
-                <View style={profS.section}>
-                  <Text style={profS.sectionTitle}>Visualizados recentemente</Text>
-                  {businesses.filter(b => bookmarkedIds.includes(b.id)).slice(0, 5).map((business) => (
-                    <TouchableOpacity
-                      key={business.id}
-                      style={profS.recentlyViewedCard}
-                      activeOpacity={0.7}
-                      onPress={() => { onSetActiveNavTab('home'); onSelectBusiness(business); }}
-                    >
-                      <View style={profS.recentlyViewedPhoto}>
-                        {business.photos?.[0]
-                          ? <Image source={{ uri: business.photos[0] }} style={profS.recentlyViewedPhotoImage} resizeMode="cover" />
-                          : business.icon
-                            ? <Text style={profS.recentlyViewedIcon}>{business.icon}</Text>
-                            : <View style={{ width: '100%', height: '100%', backgroundColor: COLORS.grayBg }} />
-                        }
+                {/* ── Negócios guardados ───────────────────────────────── */}
+                {expandedSection === 'bookmarks' && (
+                  <>
+                    <View style={profS.divider} />
+                    <View style={profS.section}>
+                      <Text style={profS.sectionTitle}>Negócios Guardados ({savedBusinesses.length})</Text>
+                      {savedBusinesses.length === 0 && (
+                        <Text style={{ color: COLORS.grayText, fontSize: 14 }}>Ainda não guardaste nenhum negócio.</Text>
+                      )}
+                      {savedBusinesses.map(business => (
+                        <TouchableOpacity
+                          key={business.id}
+                          style={profS.recentlyViewedCard}
+                          activeOpacity={0.7}
+                          onPress={() => { setExpanded(null); onSetActiveNavTab('home'); onSelectBusiness(business); }}
+                        >
+                          <View style={profS.recentlyViewedPhoto}>
+                            {business.photos?.[0]
+                              ? <Image source={{ uri: business.photos[0] }} style={profS.recentlyViewedPhotoImage} resizeMode="cover" />
+                              : business.icon
+                                ? <Text style={profS.recentlyViewedIcon}>{business.icon}</Text>
+                                : <View style={{ width: '100%', height: '100%', backgroundColor: COLORS.grayBg }} />
+                            }
+                          </View>
+                          <View style={profS.recentlyViewedInfo}>
+                            <Text style={profS.recentlyViewedName}>{business.name}</Text>
+                            <Text style={profS.recentlyViewedAddress}>{business.address || business.subcategory}</Text>
+                            <Text style={profS.recentlyViewedMeta}>{business.subcategory} • {business.distanceText}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => onToggleBookmark(business.id)} activeOpacity={0.7} style={{ padding: 6 }}>
+                            <Icon name="bookmark" size={22} color={COLORS.red} strokeWidth={2} />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {/* ── Reservas ────────────────────────────────────────── */}
+                {expandedSection === 'bookings' && (
+                  <>
+                    <View style={profS.divider} />
+                    <View style={profS.section}>
+                      <Text style={profS.sectionTitle}>As minhas Reservas</Text>
+                      {liveBookings.length === 0 && (
+                        <Text style={{ color: COLORS.grayText, fontSize: 14 }}>Ainda não tens reservas.</Text>
+                      )}
+                      {liveBookings.slice(0, 10).map(bk => (
+                        <View key={bk.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.grayLine }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={{ fontWeight: '700', fontSize: 15, color: COLORS.darkText, flex: 1 }} numberOfLines={1}>
+                              {bk.businessName || bk.business?.name || 'Reserva'}
+                            </Text>
+                            <View style={{
+                              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+                              backgroundColor: bk.status === 'CONFIRMED' ? '#D1FAE5' : bk.status === 'REJECTED' ? '#FFE4E6' : '#FEF3C7',
+                            }}>
+                              <Text style={{
+                                fontSize: 11, fontWeight: '700',
+                                color: bk.status === 'CONFIRMED' ? '#065F46' : bk.status === 'REJECTED' ? '#9F1239' : '#92400E',
+                              }}>
+                                {bk.status === 'CONFIRMED' ? 'Confirmada' : bk.status === 'REJECTED' ? 'Rejeitada' : 'Pendente'}
+                              </Text>
+                            </View>
+                          </View>
+                          {bk.checkIn && (
+                            <Text style={{ fontSize: 13, color: COLORS.grayText }}>
+                              {new Date(bk.checkIn).toLocaleDateString('pt-AO')}
+                              {bk.checkOut ? ` → ${new Date(bk.checkOut).toLocaleDateString('pt-AO')}` : ''}
+                            </Text>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {/* ── Editar perfil ───────────────────────────────────── */}
+                {expandedSection === 'editProfile' && (
+                  <>
+                    <View style={profS.divider} />
+                    <View style={profS.section}>
+                      <Text style={profS.sectionTitle}>Editar Perfil</Text>
+                      <Text style={{ fontSize: 13, color: COLORS.grayText, marginBottom: 8 }}>Nome de exibição</Text>
+                      <TextInput
+                        style={{
+                          borderWidth: 1.5, borderColor: COLORS.grayLine, borderRadius: 12,
+                          paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.darkText,
+                          backgroundColor: COLORS.white, marginBottom: 12,
+                        }}
+                        placeholder={authUser.name || 'O teu nome'}
+                        placeholderTextColor={COLORS.grayText}
+                        value={editName}
+                        onChangeText={setEditName}
+                        autoCapitalize="words"
+                      />
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: editName.trim() ? COLORS.red : COLORS.grayLine,
+                          borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+                        }}
+                        activeOpacity={0.85}
+                        disabled={!editName.trim() || savingName}
+                        onPress={handleSaveName}
+                      >
+                        <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 15 }}>
+                          {savingName ? 'A guardar…' : 'Guardar alterações'}
+                        </Text>
+                      </TouchableOpacity>
+                      {saveNameMsg ? (
+                        <Text style={{ marginTop: 10, fontSize: 13, color: saveNameMsg.includes('Erro') ? '#B00020' : '#065F46', textAlign: 'center' }}>
+                          {saveNameMsg}
+                        </Text>
+                      ) : null}
+                      <View style={{ marginTop: 20 }}>
+                        <Text style={{ fontSize: 13, color: COLORS.grayText }}>Email</Text>
+                        <Text style={{ fontSize: 15, color: COLORS.darkText, marginTop: 4 }}>{authUser.email}</Text>
                       </View>
-                      <View style={profS.recentlyViewedInfo}>
-                        <Text style={profS.recentlyViewedName}>{business.name}</Text>
-                        <Text style={profS.recentlyViewedAddress}>{business.address || business.subcategory}</Text>
-                        <Text style={profS.recentlyViewedMeta}>{business.subcategory} • {business.distanceText}</Text>
+                      <View style={{ marginTop: 14 }}>
+                        <Text style={{ fontSize: 13, color: COLORS.grayText }}>Função</Text>
+                        <Text style={{ fontSize: 15, color: COLORS.darkText, marginTop: 4 }}>
+                          {authUser.role === 'OWNER' ? 'Proprietário' : authUser.role === 'ADMIN' ? 'Administrador' : 'Cliente'}
+                        </Text>
                       </View>
-                      <Icon name="bookmark" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                    </View>
+                  </>
+                )}
 
                 <View style={profS.divider} />
 
                 {/* Contribuições */}
                 <View style={profS.section}>
                   <Text style={profS.sectionTitle}>Contribuições</Text>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Avaliações', 'Aqui ficará o histórico das suas avaliações.')}
-                  >
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('reviews')}>
                     <Icon name="star" size={22} color={COLORS.darkText} strokeWidth={2} />
                     <Text style={profS.menuLabel}>Avaliações</Text>
-                    <Text style={profS.menuCount}>{USER_PROFILE.stats.reviewsWritten}</Text>
+                    <Text style={profS.menuCount}>{stats?.reviews ?? myReviews.length}</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Negócios adicionados', 'Funcionalidade disponível em breve.')}
-                  >
-                    <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    <Text style={profS.menuLabel}>Negócios adicionados</Text>
-                    <Text style={profS.menuCount}>0</Text>
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('bookmarks')}>
+                    <Icon name="bookmark" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Negócios guardados</Text>
+                    <Text style={profS.menuCount}>{stats?.bookmarks ?? bookmarkedIds.length}</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
+                  {isOwner && (
+                    <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => { onSetActiveNavTab('home'); setActiveBusinessTab('dashboard'); onToggleOwnerMode(); }}>
+                      <Icon name="plusSquare" size={22} color={COLORS.darkText} strokeWidth={2} />
+                      <Text style={profS.menuLabel}>Negócios adicionados</Text>
+                      <Text style={profS.menuCount}>{stats?.businesses ?? 0}</Text>
+                      <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <View style={profS.divider} />
 
-                {/* Sua atividade */}
+                {/* Atividade */}
                 <View style={profS.section}>
-                  <Text style={profS.sectionTitle}>Sua atividade</Text>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Reservas', 'Histórico de reservas.')}
-                  >
+                  <Text style={profS.sectionTitle}>Atividade</Text>
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('bookings')}>
                     <Icon name="calendar" size={22} color={COLORS.darkText} strokeWidth={2} />
                     <Text style={profS.menuLabel}>Reservas</Text>
-                    <Text style={profS.menuCount}>3</Text>
+                    <Text style={profS.menuCount}>{liveBookings.length}</Text>
+                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
+                  <View style={profS.menuRow}>
+                    <Icon name="check" size={22} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={profS.menuLabel}>Check-ins realizados</Text>
+                    <Text style={profS.menuCount}>{stats?.checkIns ?? 0}</Text>
+                  </View>
                 </View>
 
                 <View style={profS.divider} />
@@ -1031,46 +1219,46 @@ function ProfileTab({
                 {/* Conta */}
                 <View style={profS.section}>
                   <Text style={profS.sectionTitle}>Conta</Text>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Preferências', 'Configuração de preferências disponível em breve.')}
-                  >
-                    <Icon name="heart" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    <Text style={profS.menuLabel}>Preferências</Text>
-                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Perfil', 'Edição de perfil disponível em breve.')}
-                  >
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('editProfile')}>
                     <Icon name="user" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    <Text style={profS.menuLabel}>Perfil</Text>
+                    <Text style={profS.menuLabel}>Editar Perfil</Text>
                     <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Ajuda e suporte', 'Centro de ajuda disponível em breve.')}
-                  >
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('help')}>
                     <Icon name="helpCircle" size={22} color={COLORS.darkText} strokeWidth={2} />
                     <Text style={profS.menuLabel}>Ajuda e suporte</Text>
-                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name={expandedSection === 'help' ? 'arrowDown' : 'arrowRight'} size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Configurações', 'Configurações avançadas disponíveis em breve.')}
-                  >
-                    <Icon name="settings" size={22} color={COLORS.darkText} strokeWidth={2} />
-                    <Text style={profS.menuLabel}>Configurações</Text>
-                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={profS.menuRow} activeOpacity={0.7}
-                    onPress={() => Alert.alert('Sobre AchAqui', 'AchAqui v2.')}
-                  >
+                  {expandedSection === 'help' && (
+                    <View style={{ paddingLeft: 36, paddingBottom: 8 }}>
+                      {[
+                        ['Como fazer uma reserva?', 'Abra um negócio, escolha a opção "Reservar" e siga os passos.'],
+                        ['Como avaliar um negócio?', 'Depois de visitar, abra o negócio e toque em "Avaliar".'],
+                        ['Como adicionar o meu negócio?', 'Crie uma conta como Proprietário e siga as instruções no painel de controlo.'],
+                        ['Como contactar suporte?', 'Envie email para suporte@achaqui.ao'],
+                      ].map(([q, a]) => (
+                        <View key={q} style={{ marginBottom: 12 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.darkText }}>{q}</Text>
+                          <Text style={{ fontSize: 13, color: COLORS.grayText, marginTop: 2, lineHeight: 18 }}>{a}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <TouchableOpacity style={profS.menuRow} activeOpacity={0.7} onPress={() => toggle('about')}>
                     <Icon name="info" size={22} color={COLORS.darkText} strokeWidth={2} />
                     <Text style={profS.menuLabel}>Sobre AchAqui</Text>
-                    <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
+                    <Icon name={expandedSection === 'about' ? 'arrowDown' : 'arrowRight'} size={18} color={COLORS.grayText} strokeWidth={2} />
                   </TouchableOpacity>
+                  {expandedSection === 'about' && (
+                    <View style={{ paddingLeft: 36, paddingBottom: 8 }}>
+                      <Text style={{ fontSize: 14, color: COLORS.darkText, marginBottom: 6 }}>AchAqui v2.0.0</Text>
+                      <Text style={{ fontSize: 13, color: COLORS.grayText, lineHeight: 18 }}>
+                        A plataforma de descoberta e reservas líder em Angola.{'\n'}
+                        Encontra os melhores negócios perto de ti.
+                      </Text>
+                      <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 8 }}>© 2026 AchAqui. Todos os direitos reservados.</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={profS.divider} />

@@ -166,6 +166,112 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
+// ─── Cálculo dinâmico de estado de abertura ───────────────────────────────────
+// Lê metadata.workingHours (formato real do DB: {domingo:["Encerrado"], sábado:["12:30-23:30"], ...})
+// e calcula isOpen / statusText com base na hora ACTUAL do dispositivo.
+// Isto corrige negócios importados com isOpen estático (calculado na hora de importação).
+const WH_DAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+const WH_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const WH_CLOSED_WORDS = ['encerrado', 'fechado', 'closed'];
+
+function parseHoursEntry(str) {
+  if (!str) return null;
+  const lower = str.toLowerCase().trim();
+
+  if (WH_CLOSED_WORDS.some(w => lower.includes(w))) return null; // fechado
+
+  if (lower.includes('24 hora') || lower.includes('24h') || lower.includes('24 hour')) {
+    return { open: '00:00', close: '23:59' };
+  }
+
+  // "12:30-23:30" ou "12:30–23:30"
+  const m = str.replace(/[\u2013\u2014]/g, '-').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+  if (m) return { open: `${m[1].padStart(2,'0')}:${m[2]}`, close: `${m[3].padStart(2,'0')}:${m[4]}` };
+
+  // "9h-18h"
+  const h = str.match(/(\d{1,2})h\s*[-–]\s*(\d{1,2})h/);
+  if (h) return { open: `${h[1].padStart(2,'0')}:00`, close: `${h[2].padStart(2,'0')}:00` };
+
+  return null; // formato desconhecido → não sabe
+}
+
+function computeIsOpenFromMeta(meta) {
+  const wh = meta?.workingHours;
+
+  // Sem horário estruturado — usa valor estático guardado no metadata ou assume aberto
+  if (!wh || typeof wh !== 'object' || Array.isArray(wh)) {
+    return { isOpen: meta?.isOpen ?? true, statusText: meta?.statusText || 'Aberto' };
+  }
+
+  const now = new Date();
+  const todayIdx  = now.getDay(); // 0=Dom … 6=Sáb
+  const todayKey  = WH_DAYS[todayIdx];
+  const todayEntry = wh[todayKey];
+
+  // Dia não presente no horário — desconhecido, assume aberto
+  if (todayEntry === undefined) {
+    return { isOpen: true, statusText: 'Aberto' };
+  }
+
+  const hoursStr = Array.isArray(todayEntry) ? String(todayEntry[0] ?? '') : String(todayEntry ?? '');
+  const hours = parseHoursEntry(hoursStr);
+
+  if (hours === null) {
+    // Fechado hoje — procura próxima abertura
+    for (let i = 1; i <= 7; i++) {
+      const nextIdx   = (todayIdx + i) % 7;
+      const nextEntry = wh[WH_DAYS[nextIdx]];
+      if (nextEntry !== undefined) {
+        const nextStr = Array.isArray(nextEntry) ? String(nextEntry[0] ?? '') : String(nextEntry ?? '');
+        const nextH   = parseHoursEntry(nextStr);
+        if (nextH) {
+          const label = i === 1 ? `amanhã às ${nextH.open}` : `${WH_LABELS[nextIdx]} às ${nextH.open}`;
+          return { isOpen: false, statusText: `Abre ${label}` };
+        }
+      }
+    }
+    return { isOpen: false, statusText: 'Fechado hoje' };
+  }
+
+  if (!hours) {
+    // Formato desconhecido → assume aberto, mostra o texto original
+    return { isOpen: true, statusText: hoursStr || 'Aberto' };
+  }
+
+  // Verifica hora actual vs. intervalo
+  const nowMin   = now.getHours() * 60 + now.getMinutes();
+  const openMin  = parseInt(hours.open.split(':')[0])  * 60 + parseInt(hours.open.split(':')[1]);
+  const closeMin = parseInt(hours.close.split(':')[0]) * 60 + parseInt(hours.close.split(':')[1]);
+
+  if (nowMin >= openMin && nowMin < closeMin) {
+    const minsLeft = closeMin - nowMin;
+    return {
+      isOpen: true,
+      statusText: minsLeft <= 60 ? `Fecha em ${minsLeft} min` : `Aberto até ${hours.close}`,
+    };
+  }
+
+  if (nowMin < openMin) {
+    return { isOpen: false, statusText: `Abre às ${hours.open}` };
+  }
+
+  // Passou o horário — procura próxima abertura
+  for (let i = 1; i <= 7; i++) {
+    const nextIdx   = (todayIdx + i) % 7;
+    const nextEntry = wh[WH_DAYS[nextIdx]];
+    if (nextEntry !== undefined) {
+      const nextStr = Array.isArray(nextEntry) ? String(nextEntry[0] ?? '') : String(nextEntry ?? '');
+      const nextH   = parseHoursEntry(nextStr);
+      if (nextH) {
+        const label = i === 1 ? `amanhã às ${nextH.open}` : `${WH_LABELS[nextIdx]} às ${nextH.open}`;
+        return { isOpen: false, statusText: `Abre ${label}` };
+      }
+    }
+  }
+
+  return { isOpen: false, statusText: 'Fechado' };
+}
+
 function normalizeBusiness(rawBusiness) {
   if (!rawBusiness?.id) return null;
 
@@ -237,8 +343,15 @@ function normalizeBusiness(rawBusiness) {
     promo: base.promo || meta.promo || null,
     distance: base.distance || meta.distance || 0,
     distanceText: base.distanceText || meta.distanceText || '—',
-    isOpen: base.isOpen ?? meta.isOpen ?? true,
-    statusText: base.statusText || meta.statusText || 'Aberto',
+    // isOpen e statusText calculados dinamicamente a partir de meta.workingHours
+    // (usando a hora actual do dispositivo), corrigindo valores estáticos do import.
+    ...(() => {
+      const computed = computeIsOpenFromMeta(meta);
+      return {
+        isOpen:     base.isOpen     ?? computed.isOpen,
+        statusText: base.statusText || computed.statusText,
+      };
+    })(),
     isPublic: true,
     latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
     longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
@@ -798,6 +911,8 @@ function AppContent() {
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
               authUser={authSession.accessToken ? authSession.user : null}
+              accessToken={authSession.accessToken}
+              liveBookings={liveSync.bookings}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
               onRefresh={handleHomeRefresh}
