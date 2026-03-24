@@ -933,6 +933,11 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [icalLink, setIcalLink]   = useState(ownerBusinessPrivate?.icalLink || '');
   const [icalStatus, setIcalStatus] = useState({ loaded: false, ranges: [], error: null, lastSync: null });
 
+  // Overbooking buffer — percentagem da capacidade vendável (100 = real, 90 = buffer, 105 = overbooking)
+  const [overbookingBuffer, setOverbookingBuffer] = useState(
+    ownerBusinessPrivate?.overbookingBuffer ?? 100
+  );
+
   // ── Cleanup em mudança de negócio ────────────────────────────────────────
   useEffect(() => {
     return () => { setCheckIn(''); setCheckOut(''); setGuestCount(1); };
@@ -994,6 +999,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const handleIcalChange = useCallback((val) => {
     setIcalLink(val);
     updateOwnerBiz({ icalLink: val });
+  }, [updateOwnerBiz]);
+
+  // ── Guardar overbookingBuffer no ownerBiz ────────────────────────────────
+  const handleOverbookingBufferChange = useCallback((val) => {
+    setOverbookingBuffer(val);
+    updateOwnerBiz({ overbookingBuffer: val });
   }, [updateOwnerBiz]);
 
   // ── Abertura de booking modal ─────────────────────────────────────────────
@@ -1114,37 +1125,19 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   return (
     <View style={hS.container}>
       {/* ── HEADER ─────────────────────────────────────────────────── */}
-      <View style={[hS.header, { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
-            <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
-          </View>
-          {isOwner && (
+      <View style={hS.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={hS.headerTitle}>Quartos & Disponibilidade</Text>
+          <Text style={hS.headerSubtitle}>{rooms.length} tipo{rooms.length !== 1 ? 's' : ''} de quarto</Text>
+        </View>
+        {isOwner && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={hS.ownerBadge}>
               <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
               <Text style={hS.ownerBadgeText}>Activo</Text>
             </View>
-          )}
-        </View>
-        {isOwner && (
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
-              <Icon name="analytics" size={16} color={COLORS.white} strokeWidth={2} />
-              <Text style={hS.ownerActionBtnText}>Dashboard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#22A06B' }]} onPress={() => setShowReception(true)}>
-              <Icon name="map" size={16} color={COLORS.white} strokeWidth={2} />
-              <Text style={hS.ownerActionBtnText}>Receção</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={hS.ownerActionBtn} onPress={() => setShowBookingsManager(true)}>
-              {pendingCount > 0 && (
-                <View style={hS.pendingBadge}>
-                  <Text style={hS.pendingBadgeText}>{pendingCount}</Text>
-                </View>
-              )}
-              <Icon name="calendar" size={16} color={COLORS.white} strokeWidth={2} />
-              <Text style={hS.ownerActionBtnText}>Reservas</Text>
+            <TouchableOpacity style={hS.pmsBtn} onPress={() => setShowDashboard(true)}>
+              <Icon name="settings" size={17} color={COLORS.blue} strokeWidth={2} />
             </TouchableOpacity>
           </View>
         )}
@@ -1291,6 +1284,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           businessId={ownerBusinessPrivate?.id}
           accessToken={ctx?.accessToken}
           onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
+          onOpenBookings={() => { setShowDashboard(false); setShowBookingsManager(true); }}
+          pendingCount={pendingCount}
+          overbookingBuffer={overbookingBuffer}
+          onOverbookingBufferChange={handleOverbookingBufferChange}
           onClose={() => setShowDashboard(false)}
         />
       )}
@@ -1330,13 +1327,8 @@ const hS = StyleSheet.create({
                       paddingHorizontal: 8, paddingVertical: 4,
                       backgroundColor: '#22A06B' + '15', borderRadius: 20 },
   ownerBadgeText:   { fontSize: 11, fontWeight: '700', color: '#22A06B' },
-  ownerActionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, position: 'relative',
-                      paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#1565C0',
-                      borderRadius: 20 },
-  ownerActionBtnText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
-  pendingBadge:     { position: 'absolute', top: -4, right: -4, width: 16, height: 16,
-                      borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  pendingBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF' },
+  pmsBtn:           { width: 34, height: 34, borderRadius: 17,
+                      backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
 
   // iCal card
   icalCard:         { padding: 14, backgroundColor: '#FFFFFF', borderRadius: 12,

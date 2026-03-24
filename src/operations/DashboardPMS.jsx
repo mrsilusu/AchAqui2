@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Modal, ActivityIndicator, RefreshControl,
+  ScrollView, Modal, ActivityIndicator, RefreshControl, TextInput, Alert,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
@@ -77,11 +77,40 @@ function RoomCard({ room }) {
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose }) {
+export function DashboardPMS({
+  businessId, accessToken,
+  onOpenReception, onOpenBookings,
+  pendingCount = 0,
+  overbookingBuffer = 100, onOverbookingBufferChange,
+  onClose,
+}) {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const alive = useRef(true);
+
+  // Overbooking buffer — estado de edição local
+  const [bufferInput, setBufferInput] = useState(String(overbookingBuffer));
+  const [bufferSaving, setBufferSaving] = useState(false);
+
+  // Sincronizar input quando prop muda externamente
+  useEffect(() => { setBufferInput(String(overbookingBuffer)); }, [overbookingBuffer]);
+
+  const handleSaveBuffer = useCallback(async () => {
+    const val = parseInt(bufferInput, 10);
+    if (isNaN(val) || val < 50 || val > 150) {
+      Alert.alert('Valor inválido', 'Introduz um valor entre 50% e 150%.');
+      return;
+    }
+    setBufferSaving(true);
+    try {
+      if (typeof onOverbookingBufferChange === 'function') {
+        await onOverbookingBufferChange(val);
+      }
+    } finally {
+      setBufferSaving(false);
+    }
+  }, [bufferInput, onOverbookingBufferChange]);
 
   useEffect(() => {
     alive.current = true;
@@ -213,13 +242,77 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               <Text style={dS.revenueSub}>checkouts pagos</Text>
             </View>
 
-            {/* ── Botões PMS ── */}
-            <View style={dS.pmsButtons}>
-              <TouchableOpacity style={dS.receptionBtn} onPress={onOpenReception}>
-                <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
-                <Text style={dS.receptionBtnText}>Receção</Text>
-                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+            {/* ── Gestão rápida ── */}
+            <Text style={dS.sectionTitle}>Gestão</Text>
+            <View style={dS.navGrid}>
+              <TouchableOpacity style={dS.navCard} onPress={onOpenReception} activeOpacity={0.8}>
+                <View style={[dS.navIcon, { backgroundColor: '#F0FDF4' }]}>
+                  <Icon name="home" size={22} color="#22A06B" strokeWidth={2.5} />
+                </View>
+                <Text style={dS.navCardTitle}>Receção</Text>
+                <Text style={dS.navCardSub}>Check-in · Check-out</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity style={dS.navCard} onPress={onOpenBookings} activeOpacity={0.8}>
+                {pendingCount > 0 && (
+                  <View style={dS.navBadge}>
+                    <Text style={dS.navBadgeText}>{pendingCount}</Text>
+                  </View>
+                )}
+                <View style={[dS.navIcon, { backgroundColor: '#EFF6FF' }]}>
+                  <Icon name="calendar" size={22} color="#1565C0" strokeWidth={2.5} />
+                </View>
+                <Text style={dS.navCardTitle}>Reservas</Text>
+                <Text style={dS.navCardSub}>
+                  {pendingCount > 0 ? `${pendingCount} pendente${pendingCount !== 1 ? 's' : ''}` : 'Gerir reservas'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Overbooking Buffer / Stop-Sell ── */}
+            <Text style={dS.sectionTitle}>Controlo de Vendas</Text>
+            <View style={dS.bufferCard}>
+              <Text style={dS.bufferTitle}>Overbooking Buffer / Stop-Sell</Text>
+              <Text style={dS.bufferDesc}>
+                Define a capacidade vendável por tipo de quarto.
+              </Text>
+              <View style={dS.bufferRow}>
+                <TextInput
+                  style={dS.bufferInput}
+                  value={bufferInput}
+                  onChangeText={setBufferInput}
+                  keyboardType="numeric"
+                  maxLength={3}
+                  selectTextOnFocus
+                />
+                <Text style={dS.bufferPct}>%</Text>
+                <TouchableOpacity
+                  style={[dS.bufferSaveBtn, bufferSaving && { opacity: 0.6 }]}
+                  onPress={handleSaveBuffer}
+                  disabled={bufferSaving}
+                >
+                  {bufferSaving
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={dS.bufferSaveBtnText}>Guardar</Text>}
+                </TouchableOpacity>
+              </View>
+              <View style={dS.bufferHints}>
+                {[
+                  { pct: 90,  label: '90% — buffer de segurança',    color: '#22A06B' },
+                  { pct: 100, label: '100% — capacidade real',        color: '#1565C0' },
+                  { pct: 105, label: '105% — overbooking controlado', color: '#D97706' },
+                ].map(h => (
+                  <View key={h.pct} style={dS.bufferHintRow}>
+                    <View style={[dS.bufferHintDot, {
+                      backgroundColor: parseInt(bufferInput, 10) === h.pct ? h.color : '#E5E7EB',
+                    }]} />
+                    <Text style={[dS.bufferHintText, {
+                      color: parseInt(bufferInput, 10) === h.pct ? h.color : '#9CA3AF',
+                      fontWeight: parseInt(bufferInput, 10) === h.pct ? '700' : '400',
+                    }]}>{h.label}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
 
             {/* ── Room Rack ── */}
@@ -286,9 +379,35 @@ const dS = StyleSheet.create({
   revenueValue: { fontSize: 20, fontWeight: '800', color: '#166534', letterSpacing: -0.5, marginTop: 2 },
   revenueSub:   { fontSize: 11, color: '#16a34a' },
 
-  // Botão Receção
-  receptionBtn:     { backgroundColor: '#22A06B', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  receptionBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fff' },
+  // Gestão rápida — nav grid
+  navGrid:          { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  navCard:          { flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 14,
+                      alignItems: 'center', gap: 6, position: 'relative',
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  navIcon:          { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  navCardTitle:     { fontSize: 14, fontWeight: '700', color: '#111' },
+  navCardSub:       { fontSize: 11, color: '#888', textAlign: 'center' },
+  navBadge:         { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20,
+                      borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  navBadgeText:     { fontSize: 10, fontWeight: '800', color: '#fff' },
+
+  // Overbooking Buffer
+  bufferCard:       { backgroundColor: '#fff', borderRadius: 14, padding: 16,
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  bufferTitle:      { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 4 },
+  bufferDesc:       { fontSize: 12, color: '#888', marginBottom: 14, lineHeight: 17 },
+  bufferRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  bufferInput:      { width: 72, borderWidth: 1.5, borderColor: '#DBEAFE', borderRadius: 10,
+                      paddingHorizontal: 12, paddingVertical: 10, fontSize: 18, fontWeight: '800',
+                      color: '#1565C0', textAlign: 'center', backgroundColor: '#EFF6FF' },
+  bufferPct:        { fontSize: 16, fontWeight: '700', color: '#888' },
+  bufferSaveBtn:    { flex: 1, backgroundColor: '#1565C0', borderRadius: 10,
+                      paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  bufferSaveBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  bufferHints:      { gap: 6 },
+  bufferHintRow:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bufferHintDot:    { width: 8, height: 8, borderRadius: 4 },
+  bufferHintText:   { fontSize: 12 },
 
   // Room rack
   floorLabel:   { fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 6, marginTop: 4 },
