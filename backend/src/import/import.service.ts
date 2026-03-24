@@ -24,8 +24,8 @@ export interface OutscraperRow {
   reviews?: string | number;
   photo?: string;
   logo?: string;
-  working_hours?: string;
-  working_hours_old_format?: string;
+  working_hours?: string | Record<string, unknown>;
+  working_hours_old_format?: string | Record<string, unknown>;
   description?: string;
   about?: string;
   business_status?: string;
@@ -114,8 +114,8 @@ export class ImportService {
     if (!str) return null;
     const lower = str.toLowerCase().trim();
 
-    // Fechado
-    if (['closed', 'fechado', 'cerrado'].some(w => lower.includes(w))) return null;
+    // Fechado — inclui variantes portuguesas e inglesas
+    if (['encerrado', 'closed', 'fechado', 'cerrado'].some(w => lower.includes(w))) return null;
 
     // 24 horas
     if (lower.includes('24 hour') || lower.includes('24h') || lower.includes('24 hora')) {
@@ -162,10 +162,18 @@ export class ImportService {
   }
 
   /**
-   * Parseia o campo working_hours do Outscraper (Python dict string ou
-   * formato separado por ';') para um horário semanal estruturado.
+   * Parseia o campo working_hours do Outscraper para um horário semanal estruturado.
+   *
+   * Suporta três formatos:
+   *  1. Objeto já estruturado com nomes em português e valores array
+   *     {"domingo": ["Encerrado"], "sábado": ["12:30-23:30"], ...}
+   *  2. Python dict string com aspas simples
+   *     "{'Monday': '9:00 AM – 6:00 PM', 'Sunday': 'Closed'}"
+   *  3. Separado por ';': "Mo-Fr 09:00-18:00; Sa 09:00-14:00"
    */
-  private parseWorkingHours(raw: string | null): Record<string, { open: string; close: string } | null> | null {
+  private parseWorkingHours(
+    raw: string | Record<string, unknown> | null,
+  ): Record<string, { open: string; close: string } | null> | null {
     if (!raw) return null;
 
     const DAY_MAP: Record<string, string> = {
@@ -186,10 +194,27 @@ export class ImportService {
       domingo: 'sunday',
     };
 
-    // ── Formato Outscraper: Python dict com aspas simples ─────────────────────
-    // Exemplo: {'Monday': '9:00 AM – 6:00 PM', 'Sunday': 'Closed'}
+    // ── Formato 1: Objeto já estruturado (formato real do DB / Outscraper JSON) ─
+    // {"domingo": ["Encerrado"], "sábado": ["12:30-23:30"], ...}
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      const schedule: Record<string, { open: string; close: string } | null> = {};
+      for (const [day, val] of Object.entries(raw)) {
+        const key = DAY_MAP[day.toLowerCase().trim()];
+        if (!key) continue;
+        // O valor pode ser array ou string directa
+        const hoursStr = Array.isArray(val) ? String(val[0] ?? '') : String(val ?? '');
+        schedule[key] = this.parseHoursString(hoursStr);
+      }
+      if (Object.keys(schedule).length > 0) return schedule;
+    }
+
+    // A partir daqui o raw é string
+    const rawStr = String(raw);
+
+    // ── Formato 2: Python dict com aspas simples ──────────────────────────────
+    // {'Monday': '9:00 AM – 6:00 PM', 'Sunday': 'Closed'}
     try {
-      const jsonStr = raw
+      const jsonStr = rawStr
         .replace(/'/g, '"')
         .replace(/[\u2013\u2014\u2012]/g, '-')
         .replace(/\u202f|\u2009/g, ' ');
@@ -200,18 +225,20 @@ export class ImportService {
       for (const [day, hoursStr] of Object.entries(parsed)) {
         const key = DAY_MAP[day.toLowerCase().trim()];
         if (!key) continue;
-        schedule[key] = this.parseHoursString(String(hoursStr ?? ''));
+        // Pode vir como array após parse (e.g. {"domingo": ["Encerrado"]})
+        const str = Array.isArray(hoursStr) ? String((hoursStr as unknown[])[0] ?? '') : String(hoursStr ?? '');
+        schedule[key] = this.parseHoursString(str);
       }
 
       if (Object.keys(schedule).length > 0) return schedule;
     } catch { /* tenta próximo formato */ }
 
-    // ── Formato separado por ';': "Mo-Fr 09:00-18:00; Sa 09:00-14:00" ─────────
-    if (raw.includes(';') || /\b(mo|tu|we|th|fr|sa|su)\b/i.test(raw)) {
+    // ── Formato 3: Separado por ';': "Mo-Fr 09:00-18:00; Sa 09:00-14:00" ──────
+    if (rawStr.includes(';') || /\b(mo|tu|we|th|fr|sa|su)\b/i.test(rawStr)) {
       try {
         const schedule: Record<string, { open: string; close: string } | null> = {};
         const allDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const parts = raw.split(';').map((p) => p.trim()).filter(Boolean);
+        const parts = rawStr.split(';').map((p) => p.trim()).filter(Boolean);
 
         for (const part of parts) {
           const match = part.match(/^([A-Za-záàâãéèêíïóôõöúùüçÇ\-]+)[:\s]+(.+)$/);
@@ -349,9 +376,9 @@ export class ImportService {
       ? String(row.email)
       : null;
 
-    // Horários — parseia o formato Outscraper e calcula estado atual
-    const rawHours = row.working_hours || row.working_hours_old_format || null;
-    const schedule = this.parseWorkingHours(rawHours ? String(rawHours) : null);
+    // Horários — parseia o formato Outscraper (string ou objecto já estruturado)
+    const rawHours = (row.working_hours ?? row.working_hours_old_format) as string | Record<string, unknown> | null ?? null;
+    const schedule = this.parseWorkingHours(rawHours);
     const isTemporarilyClosed = status === 'CLOSED_TEMPORARILY';
     const { isOpen, statusText } = this.computeIsOpen(schedule, isTemporarilyClosed);
 
