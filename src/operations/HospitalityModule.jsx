@@ -1288,6 +1288,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           pendingCount={pendingCount}
           overbookingBuffer={overbookingBuffer}
           onOverbookingBufferChange={handleOverbookingBufferChange}
+          guestBookings={activeBookings}
+          roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onClose={() => setShowDashboard(false)}
         />
       )}

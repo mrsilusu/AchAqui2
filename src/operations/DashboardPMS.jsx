@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
+import { GuestsScreen } from './GuestsScreen';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -82,8 +83,10 @@ export function DashboardPMS({
   onOpenReception, onOpenBookings,
   pendingCount = 0,
   overbookingBuffer = 100, onOverbookingBufferChange,
+  guestBookings = [], roomTypes = [],
   onClose,
 }) {
+  const [showGuests, setShowGuests] = useState(false);
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -267,6 +270,14 @@ export function DashboardPMS({
                   {pendingCount > 0 ? `${pendingCount} pendente${pendingCount !== 1 ? 's' : ''}` : 'Gerir reservas'}
                 </Text>
               </TouchableOpacity>
+
+              <TouchableOpacity style={dS.navCard} onPress={() => setShowGuests(true)} activeOpacity={0.8}>
+                <View style={[dS.navIcon, { backgroundColor: '#F5F3FF' }]}>
+                  <Icon name="user" size={22} color="#7C3AED" strokeWidth={2.5} />
+                </View>
+                <Text style={dS.navCardTitle}>Hóspedes</Text>
+                <Text style={dS.navCardSub}>Perfis · Histórico</Text>
+              </TouchableOpacity>
             </View>
 
             {/* ── Overbooking Buffer / Stop-Sell ── */}
@@ -336,6 +347,15 @@ export function DashboardPMS({
           </ScrollView>
         )}
       </View>
+
+      {showGuests && (
+        <GuestsScreen
+          businessId={businessId}
+          bookings={guestBookings}
+          roomTypes={roomTypes}
+          onClose={() => setShowGuests(false)}
+        />
+      )}
     </Modal>
   );
 }
