@@ -75,6 +75,37 @@ const FILTERS = [
   { key: 'past',     label: 'Anteriores'    },
 ];
 
+// ─── Dados de demonstração (fallback quando não há reservas reais) ────────────
+const DEMO_BOOKINGS = [
+  {
+    id: 'demo-1', guestName: 'Carlos Mendes', guestPhone: '+244 923 111 222',
+    checkIn: '2026-03-20', checkOut: '2026-03-25', nights: 5,
+    totalPrice: 75000, status: 'CHECKED_IN', roomTypeId: 'Suite Executiva',
+    specialRequest: 'Quarto tranquilo, longe do elevador',
+  },
+  {
+    id: 'demo-2', guestName: 'Ana Ferreira', guestPhone: '+244 912 333 444',
+    checkIn: '2026-03-28', checkOut: '2026-03-30', nights: 2,
+    totalPrice: 28000, status: 'CONFIRMED', roomTypeId: 'Standard',
+  },
+  {
+    id: 'demo-3', guestName: 'Carlos Mendes', guestPhone: '+244 923 111 222',
+    checkIn: '2026-01-10', checkOut: '2026-01-14', nights: 4,
+    totalPrice: 60000, status: 'CHECKED_OUT', roomTypeId: 'Suite Executiva',
+  },
+  {
+    id: 'demo-4', guestName: 'Maria Santos', guestPhone: '+244 934 555 666',
+    checkIn: '2026-02-05', checkOut: '2026-02-07', nights: 2,
+    totalPrice: 22000, status: 'CHECKED_OUT', roomTypeId: 'Standard',
+    specialRequest: 'Berço para bebé',
+  },
+  {
+    id: 'demo-5', guestName: 'João Costa', guestPhone: '+244 945 777 888',
+    checkIn: '2026-04-01', checkOut: '2026-04-05', nights: 4,
+    totalPrice: 55000, status: 'CONFIRMED', roomTypeId: 'Deluxe',
+  },
+];
+
 // ─── Agregar bookings em perfis de hóspede ────────────────────────────────────
 function buildGuestProfiles(bookings, roomTypes) {
   const map = {};
@@ -311,9 +342,11 @@ export function GuestsScreen({ businessId, bookings = [], roomTypes = [], onClos
   const [activeFilter,  setActiveFilter]  = useState('all');
   const [selectedGuest, setSelectedGuest] = useState(null);
 
+  const safeBookings = bookings.length > 0 ? bookings : DEMO_BOOKINGS;
+
   const guests = useMemo(
-    () => buildGuestProfiles(bookings, roomTypes),
-    [bookings, roomTypes]
+    () => buildGuestProfiles(safeBookings, roomTypes),
+    [safeBookings, roomTypes]
   );
 
   const filtered = useMemo(() => {
@@ -446,8 +479,8 @@ const gS = StyleSheet.create({
   searchInput:  { flex: 1, fontSize: 14, color: '#111', padding: 0 },
 
   // Filters
-  filterBar:    { maxHeight: 44, marginBottom: 4 },
-  filterChip:   { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+  filterBar:    { maxHeight: 36, marginBottom: 4 },
+  filterChip:   { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
                   backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB' },
   filterChipActive: { backgroundColor: '#1565C0' + '15', borderColor: '#1565C0' },
   filterChipText:   { fontSize: 12, fontWeight: '600', color: '#888' },
@@ -512,7 +545,7 @@ const gS = StyleSheet.create({
   reqText:       { fontSize: 12, color: '#92400E', flex: 1, lineHeight: 17 },
 
   // Timeline de reservas
-  timelineItem:  { flexDirection: 'row', gap: 12 },
+  timelineItem:  { flexDirection: 'row', gap: 12, position: 'relative' },
   timelineDot:   { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
   timelineLine:  { position: 'absolute', left: 4, top: 14, width: 2, bottom: -16 },
   timelineContent: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 12,

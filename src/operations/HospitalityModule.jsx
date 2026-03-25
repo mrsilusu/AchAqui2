@@ -41,6 +41,7 @@ import {
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
+import { GuestsScreen } from './GuestsScreen';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -824,6 +825,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [showGuests, setShowGuests] = useState(false);
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
   // Limpos automaticamente quando o Realtime confirma o novo status
@@ -1285,11 +1287,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           accessToken={ctx?.accessToken}
           onOpenReception={() => { setShowDashboard(false); setShowReception(true); }}
           onOpenBookings={() => { setShowDashboard(false); setShowBookingsManager(true); }}
+          onOpenGuests={() => { setShowDashboard(false); setShowGuests(true); }}
           pendingCount={pendingCount}
           overbookingBuffer={overbookingBuffer}
           onOverbookingBufferChange={handleOverbookingBufferChange}
-          guestBookings={activeBookings}
-          roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onClose={() => setShowDashboard(false)}
         />
       )}
@@ -1307,6 +1308,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onStatusChange={handleStatusChange}
           onClose={() => setShowBookingsManager(false)}
+        />
+      )}
+      {isOwner && showGuests && (
+        <GuestsScreen
+          businessId={ownerBusinessPrivate?.id}
+          bookings={activeBookings}
+          roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+          onClose={() => setShowGuests(false)}
         />
       )}
     </View>

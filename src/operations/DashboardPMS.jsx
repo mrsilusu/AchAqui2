@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
-import { GuestsScreen } from './GuestsScreen';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -80,13 +79,11 @@ function RoomCard({ room }) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function DashboardPMS({
   businessId, accessToken,
-  onOpenReception, onOpenBookings,
+  onOpenReception, onOpenBookings, onOpenGuests,
   pendingCount = 0,
   overbookingBuffer = 100, onOverbookingBufferChange,
-  guestBookings = [], roomTypes = [],
   onClose,
 }) {
-  const [showGuests, setShowGuests] = useState(false);
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -271,7 +268,7 @@ export function DashboardPMS({
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={dS.navCard} onPress={() => setShowGuests(true)} activeOpacity={0.8}>
+              <TouchableOpacity style={dS.navCard} onPress={onOpenGuests} activeOpacity={0.8}>
                 <View style={[dS.navIcon, { backgroundColor: '#F5F3FF' }]}>
                   <Icon name="user" size={22} color="#7C3AED" strokeWidth={2.5} />
                 </View>
@@ -348,14 +345,6 @@ export function DashboardPMS({
         )}
       </View>
 
-      {showGuests && (
-        <GuestsScreen
-          businessId={businessId}
-          bookings={guestBookings}
-          roomTypes={roomTypes}
-          onClose={() => setShowGuests(false)}
-        />
-      )}
     </Modal>
   );
 }
