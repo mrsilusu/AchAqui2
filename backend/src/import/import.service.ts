@@ -58,6 +58,238 @@ export interface ImportResult {
 export class ImportService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly dayKeyByLabel: Record<string, string> = {
+    monday: 'monday',
+    mon: 'monday',
+    segunda: 'monday',
+    'segunda-feira': 'monday',
+    tuesday: 'tuesday',
+    tue: 'tuesday',
+    tues: 'tuesday',
+    terca: 'tuesday',
+    'terça': 'tuesday',
+    'terça-feira': 'tuesday',
+    wednesday: 'wednesday',
+    wed: 'wednesday',
+    quarta: 'wednesday',
+    'quarta-feira': 'wednesday',
+    thursday: 'thursday',
+    thu: 'thursday',
+    thurs: 'thursday',
+    quinta: 'thursday',
+    'quinta-feira': 'thursday',
+    friday: 'friday',
+    fri: 'friday',
+    sexta: 'friday',
+    'sexta-feira': 'friday',
+    saturday: 'saturday',
+    sat: 'saturday',
+    sabado: 'saturday',
+    'sábado': 'saturday',
+    sunday: 'sunday',
+    sun: 'sunday',
+    domingo: 'sunday',
+  };
+
+  private readonly orderedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+  private normalizeDayLabel(label: string): string | null {
+    const normalized = label
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    return this.dayKeyByLabel[normalized] ?? null;
+  }
+
+  private parseTimeToken(raw: string): string | null {
+    const token = raw.trim().toLowerCase();
+    if (!token) return null;
+
+    const twelveHour = token.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+    if (twelveHour) {
+      let hours = parseInt(twelveHour[1], 10);
+      const minutes = parseInt(twelveHour[2] ?? '0', 10);
+      const meridiem = twelveHour[3].toLowerCase();
+      if (hours === 12) hours = 0;
+      if (meridiem === 'pm') hours += 12;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+
+    const twentyFourHour = token.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (twentyFourHour) {
+      const hours = parseInt(twentyFourHour[1], 10);
+      const minutes = parseInt(twentyFourHour[2] ?? '0', 10);
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+    }
+
+    const hFormat = token.match(/^(\d{1,2})h(?:(\d{2}))?$/);
+    if (hFormat) {
+      const hours = parseInt(hFormat[1], 10);
+      const minutes = parseInt(hFormat[2] ?? '0', 10);
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+    }
+
+    return null;
+  }
+
+  private parseHoursString(raw: string): { open: string; close: string; is24h?: boolean } | null {
+    const value = raw.trim();
+    if (!value) return null;
+
+    const lowered = value.toLowerCase();
+    if (['closed', 'fechado', 'encerrado', 'fechado temporariamente'].some((w) => lowered.includes(w))) {
+      return null;
+    }
+
+    if (['24 hours', '24h', '24 horas', 'open 24'].some((w) => lowered.includes(w))) {
+      return { open: '00:00', close: '23:59', is24h: true };
+    }
+
+    const parts = value.split(/\s*[\-–]\s*/);
+    if (parts.length < 2) return null;
+
+    const open = this.parseTimeToken(parts[0]);
+    const close = this.parseTimeToken(parts[1]);
+    if (!open || !close) return null;
+
+    return { open, close };
+  }
+
+  private extractHoursText(raw: unknown): string | null {
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        const value = this.extractHoursText(item);
+        if (value) return value;
+      }
+      return null;
+    }
+
+    if (typeof raw === 'string') {
+      const value = raw.trim();
+      return value || null;
+    }
+
+    if (typeof raw === 'number' || typeof raw === 'boolean') {
+      return String(raw);
+    }
+
+    return null;
+  }
+
+  private parseWorkingHours(raw: unknown): Record<string, { open: string; close: string; is24h?: boolean }> {
+    const schedule: Record<string, { open: string; close: string; is24h?: boolean }> = {};
+    if (!raw) return schedule;
+
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [label, value] of Object.entries(raw as Record<string, unknown>)) {
+        const day = this.normalizeDayLabel(label);
+        if (!day) continue;
+        const text = this.extractHoursText(value);
+        if (!text) continue;
+        const parsed = this.parseHoursString(text);
+        if (parsed) schedule[day] = parsed;
+      }
+
+      if (Object.keys(schedule).length > 0) return schedule;
+    }
+
+    const text = String(raw).trim();
+    if (!text) return schedule;
+
+    const dictRegex = /'([^']+)'\s*:\s*'([^']*)'/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = dictRegex.exec(text)) !== null) {
+      const day = this.normalizeDayLabel(match[1]);
+      if (!day) continue;
+      const parsed = this.parseHoursString(match[2]);
+      if (parsed) schedule[day] = parsed;
+    }
+
+    if (Object.keys(schedule).length > 0) return schedule;
+
+    const chunks = text.split(';').map((c) => c.trim()).filter(Boolean);
+    for (const chunk of chunks) {
+      const idx = chunk.indexOf(':');
+      if (idx <= 0) continue;
+      const day = this.normalizeDayLabel(chunk.slice(0, idx));
+      if (!day) continue;
+      const parsed = this.parseHoursString(chunk.slice(idx + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+
+    return schedule;
+  }
+
+  private toMinutes(hhmm: string): number {
+    const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
+    return h * 60 + m;
+  }
+
+  private computeIsOpen(
+    schedule: Record<string, { open: string; close: string; is24h?: boolean }>,
+    isTemporarilyClosed: boolean,
+  ): { isOpen: boolean; statusText: string } {
+    if (isTemporarilyClosed) {
+      return { isOpen: false, statusText: 'Fechado temporariamente' };
+    }
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const dayIndex = (now.getDay() + 6) % 7;
+    const today = this.orderedDays[dayIndex];
+    const todayHours = schedule[today];
+
+    if (todayHours) {
+      const openMinutes = this.toMinutes(todayHours.open);
+      let closeMinutes = this.toMinutes(todayHours.close);
+      const wrapsPastMidnight = closeMinutes <= openMinutes;
+      if (wrapsPastMidnight) closeMinutes += 24 * 60;
+      const comparableCurrentMinutes = wrapsPastMidnight && currentMinutes < openMinutes
+        ? currentMinutes + 24 * 60
+        : currentMinutes;
+      const isOpenNow = comparableCurrentMinutes >= openMinutes && comparableCurrentMinutes < closeMinutes;
+      if (isOpenNow) {
+        const remaining = closeMinutes - comparableCurrentMinutes;
+        if (remaining <= 30) {
+          return { isOpen: true, statusText: `Fecha em ${remaining} min` };
+        }
+        return { isOpen: true, statusText: `Aberto ate ${todayHours.close}` };
+      }
+
+      if (comparableCurrentMinutes < openMinutes) {
+        return { isOpen: false, statusText: `Abre as ${todayHours.open}` };
+      }
+    }
+
+    const dayLabel: Record<string, string> = {
+      monday: 'Seg',
+      tuesday: 'Ter',
+      wednesday: 'Qua',
+      thursday: 'Qui',
+      friday: 'Sex',
+      saturday: 'Sab',
+      sunday: 'Dom',
+    };
+
+    for (let offset = 1; offset <= 7; offset++) {
+      const idx = (dayIndex + offset) % 7;
+      const day = this.orderedDays[idx];
+      const hours = schedule[day];
+      if (!hours) continue;
+      if (offset === 1) {
+        return { isOpen: false, statusText: `Abre amanha as ${hours.open}` };
+      }
+      return { isOpen: false, statusText: `Abre ${dayLabel[day]} as ${hours.open}` };
+    }
+
+    return { isOpen: false, statusText: 'Fechado' };
+  }
+
   // ── Parser CSV simples (sem dependências externas) ───────────────────────────
   parseCSV(csvText: string): OutscraperRow[] {
     const lines = csvText.split('\n').filter((l) => l.trim());
@@ -217,8 +449,11 @@ export class ImportService {
       ? String(row.email)
       : null;
 
-    // Horários — preserva formato raw do Outscraper para parsing posterior
-    const workingHours = row.working_hours || row.working_hours_old_format || null;
+    // Horários — parse para estrutura semanal com status operacional derivado
+    const workingHoursRaw = row.working_hours ?? row.working_hours_old_format ?? null;
+    const hours = this.parseWorkingHours(workingHoursRaw);
+    const isTemporarilyClosed = status === 'CLOSED_TEMPORARILY';
+    const computedStatus = this.computeIsOpen(hours, isTemporarilyClosed);
 
     // Rating e reviews
     const rating       = row.rating  ? parseFloat(String(row.rating))  : null;
@@ -239,7 +474,10 @@ export class ImportService {
       rating,
       reviewsCount,
       photos,                              // array com photo + logo
-      workingHours,                        // formato raw Outscraper
+      workingHours: workingHoursRaw,       // formato raw Outscraper
+      hours,
+      isOpen: computedStatus.isOpen,
+      statusText: computedStatus.statusText,
       status,                              // OPERATIONAL | CLOSED_TEMPORARILY | etc.
       verified:     row.verified === 'TRUE' || row.verified === true,
       placeTypes:   row.type          || null,
@@ -253,7 +491,8 @@ export class ImportService {
       latitude:     lat,
       longitude:    lng,
       municipality,
-      isActive:     status !== 'CLOSED_TEMPORARILY',
+      // CLOSED_TEMPORARILY continua visível; só removemos CLOSED_PERMANENTLY acima.
+      isActive:     true,
       googlePlaceId: row.place_id ? String(row.place_id) : null,
       metadata,
     };

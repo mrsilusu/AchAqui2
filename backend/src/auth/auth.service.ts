@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
 import { User, UserRole } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SignInDto } from './dto/sign-in.dto';
@@ -26,6 +27,62 @@ export class AuthService {
   private readonly resetTokens = new Map<string, { userId: string; expiresAt: Date }>();
 
   private readonly refreshTokenExpiresIn = '7d';
+
+  private isSuspensionColumnMissing(error: unknown): boolean {
+    if (!(error instanceof PrismaClientKnownRequestError)) return false;
+    if (error.code === 'P2022' || error.code === 'P2021') return true;
+    if (error.code === 'P2010') {
+      const message = String((error.meta as { message?: string } | undefined)?.message ?? '');
+      return (
+        message.includes('isSuspended') ||
+        message.includes('suspendedAt') ||
+        message.includes('suspensionReason')
+      );
+    }
+    return false;
+  }
+
+  private async findUserByEmailSafe(email: string) {
+    try {
+      return await this.prisma.user.findUnique({ where: { email } });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      const fallback = await this.prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          role: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return fallback ? ({ ...fallback, isSuspended: false } as User & { isSuspended: boolean }) : null;
+    }
+  }
+
+  private async findUserByIdSafe(id: string) {
+    try {
+      return await this.prisma.user.findUnique({ where: { id } });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      const fallback = await this.prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          role: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return fallback ? ({ ...fallback, isSuspended: false } as User & { isSuspended: boolean }) : null;
+    }
+  }
 
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
@@ -115,9 +172,7 @@ export class AuthService {
   }
 
   async signIn(signInDto: SignInDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: signInDto.email },
-    });
+    const user = await this.findUserByEmailSafe(signInDto.email);
 
     if (!user) {
       throw new UnauthorizedException('Credenciais inválidas.');
@@ -127,6 +182,10 @@ export class AuthService {
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciais inválidas.');
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa. Contacta o suporte.');
     }
 
     return this.buildAuthResponse(user);
@@ -166,12 +225,14 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
+    const user = await this.findUserByIdSafe(payload.sub);
 
     if (!user) {
       throw new UnauthorizedException('Utilizador não encontrado.');
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa.');
     }
 
     return this.buildAuthResponse(user);
@@ -202,26 +263,55 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        _count: {
-          select: {
-            htBookings: true,
-            notifications: true,
-            businesses: true,
+    let user: any;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isSuspended: true,
+          suspendedAt: true,
+          createdAt: true,
+          _count: {
+            select: {
+              htBookings: true,
+              notifications: true,
+              businesses: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          _count: {
+            select: {
+              htBookings: true,
+              notifications: true,
+              businesses: true,
+            },
+          },
+        },
+      });
+      if (user) user.isSuspended = false;
+    }
 
     if (!user) {
       throw new UnauthorizedException('Utilizador não encontrado.');
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa.');
     }
 
     return {

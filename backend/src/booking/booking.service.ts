@@ -29,6 +29,19 @@ export class BookingService {
     );
   }
 
+  // [PMS] Buffer de inventário (stop-sell suave) configurável via business.metadata.pms.sellablePercent.
+  // Exemplos: 90 = vender só 90% da capacidade; 105 = overbooking intencional até 105%.
+  private resolveSellablePercent(metadata: unknown): number {
+    const raw = (metadata as any)?.pms?.sellablePercent;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return 100;
+    return Math.max(50, Math.min(150, Math.round(raw)));
+  }
+
+  private computeSellableCapacity(physicalRooms: number, sellablePercent: number): number {
+    if (physicalRooms <= 0) return 0;
+    return Math.max(1, Math.floor((physicalRooms * sellablePercent) / 100));
+  }
+
   private async findOwnedBooking(bookingId: string, ownerId: string) {
     const include = {
       business: {
@@ -254,20 +267,38 @@ export class BookingService {
     let booking: any;
 
     if (bookingType === BookingTypeDto.ROOM && dto.roomTypeId) {
-      // Regra 1: tipo de quarto deve ter quartos físicos (pode ficar fora — não muta estado)
-      const physicalRooms = await this.prisma.htRoom.count({
-        where: { roomTypeId: dto.roomTypeId, businessId: dto.businessId },
-      });
+      // Regra 1: tipo de quarto deve ter quartos físicos operacionais.
+      // Quartos em MAINTENANCE ficam fora da capacidade vendável.
+      const [physicalRooms, businessPolicy] = await Promise.all([
+        this.prisma.htRoom.count({
+          where: {
+            roomTypeId: dto.roomTypeId,
+            businessId: dto.businessId,
+            status: { not: 'MAINTENANCE' },
+          },
+        }),
+        this.prisma.business.findUnique({
+          where: { id: dto.businessId },
+          select: { metadata: true },
+        }),
+      ]);
       if (physicalRooms === 0) {
         throw new BadRequestException('Este tipo de quarto não tem quartos físicos disponíveis.');
       }
+      const sellablePercent = this.resolveSellablePercent(businessPolicy?.metadata);
+      const sellableCapacity = this.computeSellableCapacity(physicalRooms, sellablePercent);
 
       // [ATOMIC] count + create na mesma transação — sem window de race condition
       booking = await this.prisma.$transaction(async (tx) => {
+        // [LOCK] Bloqueia a linha do tipo de quarto para serializar reservas concorrentes.
+        // Evita duas transações lerem a mesma disponibilidade e criarem em paralelo.
+        await tx.$queryRaw`SELECT id FROM ht_room_types WHERE id = ${dto.roomTypeId} FOR UPDATE`;
+
         // [ATOMIC] Somar booking.rooms (não contar bookings) para ter o total de quartos ocupados.
         // Uma reserva rooms=2 ocupa 2 quartos físicos — contar como 1 seria overbooking.
         const overlapBookings = await tx.htRoomBooking.findMany({
           where: {
+            businessId: dto.businessId,
             roomTypeId: dto.roomTypeId,
             status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
             startDate: { lt: endDate },
@@ -277,11 +308,11 @@ export class BookingService {
         });
         const occupiedRooms = overlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
         const requestedRooms = dto.rooms ?? 1;
-        if (occupiedRooms + requestedRooms > physicalRooms) {
-          const available = Math.max(0, physicalRooms - occupiedRooms);
+        if (occupiedRooms + requestedRooms > sellableCapacity) {
+          const available = Math.max(0, sellableCapacity - occupiedRooms);
           throw new BadRequestException(
             available === 0
-              ? 'Sem quartos disponíveis para as datas seleccionadas.'
+              ? 'Sem quartos disponíveis para as datas seleccionadas (limite operacional atingido).'
               : `Apenas ${available} quarto${available !== 1 ? 's' : ''} disponível${available !== 1 ? 'is' : ''} para essas datas.`
           );
         }
@@ -517,29 +548,37 @@ export class BookingService {
       throw new BadRequestException('Datas inválidas.');
     }
     const nights = Math.ceil((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
-    const [physicalRooms, overlapping] = await Promise.all([
-      this.prisma.htRoom.count({ where: { roomTypeId, businessId } }),
-      this.prisma.htRoomBooking.count({
+    const [physicalRooms, overlapBookings, businessPolicy] = await Promise.all([
+      this.prisma.htRoom.count({
+        where: { roomTypeId, businessId, status: { not: 'MAINTENANCE' } },
+      }),
+      this.prisma.htRoomBooking.findMany({
         where: {
+          businessId,
           roomTypeId,
           status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
           startDate: { lt: eDate },
           endDate:   { gt: sDate },
         },
+        select: { rooms: true },
       }),
+      this.prisma.business.findUnique({ where: { id: businessId }, select: { metadata: true } }),
     ]);
+    const sellablePercent = this.resolveSellablePercent(businessPolicy?.metadata);
+    const sellableCapacity = this.computeSellableCapacity(physicalRooms, sellablePercent);
+    const overlapping = overlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
     // Se não há quartos físicos configurados, usar totalRooms do tipo como capacidade.
     // Isso evita bloquear reservas quando o dono ainda não configurou os quartos físicos.
     const effectiveCapacity = physicalRooms > 0
-      ? physicalRooms
+      ? sellableCapacity
       : 0; // 0 aqui sinaliza "sem quartos físicos" -- o frontend trata este caso
     const available = physicalRooms > 0
-      ? Math.max(0, physicalRooms - overlapping)
+      ? Math.max(0, sellableCapacity - overlapping)
       : 0; // sem quartos físicos -> não sabemos a capacidade real
 
     // Calcular próxima data disponível se ocupado
     let nextAvailableDate: string | null = null;
-    if (available === 0 && physicalRooms > 0) {
+    if (available === 0 && sellableCapacity > 0) {
       // Encontrar a última reserva activa que se sobrepõe e sugerir após o seu checkout
       const lastBooking = await this.prisma.htRoomBooking.findFirst({
         where: {
@@ -558,15 +597,18 @@ export class BookingService {
         next.setDate(next.getDate() + 1);
         // Verificar se nessa data já há disponibilidade
         const nextEnd = new Date(next.getTime() + nights * 24 * 60 * 60 * 1000);
-        const nextOccupied = await this.prisma.htRoomBooking.count({
+        const nextOverlapBookings = await this.prisma.htRoomBooking.findMany({
           where: {
+            businessId,
             roomTypeId,
             status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
             startDate: { lt: nextEnd },
             endDate:   { gt: next },
           },
+          select: { rooms: true },
         });
-        if (nextOccupied < physicalRooms) {
+        const nextOccupied = nextOverlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
+        if (nextOccupied < sellableCapacity) {
           const d = next.toISOString().slice(0, 10);
           const [y, m, day] = d.split('-');
           nextAvailableDate = `${day}/${m}/${y}`;
@@ -574,6 +616,15 @@ export class BookingService {
       }
     }
 
-    return { roomTypeId, physicalRooms, occupied: overlapping, available, nextAvailableDate };
+    return {
+      roomTypeId,
+      physicalRooms,
+      sellableCapacity,
+      sellablePercent,
+      occupied: overlapping,
+      available,
+      nextAvailableDate,
+      stopSellActive: available === 0 && sellableCapacity > 0,
+    };
   }
 }

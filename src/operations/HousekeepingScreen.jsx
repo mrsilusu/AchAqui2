@@ -17,6 +17,7 @@ const ROOM_STATUS_LABEL = {
   CLEAN:       { label: 'Limpo',      color: '#22A06B' },
   DIRTY:       { label: 'Sujo',       color: '#D97706' },
   CLEANING:    { label: 'A limpar',   color: '#1565C0' },
+  INSPECTING:  { label: 'Inspecção',  color: '#7C3AED' },
   MAINTENANCE: { label: 'Manutenção', color: '#DC2626' },
 };
 
@@ -27,9 +28,11 @@ function fmt(d) {
 }
 
 // ─── Card de quarto ────────────────────────────────────────────────────────────
-function RoomTaskCard({ room, onMarkClean, onMarkMaintenance, loading }) {
+function RoomTaskCard({ room, staffList, onMarkClean, onMarkMaintenance, onAssignTask, onApproveInspection, loading }) {
   const [open, setOpen] = useState(false);
+  const staffById = Object.fromEntries((staffList || []).map((s) => [s?.user?.id, s?.user]));
   const pendingTasks = (room.tasks || []).filter(t => !t.completedAt);
+  const hasPendingInspection = room.status === 'INSPECTING' || (room.tasks || []).some(t => t.completedAt && !t.inspectedAt);
   const st = ROOM_STATUS_LABEL[room.status] || ROOM_STATUS_LABEL.CLEAN;
   const busy = loading === room.id;
 
@@ -68,7 +71,23 @@ function RoomTaskCard({ room, onMarkClean, onMarkMaintenance, loading }) {
                     <View style={[hkS.priorityDot, { backgroundColor: pr.color }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={hkS.taskLabel}>{pr.label} · {fmt(task.createdAt)}</Text>
+                      <Text style={hkS.taskMeta}>
+                        {staffById[task.assignedToId]?.name
+                          ? `Atribuído: ${staffById[task.assignedToId].name}`
+                          : staffById[task.assignedToId]?.email
+                            ? `Atribuído: ${staffById[task.assignedToId].email}`
+                            : 'Sem colaborador atribuído'}
+                      </Text>
                     </View>
+                    {!!staffList?.length && (
+                      <TouchableOpacity
+                        style={hkS.assignBtn}
+                        onPress={() => onAssignTask(task.id)}
+                        disabled={busy}
+                      >
+                        <Text style={hkS.assignBtnText}>Atribuir</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={hkS.completeBtn}
                       onPress={() => onMarkClean(room.id, task.id)}
@@ -97,7 +116,17 @@ function RoomTaskCard({ room, onMarkClean, onMarkMaintenance, loading }) {
                 disabled={busy}
               >
                 <Icon name="check" size={14} color={COLORS.green} strokeWidth={2.5} />
-                <Text style={[hkS.actionBtnText, { color: COLORS.green }]}>Marcar Limpo</Text>
+                <Text style={[hkS.actionBtnText, { color: COLORS.green }]}>Concluir limpeza</Text>
+              </TouchableOpacity>
+            )}
+            {hasPendingInspection && (
+              <TouchableOpacity
+                style={[hkS.actionBtn, { backgroundColor: '#F5F3FF', borderColor: '#C4B5FD' }]}
+                onPress={() => onApproveInspection(room.id)}
+                disabled={busy}
+              >
+                <Icon name="verified" size={14} color="#7C3AED" strokeWidth={2.5} />
+                <Text style={[hkS.actionBtnText, { color: '#7C3AED' }]}>Aprovar inspeção</Text>
               </TouchableOpacity>
             )}
             {room.status !== 'MAINTENANCE' && (
@@ -120,6 +149,8 @@ function RoomTaskCard({ room, onMarkClean, onMarkMaintenance, loading }) {
 // ─── Componente principal ──────────────────────────────────────────────────────
 export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCompleted }) {
   const [rooms, setRooms]         = useState([]);
+  const [staff, setStaff]         = useState([]);
+  const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
@@ -135,13 +166,15 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
     if (!businessId || !accessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const result = await backendApi.getHtDashboard(businessId, accessToken);
+      const [result, roomsData, staffData] = await Promise.all([
+        backendApi.getHtDashboard(businessId, accessToken),
+        backendApi.getHtRooms(businessId, accessToken),
+        backendApi.getHtStaff(businessId, accessToken).catch(() => []),
+      ]);
       if (!alive.current) return;
-      // O dashboard retorna rooms com tasks via include
-      // Buscar rooms com tasks directamente via getHtRooms
-      const roomsData = await backendApi.getHtRooms(businessId, accessToken);
-      if (!alive.current) return;
+      setDashboard(result || null);
       setRooms(Array.isArray(roomsData) ? roomsData : []);
+      setStaff(Array.isArray(staffData) ? staffData : []);
     } catch (e) {
       if (alive.current) Alert.alert('Erro', e?.message || 'Não foi possível carregar.');
     } finally {
@@ -157,9 +190,10 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
       // Completar tarefa específica se fornecida
       if (taskId) {
         await backendApi.completeHousekeepingTask(taskId, accessToken);
+      } else {
+        // Sem task explícita: mover para inspeção
+        await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, accessToken);
       }
-      // Marcar o quarto como CLEAN
-      await backendApi.updateHtRoom(roomId, { status: 'CLEAN' }, accessToken);
       await load(true);
       onTaskCompleted?.(); // actualizar contador no Dashboard
     } catch (e) {
@@ -168,6 +202,44 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
       if (alive.current) setActionLoading(null);
     }
   }, [accessToken, load]);
+
+  const handleApproveInspection = useCallback(async (roomId) => {
+    setActionLoading(roomId);
+    try {
+      await backendApi.approveHousekeepingInspection(roomId, accessToken);
+      await load(true);
+      onTaskCompleted?.();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível aprovar a inspeção.');
+    } finally {
+      if (alive.current) setActionLoading(null);
+    }
+  }, [accessToken, load, onTaskCompleted]);
+
+  const handleAssignTask = useCallback((taskId) => {
+    if (!Array.isArray(staff) || staff.length === 0) {
+      Alert.alert('Sem staff', 'Adiciona colaboradores HT antes de atribuir tarefas.');
+      return;
+    }
+    const options = staff
+      .filter(s => s?.user?.id)
+      .slice(0, 5)
+      .map((s) => ({
+        text: s.user.name || s.user.email || 'Colaborador',
+        onPress: async () => {
+          try {
+            await backendApi.assignHtTask(taskId, s.user.id, businessId, accessToken);
+            await load(true);
+          } catch (e) {
+            Alert.alert('Erro', e?.message || 'Falha ao atribuir tarefa.');
+          }
+        },
+      }));
+    Alert.alert('Atribuir tarefa', 'Escolhe o colaborador:', [
+      ...options,
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }, [staff, businessId, accessToken, load]);
 
   const handleMarkMaintenance = useCallback(async (roomId) => {
     Alert.alert('Manutenção', 'Marcar quarto como em manutenção?', [
@@ -190,11 +262,14 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
   }, [accessToken, load]);
 
   const filtered = filter === 'dirty'
-    ? rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE')
+    ? rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'INSPECTING' || r.status === 'MAINTENANCE')
     : rooms;
 
-  const dirtyCount = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING').length;
+  const dirtyCount = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'INSPECTING').length;
   const maintCount = rooms.filter(r => r.status === 'MAINTENANCE').length;
+  const topAvg = Array.isArray(dashboard?.housekeeping?.avgCleaningByRoomType)
+    ? dashboard.housekeeping.avgCleaningByRoomType[0]
+    : null;
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -230,6 +305,14 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
           ))}
         </View>
 
+        {topAvg && (
+          <View style={hkS.metricCard}>
+            <Text style={hkS.metricTitle}>Tempo médio de limpeza</Text>
+            <Text style={hkS.metricValue}>{topAvg.avgMinutes} min</Text>
+            <Text style={hkS.metricSub}>{topAvg.roomTypeName} · {topAvg.tasks} tarefa(s) nos últimos 30 dias</Text>
+          </View>
+        )}
+
         {/* Lista */}
         {loading ? (
           <View style={hkS.center}>
@@ -252,8 +335,11 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
                 <RoomTaskCard
                   key={room.id}
                   room={room}
+                  staffList={staff}
                   onMarkClean={handleMarkClean}
                   onMarkMaintenance={handleMarkMaintenance}
+                  onAssignTask={handleAssignTask}
+                  onApproveInspection={handleApproveInspection}
                   loading={actionLoading}
                 />
               ))
@@ -298,6 +384,10 @@ const hkS = StyleSheet.create({
                    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   priorityDot:   { width: 8, height: 8, borderRadius: 4 },
   taskLabel:     { fontSize: 12, color: '#555' },
+  taskMeta:      { fontSize: 11, color: '#888', marginTop: 1 },
+  assignBtn:     { borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: '#EFF6FF',
+                   borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+  assignBtnText: { fontSize: 11, fontWeight: '700', color: '#1565C0' },
   completeBtn:   { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0FDF4',
                    alignItems: 'center', justifyContent: 'center' },
   noTasks:       { fontSize: 12, color: '#888', fontStyle: 'italic' },
@@ -306,6 +396,11 @@ const hkS = StyleSheet.create({
                    gap: 5, paddingVertical: 9, borderRadius: 8, borderWidth: 1 },
   actionBtnText: { fontSize: 12, fontWeight: '600' },
   center:        { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
+  metricCard:    { margin: 12, marginTop: 0, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF',
+                   borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  metricTitle:   { fontSize: 11, color: '#6B7280', fontWeight: '700' },
+  metricValue:   { fontSize: 18, color: '#111827', fontWeight: '800', marginTop: 2 },
+  metricSub:     { fontSize: 11, color: '#6B7280', marginTop: 2 },
   empty:         { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
   emptyTitle:    { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 6 },
   emptySub:      { fontSize: 13, color: '#888', textAlign: 'center' },

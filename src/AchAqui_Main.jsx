@@ -166,42 +166,259 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
-function parseOutscraperHours(meta) {
-  const wh = meta.working_hours || meta.workingHours || meta.hours_raw;
-  if (!wh) return { isOpen: null, statusText: null };
+const HOURS_DAY_KEY_MAP = {
+  monday: 'monday',
+  mon: 'monday',
+  segunda: 'monday',
+  'segunda-feira': 'monday',
+  tuesday: 'tuesday',
+  tue: 'tuesday',
+  tues: 'tuesday',
+  terca: 'tuesday',
+  'terca-feira': 'tuesday',
+  'terça': 'tuesday',
+  'terça-feira': 'tuesday',
+  wednesday: 'wednesday',
+  wed: 'wednesday',
+  quarta: 'wednesday',
+  'quarta-feira': 'wednesday',
+  thursday: 'thursday',
+  thu: 'thursday',
+  thurs: 'thursday',
+  quinta: 'thursday',
+  'quinta-feira': 'thursday',
+  friday: 'friday',
+  fri: 'friday',
+  sexta: 'friday',
+  'sexta-feira': 'friday',
+  saturday: 'saturday',
+  sat: 'saturday',
+  sabado: 'saturday',
+  'sábado': 'saturday',
+  sunday: 'sunday',
+  sun: 'sunday',
+  domingo: 'sunday',
+};
 
-  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const now  = new Date();
-  const day  = DAYS[now.getDay()];
+const ORDERED_HOURS_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-  let todayStr = null;
-  if (typeof wh === 'object' && !Array.isArray(wh)) {
-    todayStr = wh[day] || null;
-  } else if (Array.isArray(wh)) {
-    const found = wh.find(s => s.startsWith(day));
-    todayStr = found ? found.replace(`${day}: `, '') : null;
+function normalizeHoursDayLabel(label) {
+  if (typeof label !== 'string') return null;
+  const normalized = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return HOURS_DAY_KEY_MAP[normalized] || null;
+}
+
+function extractHoursValue(raw) {
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const value = extractHoursValue(item);
+      if (value) return value;
+    }
+    return null;
   }
 
-  if (!todayStr) return { isOpen: false, statusText: 'Fechado hoje' };
-  if (/closed|fechado/i.test(todayStr)) return { isOpen: false, statusText: 'Fechado' };
-  if (/24|open 24/i.test(todayStr))    return { isOpen: true,  statusText: 'Aberto 24 horas' };
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    return value || null;
+  }
 
-  const match = todayStr.match(/[\u2013\-]\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-  if (!match) return { isOpen: true, statusText: todayStr };
+  if (typeof raw === 'number' || typeof raw === 'boolean') {
+    return String(raw);
+  }
 
-  let closeH = parseInt(match[1]);
-  const closeM = parseInt(match[2]);
-  const ampm = match[3]?.toUpperCase();
-  if (ampm === 'PM' && closeH !== 12) closeH += 12;
-  if (ampm === 'AM' && closeH === 12) closeH = 0;
+  return null;
+}
 
-  const closing = new Date();
-  closing.setHours(closeH, closeM, 0, 0);
-  const diffMs = closing - now;
+function parseHourToken(raw) {
+  const token = String(raw || '').trim().toLowerCase();
+  if (!token) return null;
 
-  if (diffMs < 0) return { isOpen: false, statusText: 'Fechado' };
-  if (diffMs <= 30 * 60 * 1000) return { isOpen: true, statusText: `Fecha em ${Math.floor(diffMs/60000)} min` };
-  return { isOpen: true, statusText: `Aberto até ${String(closeH).padStart(2,'0')}:${String(closeM).padStart(2,'0')}` };
+  const twelveHour = token.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (twelveHour) {
+    let hours = parseInt(twelveHour[1], 10);
+    const minutes = parseInt(twelveHour[2] || '0', 10);
+    const meridiem = twelveHour[3].toLowerCase();
+    if (hours === 12) hours = 0;
+    if (meridiem === 'pm') hours += 12;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  const twentyFourHour = token.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (twentyFourHour) {
+    const hours = parseInt(twentyFourHour[1], 10);
+    const minutes = parseInt(twentyFourHour[2] || '0', 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+
+  const hFormat = token.match(/^(\d{1,2})h(?:(\d{2}))?$/);
+  if (hFormat) {
+    const hours = parseInt(hFormat[1], 10);
+    const minutes = parseInt(hFormat[2] || '0', 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+
+  return null;
+}
+
+function parseHoursEntry(raw) {
+  const value = extractHoursValue(raw);
+  if (!value) return null;
+
+  const lowered = value.toLowerCase();
+  if (['closed', 'fechado', 'encerrado', 'fechado temporariamente'].some((word) => lowered.includes(word))) {
+    return null;
+  }
+
+  if (['24 hours', '24h', '24 horas', 'open 24', 'aberto 24 horas'].some((word) => lowered.includes(word))) {
+    return { open: '00:00', close: '23:59', is24h: true };
+  }
+
+  const parts = value.split(/\s*[\-–]\s*/);
+  if (parts.length < 2) return null;
+
+  const open = parseHourToken(parts[0]);
+  const close = parseHourToken(parts[1]);
+  if (!open || !close) return null;
+  return { open, close };
+}
+
+function toMinutes(hhmm) {
+  const [hours, minutes] = String(hhmm).split(':').map((value) => parseInt(value, 10));
+  return (hours * 60) + minutes;
+}
+
+function buildHoursSchedule(meta) {
+  const normalizedHours = meta?.hours;
+  if (normalizedHours && typeof normalizedHours === 'object' && !Array.isArray(normalizedHours)) {
+    const schedule = {};
+    for (const [label, value] of Object.entries(normalizedHours)) {
+      const day = normalizeHoursDayLabel(label);
+      if (!day || !value || typeof value !== 'object') continue;
+      const open = parseHourToken(value.open);
+      const close = parseHourToken(value.close);
+      if (!open || !close) continue;
+      schedule[day] = { open, close, is24h: Boolean(value.is24h) };
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  const rawHours = meta?.working_hours ?? meta?.workingHours ?? meta?.hours_raw;
+  if (!rawHours) return null;
+
+  const schedule = {};
+
+  if (typeof rawHours === 'object' && !Array.isArray(rawHours)) {
+    for (const [label, value] of Object.entries(rawHours)) {
+      const day = normalizeHoursDayLabel(label);
+      if (!day) continue;
+      const parsed = parseHoursEntry(value);
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  if (Array.isArray(rawHours)) {
+    for (const chunk of rawHours) {
+      const text = extractHoursValue(chunk);
+      if (!text) continue;
+      const separatorIndex = text.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      const day = normalizeHoursDayLabel(text.slice(0, separatorIndex));
+      if (!day) continue;
+      const parsed = parseHoursEntry(text.slice(separatorIndex + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  if (typeof rawHours === 'string') {
+    const dictRegex = /'([^']+)'\s*:\s*'([^']*)'/g;
+    let match = null;
+    while ((match = dictRegex.exec(rawHours)) !== null) {
+      const day = normalizeHoursDayLabel(match[1]);
+      if (!day) continue;
+      const parsed = parseHoursEntry(match[2]);
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+
+    for (const chunk of rawHours.split(';').map((item) => item.trim()).filter(Boolean)) {
+      const separatorIndex = chunk.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      const day = normalizeHoursDayLabel(chunk.slice(0, separatorIndex));
+      if (!day) continue;
+      const parsed = parseHoursEntry(chunk.slice(separatorIndex + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+  }
+
+  return Object.keys(schedule).length > 0 ? schedule : null;
+}
+
+function computeIsOpenFromMeta(meta) {
+  if (!meta || typeof meta !== 'object') return { isOpen: null, statusText: null };
+  if (meta.status === 'CLOSED_TEMPORARILY') {
+    return { isOpen: false, statusText: 'Fechado temporariamente' };
+  }
+
+  const schedule = buildHoursSchedule(meta);
+  if (!schedule) return { isOpen: null, statusText: null };
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const dayIndex = (now.getDay() + 6) % 7;
+  const today = ORDERED_HOURS_DAYS[dayIndex];
+  const todayHours = schedule[today];
+
+  if (todayHours) {
+    const openMinutes = toMinutes(todayHours.open);
+    let closeMinutes = toMinutes(todayHours.close);
+    const wrapsPastMidnight = closeMinutes <= openMinutes;
+    if (wrapsPastMidnight) closeMinutes += 24 * 60;
+    const comparableCurrentMinutes = wrapsPastMidnight && currentMinutes < openMinutes
+      ? currentMinutes + 24 * 60
+      : currentMinutes;
+    const isOpenNow = comparableCurrentMinutes >= openMinutes && comparableCurrentMinutes < closeMinutes;
+
+    if (isOpenNow) {
+      const remaining = closeMinutes - comparableCurrentMinutes;
+      if (remaining <= 30) {
+        return { isOpen: true, statusText: `Fecha em ${Math.max(0, Math.floor(remaining))} min` };
+      }
+      return { isOpen: true, statusText: `Aberto ate ${todayHours.close}` };
+    }
+
+    if (comparableCurrentMinutes < openMinutes) {
+      return { isOpen: false, statusText: `Abre as ${todayHours.open}` };
+    }
+  }
+
+  const dayLabel = {
+    monday: 'Seg',
+    tuesday: 'Ter',
+    wednesday: 'Qua',
+    thursday: 'Qui',
+    friday: 'Sex',
+    saturday: 'Sab',
+    sunday: 'Dom',
+  };
+
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const nextIndex = (dayIndex + offset) % 7;
+    const day = ORDERED_HOURS_DAYS[nextIndex];
+    const hours = schedule[day];
+    if (!hours) continue;
+    if (offset === 1) {
+      return { isOpen: false, statusText: `Abre amanha as ${hours.open}` };
+    }
+    return { isOpen: false, statusText: `Abre ${dayLabel[day]} as ${hours.open}` };
+  }
+
+  return { isOpen: false, statusText: 'Fechado' };
 }
 
 function normalizeBusiness(rawBusiness) {
@@ -214,7 +431,7 @@ function normalizeBusiness(rawBusiness) {
 
   // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
   const meta = rawBusiness.metadata || {};
-  const hoursState = parseOutscraperHours(meta);
+  const hoursState = computeIsOpenFromMeta(meta);
 
   return {
     ...base,
@@ -276,8 +493,8 @@ function normalizeBusiness(rawBusiness) {
     promo: base.promo || meta.promo || null,
     distance: base.distance || meta.distance || 0,
     distanceText: base.distanceText || meta.distanceText || '—',
-    isOpen:     base.isOpen     ?? hoursState.isOpen     ?? meta.isOpen     ?? true,
-    statusText: base.statusText || hoursState.statusText || meta.statusText || 'Aberto',
+    isOpen:     hoursState.isOpen ?? base.isOpen ?? meta.isOpen ?? true,
+    statusText: hoursState.statusText || base.statusText || meta.statusText || 'Aberto',
     isPublic: true,
     latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
     longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
@@ -466,6 +683,7 @@ function AppContent() {
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
   const [activeBusinessTab, setActiveBusinessTab] = useState('dashboard');
+  const [adminSessionBackup, setAdminSessionBackup] = useState(null);
 
   // ── Business detail ────────────────────────────────────────────────────────
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
@@ -538,10 +756,53 @@ function AppContent() {
       }
     } finally {
       await authSession.saveSession(null);
+      setAdminSessionBackup(null);
       setIsBusinessMode(false);
       setActiveNavTab('home');
     }
   }, [authSession]);
+
+  const handleImpersonationSession = useCallback(async (impersonationSession) => {
+    if (!impersonationSession?.accessToken || !impersonationSession?.user) {
+      Alert.alert('Erro', 'Sessão de impersonação inválida.');
+      return;
+    }
+
+    if (authSession.user?.role !== 'ADMIN' || !authSession.accessToken) {
+      Alert.alert('Sessão inválida', 'Só um administrador autenticado pode iniciar impersonação.');
+      return;
+    }
+
+    setAdminSessionBackup({
+      accessToken: authSession.accessToken,
+      refreshToken: authSession.refreshToken,
+      user: authSession.user,
+    });
+
+    await authSession.saveSession({
+      accessToken: impersonationSession.accessToken,
+      refreshToken: impersonationSession.refreshToken || null,
+      user: impersonationSession.user,
+      impersonation: impersonationSession.impersonation || { active: true },
+    });
+
+    setIsBusinessMode(true);
+    setActiveBusinessTab('dashboard');
+    setActiveNavTab('home');
+  }, [authSession]);
+
+  const handleExitOwnerMode = useCallback(async () => {
+    if (authSession.session?.impersonation?.active && adminSessionBackup) {
+      await authSession.saveSession(adminSessionBackup);
+      setAdminSessionBackup(null);
+      setIsBusinessMode(false);
+      setActiveNavTab('home');
+      return;
+    }
+
+    setIsBusinessMode(false);
+    setActiveNavTab('home');
+  }, [adminSessionBackup, authSession]);
 
     const handleBusinessPress = useCallback((b) => {
     meta.swipeProgress.setValue(0);
@@ -778,6 +1039,7 @@ function AppContent() {
           {authSession.isAdmin && (
             <AdminModule
               accessToken={authSession.accessToken}
+              onImpersonationSession={handleImpersonationSession}
               onExit={() => {}}
               onLogout={handleLogout}
               insets={insets}
@@ -826,7 +1088,7 @@ function AppContent() {
               insets={insets}
               onUpdateBusiness={updateOwnerBiz}
               onSyncPromoDeals={syncPromoDeals}
-              onExitOwnerMode={() => { setIsBusinessMode(false); setActiveNavTab('home'); }}
+              onExitOwnerMode={handleExitOwnerMode}
               onViewBusiness={handleBusinessPress}
               liveBookings={liveSync.bookings}
               liveNotifications={notifications}

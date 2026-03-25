@@ -12,13 +12,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, Modal, ActivityIndicator, RefreshControl,
+  ScrollView, Modal, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { HousekeepingScreen } from './HousekeepingScreen';
 import { ReceptionScreen } from './ReceptionScreen';
 import { ReservationMapModal } from './ReservationMapModal';
+import { GuestsScreen } from './GuestsScreen';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -164,14 +165,19 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0 }) {
+export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [] }) {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [sellablePercentInput, setSellablePercentInput] = useState('100');
+  const [policySaving, setPolicySaving] = useState(false);
+  const [businessMetadata, setBusinessMetadata] = useState({});
   const [showHousekeeping, setShowHousekeeping] = useState(false);
   const [showRooms, setShowRooms]               = useState(false);
   const [showReception, setShowReception]       = useState(false);
+  const [showGuests, setShowGuests]             = useState(false);
+  const [pendingReceptionAction, setPendingReceptionAction] = useState(null);
   const [showMap, setShowMap]                   = useState(false);
   const alive = useRef(true);
 
@@ -199,12 +205,65 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   // Recarregar quando reloadTrigger muda (ex: depois de acções na Receção)
   useEffect(() => { load(); }, [load, reloadTrigger]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadBusinessPolicy = async () => {
+      if (!businessId) return;
+      try {
+        const biz = await backendApi.getBusiness(businessId, accessToken);
+        if (cancelled) return;
+        const metadata = (biz?.metadata && typeof biz.metadata === 'object') ? biz.metadata : {};
+        const raw = Number(metadata?.pms?.sellablePercent ?? 100);
+        const safe = Number.isFinite(raw) ? Math.max(50, Math.min(150, Math.round(raw))) : 100;
+        setBusinessMetadata(metadata);
+        setSellablePercentInput(String(safe));
+      } catch {
+        if (cancelled) return;
+        setBusinessMetadata({});
+        setSellablePercentInput('100');
+      }
+    };
+    loadBusinessPolicy();
+    return () => { cancelled = true; };
+  }, [businessId, accessToken]);
+
+  const handleSaveSellablePercent = useCallback(async () => {
+    const raw = Number(sellablePercentInput);
+    if (!Number.isFinite(raw)) {
+      Alert.alert('Valor inválido', 'Insira um número entre 50 e 150.');
+      return;
+    }
+    const safe = Math.max(50, Math.min(150, Math.round(raw)));
+    const currentPms = (businessMetadata?.pms && typeof businessMetadata.pms === 'object')
+      ? businessMetadata.pms
+      : {};
+    const metadata = {
+      ...(businessMetadata || {}),
+      pms: { ...currentPms, sellablePercent: safe },
+    };
+
+    try {
+      setPolicySaving(true);
+      await backendApi.updateBusiness(businessId, { metadata }, accessToken);
+      if (!alive.current) return;
+      setBusinessMetadata(metadata);
+      setSellablePercentInput(String(safe));
+      Alert.alert('Política guardada', `Capacidade vendável definida para ${safe}%.`);
+      await load(true);
+    } catch (e) {
+      if (!alive.current) return;
+      Alert.alert('Erro', e?.message || 'Não foi possível guardar a política de capacidade.');
+    } finally {
+      if (alive.current) setPolicySaving(false);
+    }
+  }, [sellablePercentInput, businessMetadata, businessId, accessToken, load]);
+
   // ─── Housekeeping: marcar quarto como limpo ou em manutenção ─────────────
   const handleMarkClean = useCallback(async (roomId, taskId) => {
     setActionLoading(roomId);
     try {
       if (taskId) await backendApi.completeHousekeepingTask(taskId, accessToken);
-      await backendApi.updateHtRoom(roomId, { status: 'CLEAN' }, accessToken);
+      else await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, accessToken);
       await load(true);
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível marcar o quarto como limpo.');
@@ -333,6 +392,28 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               <Text style={dS.revenueSub}>checkouts pagos</Text>
             </View>
 
+            {/* ── Overbooking Buffer / Stop-Sell ── */}
+            <View style={dS.policyCard}>
+              <Text style={dS.policyTitle}>Overbooking Buffer / Stop-Sell</Text>
+              <Text style={dS.policyText}>
+                Define a capacidade vendável por tipo de quarto. 100% = capacidade real; 90% = buffer operacional; 105% = overbooking controlado.
+              </Text>
+              <View style={dS.policyRow}>
+                <TextInput
+                  style={dS.policyInput}
+                  value={sellablePercentInput}
+                  onChangeText={setSellablePercentInput}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  editable={!policySaving}
+                />
+                <Text style={dS.policySuffix}>%</Text>
+                <TouchableOpacity style={[dS.policyBtn, policySaving && { opacity: 0.7 }]} onPress={handleSaveSellablePercent} disabled={policySaving}>
+                  <Text style={dS.policyBtnText}>{policySaving ? 'A guardar...' : 'Guardar'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
               <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
@@ -349,7 +430,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                   Housekeeping
                   {(() => {
                     const n = (data?.rooms || []).filter(r =>
-                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE'
+                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'INSPECTING' || r.status === 'MAINTENANCE'
                     ).length;
                     return n > 0 ? ` · ${n} pendente${n !== 1 ? 's' : ''}` : '';
                   })()}
@@ -372,6 +453,14 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               >
                 <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
+                onPress={() => setShowGuests(true)}
+              >
+                <Icon name="user" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Hóspedes · Perfis / Histórico</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
@@ -444,6 +533,8 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           businessId={businessId}
           accessToken={accessToken}
           roomTypes={[]}
+          pendingAction={pendingReceptionAction}
+          onPendingActionConsumed={() => setPendingReceptionAction(null)}
           onClose={() => { setShowReception(false); load(true); }}
         />
       )}
@@ -466,11 +557,19 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
             const token = accessToken;
             try {
               if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
-              if (action === 'checkin')  await backendApi.htCheckIn(bookingId, {}, token);
+              if (action === 'checkin')  {
+                setPendingReceptionAction({ bookingId, action: 'checkin', bk });
+                setShowReception(true);
+                return;
+              }
               if (action === 'checkout') await backendApi.htCheckOut(bookingId, token);
               if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
               if (action === 'cancel')   await backendApi.updateBooking(bookingId, { status: 'CANCELLED' }, token);
-              if (action === 'edit')     { setShowReception(true); return; }
+              if (action === 'edit')     {
+                setPendingReceptionAction({ bookingId, action: 'edit', bk });
+                setShowReception(true);
+                return;
+              }
               load(true); // refresh do dashboard
             } catch (e) {
               Alert.alert('Erro', e?.message || 'Operação falhou.');
@@ -485,6 +584,13 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           onMarkMaintenance={handleMarkMaintenance}
           actionLoading={actionLoading}
           onClose={() => setShowRooms(false)}
+        />
+      )}
+      {showGuests && (
+        <GuestsScreen
+          businessId={businessId}
+          accessToken={accessToken}
+          onClose={() => setShowGuests(false)}
         />
       )}
     </Modal>
@@ -529,6 +635,16 @@ const dS = StyleSheet.create({
   revenueLabel: { fontSize: 12, color: '#166534', fontWeight: '600' },
   revenueValue: { fontSize: 20, fontWeight: '800', color: '#166534', letterSpacing: -0.5, marginTop: 2 },
   revenueSub:   { fontSize: 11, color: '#16a34a' },
+
+  // Overbooking policy
+  policyCard:   { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E5E7EB' },
+  policyTitle:  { fontSize: 13, fontWeight: '800', color: '#111827' },
+  policyText:   { marginTop: 6, fontSize: 12, lineHeight: 18, color: '#4B5563' },
+  policyRow:    { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  policyInput:  { minWidth: 68, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, backgroundColor: '#fff', textAlign: 'center', fontWeight: '700', color: '#111827' },
+  policySuffix: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  policyBtn:    { marginLeft: 'auto', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#111827' },
+  policyBtnText:{ fontSize: 12, fontWeight: '700', color: '#fff' },
 
 
 

@@ -186,6 +186,8 @@ export const backendApi = {
     apiRequest(`/businesses/${businessId}/status`, { method: 'PATCH', body: payload, accessToken }),
   createBusiness: (payload, accessToken) =>
     apiRequest('/businesses', { method: 'POST', body: payload, accessToken }),
+  getBusiness: (businessId, accessToken) =>
+    apiRequest(`/businesses/${businessId}`, { accessToken }),
   updateBusiness: (businessId, payload, accessToken) =>
     apiRequest(`/businesses/${businessId}`, { method: 'PATCH', body: payload, accessToken }),
   updateBusinessInfo: (businessId, payload, accessToken) =>
@@ -326,6 +328,8 @@ export const backendApi = {
   // ─── HT — Housekeeping
   completeHousekeepingTask: (taskId, accessToken) =>
     apiRequest(`/ht/housekeeping/${taskId}/complete`, { method: 'PATCH', body: {}, accessToken }),
+  approveHousekeepingInspection: (roomId, accessToken) =>
+    apiRequest(`/ht/housekeeping/rooms/${roomId}/approve`, { method: 'PATCH', body: {}, accessToken }),
 
   // ─── HT — Receção / PMS (Sprint 1)
   getHtArrivals: (businessId, accessToken) =>
@@ -408,6 +412,12 @@ export const backendApi = {
     apiRequest('/notifications/read-all', { method: 'PATCH', accessToken }),
   registerDeviceToken: (payload, accessToken) =>
     apiRequest('/notifications/device-token', { method: 'POST', body: payload, accessToken }),
+  adminImpersonateOwner: (businessId, payload, accessToken) =>
+    apiRequest(`/admin/businesses/${businessId}/impersonate-owner`, {
+      method: 'POST',
+      body: payload || {},
+      accessToken,
+    }),
   syncOfflineMutations: (accessToken) =>
     drainOfflineQueue(apiRequest, accessToken),
 

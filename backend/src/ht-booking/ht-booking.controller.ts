@@ -113,6 +113,12 @@ export class HtBookingController {
     return task;
   }
 
+  @Patch('housekeeping/rooms/:roomId/approve')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  approveHousekeepingInspection(@Param('roomId') roomId: string, @Req() req: any) {
+    return this.htDashboardService.approveInspection(roomId, req.user.userId);
+  }
+
   // ─── Folio (Sprint 3) ─────────────────────────────────────────────────────
   @Get('bookings/:id/folio')
   getFolio(@Param('id') id: string, @Req() req: any) {

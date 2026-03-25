@@ -21,6 +21,12 @@ export class HtBookingService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
+  private normalizeDocumentNumber(value?: string | null): string | null {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    return raw.replace(/\s+/g, '').toUpperCase();
+  }
+
   // [TENANT] Valida que a reserva pertence ao negócio do owner autenticado.
   // Previne IDOR: Owner A não acede a reservas de Owner B.
   private async findBookingForOwner(bookingId: string, ownerId: string) {
@@ -32,8 +38,21 @@ export class HtBookingService {
         roomType: { select: { name: true } },
         user:     { select: { id: true, name: true, email: true } },
         business: { select: { id: true, name: true, ownerId: true } },
+        guestProfile: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+            documentType: true,
+            documentNumber: true,
+            companyName: true,
+            nif: true,
+            nationality: true,
+            dateOfBirth: true,
+          },
+        },
       },
-    });
+    } as any);
     if (!booking) throw new NotFoundException('Reserva não encontrada ou sem permissão.');
     return booking;
   }
@@ -60,10 +79,101 @@ export class HtBookingService {
     });
   }
 
+  // [LEGAL AO] Check-in requer identificação válida do hóspede.
+  // Garante perfil persistente ligado à reserva para histórico e conformidade.
+  private async ensureGuestProfileForCheckIn(
+    booking: any,
+    dto: CheckInDto,
+  ): Promise<string> {
+    const fullName = (dto.guestName?.trim() || booking.guestName?.trim() || booking.user?.name || '').trim();
+    if (!fullName) {
+      throw new BadRequestException('Nome do hóspede é obrigatório para check-in.');
+    }
+
+    const phone = dto.guestPhone?.trim() || booking.guestPhone?.trim() || null;
+    const documentType = dto.documentType?.trim() || booking.guestProfile?.documentType || 'BI';
+    const documentNumber = this.normalizeDocumentNumber(dto.documentNumber || booking.guestProfile?.documentNumber || null);
+    if (!documentNumber) {
+      throw new BadRequestException('Documento de identificação é obrigatório para check-in (BI/Passaporte).');
+    }
+
+    const nationality = dto.nationality?.trim() || booking.guestProfile?.nationality || null;
+    const companyName = dto.companyName?.trim() || booking.guestProfile?.companyName || null;
+    const nif = dto.nif?.trim() || booking.guestProfile?.nif || null;
+    const dateOfBirth = dto.dateOfBirth?.trim()
+      ? new Date(dto.dateOfBirth)
+      : (booking.guestProfile?.dateOfBirth ?? null);
+    if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) {
+      throw new BadRequestException('Data de nascimento inválida.');
+    }
+
+    const existingByDocument = await this.prisma.htGuestProfile.findFirst({
+      where: {
+        businessId: booking.businessId,
+        documentNumber,
+      },
+      select: { id: true },
+    });
+
+    if (booking.guestProfileId) {
+      if (existingByDocument && existingByDocument.id !== booking.guestProfileId) {
+        throw new BadRequestException('Número de documento já registado para outro hóspede neste estabelecimento.');
+      }
+      const updated = await this.prisma.htGuestProfile.update({
+        where: { id: booking.guestProfileId },
+        data: {
+          fullName,
+          phone,
+          documentType,
+          documentNumber,
+          companyName,
+          nif,
+          nationality,
+          dateOfBirth,
+        } as any,
+        select: { id: true },
+      });
+      return updated.id;
+    }
+
+    if (existingByDocument) {
+      await this.prisma.htGuestProfile.update({
+        where: { id: existingByDocument.id },
+        data: {
+          fullName,
+          phone,
+          documentType,
+          companyName,
+          nif,
+          nationality,
+          dateOfBirth,
+        } as any,
+      });
+      return existingByDocument.id;
+    }
+
+    const created = await this.prisma.htGuestProfile.create({
+      data: {
+        businessId: booking.businessId,
+        fullName,
+        phone,
+        email: booking.user?.email ?? null,
+        documentType,
+        documentNumber,
+        companyName,
+        nif,
+        nationality,
+        dateOfBirth,
+      } as any,
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   // CHECK-IN
   // [ACID] Transação atómica: atualiza reserva + atribui quarto.
   async checkIn(bookingId: string, ownerId: string, dto: CheckInDto, ip?: string) {
-    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
 
     if (booking.status !== HtBookingStatus.CONFIRMED && booking.status !== HtBookingStatus.PENDING) {
       throw new BadRequestException(`Não é possível fazer check-in. Estado actual: ${booking.status}`);
@@ -108,6 +218,7 @@ export class HtBookingService {
     }
 
     const previousStatus = booking.status;
+    const guestProfileId = await this.ensureGuestProfileForCheckIn(booking, dto);
 
     // Se não veio roomId explícito, atribuir automaticamente um quarto CLEAN do tipo correcto.
     // Sem esta atribuição, o HtRoom nunca fica marcado como ocupado no dashboard.
@@ -151,6 +262,7 @@ export class HtBookingService {
           status:      HtBookingStatus.CHECKED_IN,
           checkedInAt: realArrival,
           roomId:      resolvedRoomId,
+          guestProfileId,
           guestName:   dto.guestName  ?? booking.guestName,
           guestPhone:  dto.guestPhone ?? booking.guestPhone,
           // [Fix 1] Early check-in: startDate passa a ser o dia real de entrada
@@ -501,6 +613,17 @@ const BOOKING_SELECT = {
   startDate: true, endDate: true, status: true,
   notes: true, checkedInAt: true, checkedOutAt: true,
   totalPrice: true, paymentStatus: true, roomTypeId: true,
+  guestProfile: {
+    select: {
+      id: true,
+      documentType: true,
+      documentNumber: true,
+      companyName: true,
+      nif: true,
+      nationality: true,
+      dateOfBirth: true,
+    },
+  },
   roomType: { select: { name: true, pricePerNight: true } },
   room:     { select: { number: true, floor: true } },
   user:     { select: { id: true, name: true } },

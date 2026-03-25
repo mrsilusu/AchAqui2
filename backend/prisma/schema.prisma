@@ -199,6 +199,9 @@ model User {
   password      String
   role          UserRole
   name          String
+  isSuspended   Boolean              @default(false)
+  suspendedAt   DateTime?
+  suspensionReason String?
   // Core relations
   businesses    Business[]
   refreshTokens RefreshToken[]
@@ -653,6 +656,8 @@ model HtGuestProfile {
   // [GDPR] Dados de identificação — encriptados em repouso (AES-256)
   documentType   String?         // "BI" | "Passaporte" | "DIRE"
   documentNumber String?         // encriptado
+  companyName    String?
+  nif            String?
   nationality    String?
   dateOfBirth    DateTime?       // encriptado
   address        String?
@@ -667,6 +672,7 @@ model HtGuestProfile {
   updatedAt      DateTime        @updatedAt
 
   @@unique([businessId, documentNumber])
+  @@index([businessId, nif])
   @@map("ht_guest_profiles")
 }
 
