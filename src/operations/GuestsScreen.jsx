@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
+  View, Text, ScrollView, TouchableOpacity, Switch,
   Modal, TextInput, FlatList, StyleSheet, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Icon } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
-// \u2500\u2500\u2500 Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Helpers ──────────────────────────────────────────────────────────────────────────────
 function parseMaybeDate(d) {
   if (!d) return null;
   if (d instanceof Date) return isNaN(d) ? null : d;
@@ -24,30 +25,30 @@ function parseMaybeDate(d) {
   return isNaN(dt) ? null : dt;
 }
 function fmtDate(d) {
-  if (!d) return '\u2014';
+  if (!d) return '—';
   const dt = parseMaybeDate(d);
-  if (!dt || isNaN(dt)) return '\u2014';
+  if (!dt || isNaN(dt)) return '—';
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
 }
 function fmtShort(d) {
-  if (!d) return '\u2014';
+  if (!d) return '—';
   const dt = parseMaybeDate(d);
-  if (!dt || isNaN(dt)) return '\u2014';
+  if (!dt || isNaN(dt)) return '—';
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`;
 }
 function fmtMoney(n) {
-  if (n == null || isNaN(Number(n))) return '\u2014';
+  if (n == null || isNaN(Number(n))) return '—';
   return Number(n).toLocaleString('pt-PT') + ' Kz';
 }
 
-// \u2500\u2500\u2500 Constantes de estado \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Constantes de estado ──────────────────────────────────────────────────────────
 const GUEST_STATUS = {
   in_house: { label: 'Em Casa',  color: '#166534', bg: '#DCFCE7' },
-  upcoming: { label: 'Pr\u00f3ximo',  color: '#1D4ED8', bg: '#DBEAFE' },
+  upcoming: { label: 'Próximo',  color: '#1D4ED8', bg: '#DBEAFE' },
   past:     { label: 'Anterior', color: '#6B7280', bg: '#F3F4F6' },
 };
 
-// \u2500\u2500\u2500 Demo guests (shape API, usado quando a API devolve zero) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Demo guests (shape API, usado quando a API devolve zero) ──────────────────────
 const DEMO_GUESTS = [
   {
     id: 'demo_1', fullName: 'Ana Rodrigues', phone: '+244 912 111 222',
@@ -66,14 +67,14 @@ const DEMO_GUESTS = [
     email: 'paulo@empresa.co.ao', nationality: 'Portuguesa',
     isVip: false, isBlacklisted: false,
     documentType: 'Passaporte', documentNumber: 'A1234567',
-    preferences: '', notes: 'Viajante de neg\u00f3cios',
+    preferences: '', notes: 'Viajante de negócios',
     bookings: [
       { id: 'db2', startDate: '2026-04-10', endDate: '2026-04-13',
         status: 'CONFIRMED', totalPrice: 45000, roomType: { name: 'Standard' } },
     ],
   },
   {
-    id: 'demo_3', fullName: 'Lu\u00edsa Mendes', phone: '+244 934 555 666',
+    id: 'demo_3', fullName: 'Luísa Mendes', phone: '+244 934 555 666',
     email: null, nationality: 'Angolana', isVip: false, isBlacklisted: false,
     documentType: 'BI', documentNumber: '007891234CD000',
     preferences: '', notes: '',
@@ -84,7 +85,7 @@ const DEMO_GUESTS = [
   },
 ];
 
-// \u2500\u2500\u2500 Status das reservas (API usa UPPERCASE) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Status das reservas (API usa UPPERCASE) ─────────────────────────────────────────
 function resolveBookingStatus(b) {
   const s = (b.status || '').toUpperCase();
   if (s === 'CHECKED_IN') return 'in_house';
@@ -95,7 +96,7 @@ function resolveBookingStatus(b) {
   return 'past';
 }
 
-// \u2500\u2500\u2500 M\u00e9tricas agregadas de um h\u00f3spede \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Métricas agregadas de um hóspede ──────────────────────────────────────────────────────
 function computeGuestMeta(guest) {
   const bks = Array.isArray(guest.bookings) ? guest.bookings : [];
   const totalStays  = bks.length;
@@ -109,10 +110,10 @@ function computeGuestMeta(guest) {
   const avgSpend   = totalStays > 0 ? Math.round(totalSpent / totalStays) : 0;
   const rtCount = {};
   for (const b of bks) {
-    const rt = b.roomType?.name || '\u2014';
+    const rt = b.roomType?.name || '—';
     rtCount[rt] = (rtCount[rt] || 0) + 1;
   }
-  const preferredRoom = Object.entries(rtCount).sort((a, x) => x[1] - a[1])[0]?.[0] || '\u2014';
+  const preferredRoom = Object.entries(rtCount).sort((a, x) => x[1] - a[1])[0]?.[0] || '—';
   let status = 'past';
   if (bks.some(b => resolveBookingStatus(b) === 'in_house'))   status = 'in_house';
   else if (bks.some(b => resolveBookingStatus(b) === 'upcoming')) status = 'upcoming';
@@ -128,7 +129,7 @@ function computeGuestMeta(guest) {
            nextBooking, activeBooking, firstStay, lastStay };
 }
 
-// \u2500\u2500\u2500 Avatar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Avatar ──────────────────────────────────────────────────────────────────────────────
 function Avatar({ name, size = 44, status }) {
   const initials = (name || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0].toUpperCase()).join('');
@@ -141,7 +142,7 @@ function Avatar({ name, size = 44, status }) {
   );
 }
 
-// \u2500\u2500\u2500 GuestCard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── GuestCard ────────────────────────────────────────────────────────────────────────────
 function GuestCard({ guest, meta, onPress }) {
   const st = GUEST_STATUS[meta.status] || GUEST_STATUS.past;
   return (
@@ -150,31 +151,31 @@ function GuestCard({ guest, meta, onPress }) {
       <View style={gS.cardBody}>
         <View style={gS.cardRow}>
           <Text style={gS.cardName} numberOfLines={1}>
-            {guest.fullName}{guest.isVip ? ' \u2b50' : ''}
+            {guest.fullName}{guest.isVip ? ' ⭐' : ''}
           </Text>
           <View style={[gS.badge, { backgroundColor: st.bg }]}>
             <Text style={[gS.badgeText, { color: st.color }]}>{st.label}</Text>
           </View>
         </View>
         <Text style={gS.cardSub}>
-          {meta.totalStays} estadia{meta.totalStays !== 1 ? 's' : ''} \u00b7 {meta.totalNights} noite{meta.totalNights !== 1 ? 's' : ''}
-          {guest.phone ? ` \u00b7 ${guest.phone}` : ''}
+          {meta.totalStays} estadia{meta.totalStays !== 1 ? 's' : ''} · {meta.totalNights} noite{meta.totalNights !== 1 ? 's' : ''}
+          {guest.phone ? ` · ${guest.phone}` : ''}
         </Text>
         <View style={gS.cardFooter}>
           <Text style={gS.cardMoney}>{fmtMoney(meta.totalSpent)}</Text>
           {meta.activeBooking && (
             <Text style={[gS.cardNext, { color: '#166534' }]}>
-              sa\u00edda: {fmtShort(meta.activeBooking.endDate || meta.activeBooking.checkOut)}
+              saída: {fmtShort(meta.activeBooking.endDate || meta.activeBooking.checkOut)}
             </Text>
           )}
           {!meta.activeBooking && meta.nextBooking && (
             <Text style={[gS.cardNext, { color: '#1D4ED8' }]}>
-              pr\u00f3ximo: {fmtShort(meta.nextBooking.startDate || meta.nextBooking.checkIn)}
+              próximo: {fmtShort(meta.nextBooking.startDate || meta.nextBooking.checkIn)}
             </Text>
           )}
           {!meta.activeBooking && !meta.nextBooking && meta.lastStay && (
             <Text style={gS.cardNext}>
-              \u00faltimo: {fmtShort(meta.lastStay.startDate || meta.lastStay.checkIn)}
+              último: {fmtShort(meta.lastStay.startDate || meta.lastStay.checkIn)}
             </Text>
           )}
         </View>
@@ -184,16 +185,198 @@ function GuestCard({ guest, meta, onPress }) {
   );
 }
 
-// \u2500\u2500\u2500 GuestProfile (detalhe \u2014 absoluteFill evita Modal aninhado) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-function GuestProfile({ guest, onClose }) {
-  const meta = useMemo(() => computeGuestMeta(guest), [guest]);
+// ─── Campo de formulário reutilizável ────────────────────────────────────────────────
+function Field({ label, value, onChangeText, multiline, placeholder, keyboardType, autoCapitalize }) {
+  return (
+    <View style={eS.fieldWrap}>
+      <Text style={eS.label}>{label}</Text>
+      <TextInput
+        style={[eS.input, multiline && eS.inputMulti]}
+        value={value}
+        onChangeText={onChangeText}
+        multiline={multiline}
+        placeholder={placeholder || ''}
+        placeholderTextColor="#AAA"
+        keyboardType={keyboardType || 'default'}
+        autoCapitalize={autoCapitalize || 'sentences'}
+      />
+    </View>
+  );
+}
+
+// ─── Modal de edição do hóspede ───────────────────────────────────────────────────────
+const DOC_TYPES = ['BI', 'Passaporte', 'DIRE'];
+
+function EditGuestModal({ guest, businessId, accessToken, onSave, onClose }) {
+  const [form, setForm] = useState({
+    fullName:       guest.fullName       || '',
+    phone:          guest.phone          || '',
+    email:          guest.email          || '',
+    documentType:   guest.documentType   || '',
+    documentNumber: guest.documentNumber || '',
+    companyName:    guest.companyName    || '',
+    nif:            guest.nif            || '',
+    nationality:    guest.nationality    || '',
+    dateOfBirth:    guest.dateOfBirth    ? fmtDate(guest.dateOfBirth) : '',
+    address:        guest.address        || '',
+    preferences:    guest.preferences   || '',
+    notes:          guest.notes          || '',
+    isVip:          !!guest.isVip,
+    isBlacklisted:  !!guest.isBlacklisted,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.fullName.trim()) { setError('Nome é obrigatório.'); return; }
+    setSaving(true); setError('');
+    try {
+      let dob = null;
+      if (form.dateOfBirth.trim()) {
+        const dt = parseMaybeDate(form.dateOfBirth.trim());
+        if (dt) dob = dt.toISOString();
+      }
+      const payload = {
+        fullName:       form.fullName.trim(),
+        phone:          form.phone.trim()          || null,
+        email:          form.email.trim()          || null,
+        documentType:   form.documentType.trim()   || null,
+        documentNumber: form.documentNumber.trim() || null,
+        companyName:    form.companyName.trim()    || null,
+        nif:            form.nif.trim()            || null,
+        nationality:    form.nationality.trim()    || null,
+        dateOfBirth:    dob,
+        address:        form.address.trim()        || null,
+        preferences:    form.preferences.trim()    || null,
+        notes:          form.notes.trim()          || null,
+        isVip:          form.isVip,
+        isBlacklisted:  form.isBlacklisted,
+      };
+      const updated = await backendApi.updateHtGuest(guest.id, businessId, payload, accessToken);
+      onSave(updated || { ...guest, ...payload });
+    } catch {
+      setError('Erro ao guardar. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={eS.root}>
+          <View style={eS.header}>
+            <TouchableOpacity onPress={onClose} style={gS.iconBtn}>
+              <Icon name="x" size={22} color="#111" strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Text style={eS.headerTitle}>Editar Hóspede</Text>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={saving}
+              style={[eS.saveBtn, saving && { opacity: 0.6 }]}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={eS.saveBtnText}>Guardar</Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={eS.scroll} keyboardShouldPersistTaps="handled">
+            {!!error && (
+              <View style={eS.errorBanner}>
+                <Icon name="alertCircle" size={14} color="#DC2626" strokeWidth={2} />
+                <Text style={eS.errorText}>{error}</Text>
+              </View>
+            )}
+
+            <Text style={eS.section}>Dados Pessoais</Text>
+            <Field label="Nome Completo *" value={form.fullName} onChangeText={v => set('fullName', v)} />
+            <Field label="Telefone" value={form.phone} onChangeText={v => set('phone', v)} keyboardType="phone-pad" />
+            <Field label="Email" value={form.email} onChangeText={v => set('email', v)} keyboardType="email-address" autoCapitalize="none" />
+            <Field label="Nacionalidade" value={form.nationality} onChangeText={v => set('nationality', v)} />
+            <Field label="Data de Nascimento" value={form.dateOfBirth} onChangeText={v => set('dateOfBirth', v)} placeholder="DD/MM/AAAA" />
+            <Field label="Morada" value={form.address} onChangeText={v => set('address', v)} multiline />
+
+            <Text style={eS.section}>Identificação</Text>
+            <View style={eS.fieldWrap}>
+              <Text style={eS.label}>Tipo de Documento</Text>
+              <View style={eS.segmented}>
+                {DOC_TYPES.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[eS.segBtn, form.documentType === t && eS.segBtnActive]}
+                    onPress={() => set('documentType', form.documentType === t ? '' : t)}
+                  >
+                    <Text style={[eS.segText, form.documentType === t && eS.segTextActive]}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <Field label="Nº Documento" value={form.documentNumber} onChangeText={v => set('documentNumber', v)} />
+
+            <Text style={eS.section}>Empresa</Text>
+            <Field label="Empresa" value={form.companyName} onChangeText={v => set('companyName', v)} />
+            <Field label="NIF" value={form.nif} onChangeText={v => set('nif', v)} keyboardType="numeric" />
+
+            <Text style={eS.section}>Preferências e Notas</Text>
+            <Field label="Preferências" value={form.preferences} onChangeText={v => set('preferences', v)} multiline placeholder="Ex: piso alto, cama king..." />
+            <Field label="Notas" value={form.notes} onChangeText={v => set('notes', v)} multiline placeholder="Observações internas..." />
+
+            <Text style={eS.section}>Estado</Text>
+            <View style={eS.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={eS.switchLabel}>Hóspede VIP ⭐</Text>
+                <Text style={eS.switchHint}>Destaque na lista de hóspedes</Text>
+              </View>
+              <Switch
+                value={form.isVip}
+                onValueChange={v => set('isVip', v)}
+                trackColor={{ false: '#E5E7EB', true: '#FDE68A' }}
+                thumbColor={form.isVip ? '#D97706' : '#9CA3AF'}
+              />
+            </View>
+            <View style={eS.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={eS.switchLabel}>Lista Negra</Text>
+                <Text style={eS.switchHint}>Bloqueia futuras reservas</Text>
+              </View>
+              <Switch
+                value={form.isBlacklisted}
+                onValueChange={v => set('isBlacklisted', v)}
+                trackColor={{ false: '#E5E7EB', true: '#FCA5A5' }}
+                thumbColor={form.isBlacklisted ? '#DC2626' : '#9CA3AF'}
+              />
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── GuestProfile (detalhe — absoluteFill evita Modal aninhado) ────────────────────────
+function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated }) {
+  const [localGuest, setLocalGuest] = useState(guest);
+  const [showEdit, setShowEdit]     = useState(false);
+
+  const handleSaved = useCallback((updated) => {
+    setLocalGuest(updated);
+    setShowEdit(false);
+    if (onGuestUpdated) onGuestUpdated(updated);
+  }, [onGuestUpdated]);
+
+  const meta = useMemo(() => computeGuestMeta(localGuest), [localGuest]);
   const st   = GUEST_STATUS[meta.status] || GUEST_STATUS.past;
   const sortedBks = useMemo(() =>
-    [...(guest.bookings || [])].sort((a, b) =>
+    [...(localGuest.bookings || [])].sort((a, b) =>
       (parseMaybeDate(b.startDate || b.checkIn)?.getTime() || 0) -
       (parseMaybeDate(a.startDate || a.checkIn)?.getTime() || 0),
     ),
-    [guest.bookings],
+    [localGuest.bookings],
   );
 
   return (
@@ -205,7 +388,7 @@ function GuestProfile({ guest, onClose }) {
               <Icon name="x" size={22} color="#111" strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={gS.headerTitle}>Perfil do H\u00f3spede</Text>
+              <Text style={gS.headerTitle}>Perfil do Hóspede</Text>
             </View>
             <View style={gS.iconBtn} />
           </View>
@@ -214,42 +397,51 @@ function GuestProfile({ guest, onClose }) {
         <ScrollView contentContainerStyle={gS.scroll}>
           <View style={gS.profileCard}>
             <View style={gS.profileTop}>
-              <Avatar name={guest.fullName} size={56} status={meta.status} />
+              <Avatar name={localGuest.fullName} size={56} status={meta.status} />
               <View style={{ flex: 1 }}>
-                <Text style={gS.profileName}>{guest.fullName}{guest.isVip ? ' \u2b50' : ''}</Text>
+                <Text style={gS.profileName}>{localGuest.fullName}{localGuest.isVip ? ' ⭐' : ''}</Text>
                 <View style={[gS.badge, { backgroundColor: st.bg, alignSelf: 'flex-start' }]}>
                   <Text style={[gS.badgeText, { color: st.color }]}>{st.label}</Text>
                 </View>
               </View>
+              {!String(localGuest.id).startsWith('demo_') && (
+                <TouchableOpacity
+                  onPress={() => setShowEdit(true)}
+                  style={gS.editBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Icon name="edit2" size={16} color="#1D4ED8" strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
             </View>
-            {!!guest.phone && (
+            {!!localGuest.phone && (
               <View style={gS.profileRow}>
                 <Icon name="phone" size={14} color="#888" strokeWidth={2} />
-                <Text style={gS.profileInfo}>{guest.phone}</Text>
+                <Text style={gS.profileInfo}>{localGuest.phone}</Text>
               </View>
             )}
-            {!!guest.email && (
+            {!!localGuest.email && (
               <View style={gS.profileRow}>
                 <Icon name="mail" size={14} color="#888" strokeWidth={2} />
-                <Text style={gS.profileInfo}>{guest.email}</Text>
+                <Text style={gS.profileInfo}>{localGuest.email}</Text>
               </View>
             )}
-            {!!guest.documentNumber && (
+            {!!localGuest.documentNumber && (
               <View style={gS.profileRow}>
                 <Icon name="fileText" size={14} color="#888" strokeWidth={2} />
-                <Text style={gS.profileInfo}>{guest.documentType || 'Doc'} \u00b7 {guest.documentNumber}</Text>
+                <Text style={gS.profileInfo}>{localGuest.documentType || 'Doc'} · {localGuest.documentNumber}</Text>
               </View>
             )}
-            {!!guest.nationality && (
+            {!!localGuest.nationality && (
               <View style={gS.profileRow}>
                 <Icon name="globe" size={14} color="#888" strokeWidth={2} />
-                <Text style={gS.profileInfo}>{guest.nationality}</Text>
+                <Text style={gS.profileInfo}>{localGuest.nationality}</Text>
               </View>
             )}
-            {!!guest.companyName && (
+            {!!localGuest.companyName && (
               <View style={gS.profileRow}>
                 <Icon name="briefcase" size={14} color="#888" strokeWidth={2} />
-                <Text style={gS.profileInfo}>{guest.companyName}{guest.nif ? ` \u00b7 NIF ${guest.nif}` : ''}</Text>
+                <Text style={gS.profileInfo}>{localGuest.companyName}{localGuest.nif ? ` · NIF ${localGuest.nif}` : ''}</Text>
               </View>
             )}
           </View>
@@ -266,7 +458,7 @@ function GuestProfile({ guest, onClose }) {
             </View>
             <View style={gS.metricCard}>
               <Text style={[gS.metricValue, { fontSize: 13 }]}>{fmtMoney(meta.avgSpend)}</Text>
-              <Text style={gS.metricLabel}>M\u00e9dia/Estadia</Text>
+              <Text style={gS.metricLabel}>Média/Estadia</Text>
             </View>
           </View>
           <View style={gS.metricsRow}>
@@ -284,45 +476,45 @@ function GuestProfile({ guest, onClose }) {
             <View style={gS.datesCard}>
               {meta.firstStay && (
                 <View style={gS.dateRow}>
-                  <Text style={gS.dateLabel}>1\u00aa Estadia</Text>
+                  <Text style={gS.dateLabel}>1ª Estadia</Text>
                   <Text style={gS.dateValue}>{fmtDate(meta.firstStay.startDate || meta.firstStay.checkIn)}</Text>
                 </View>
               )}
               {meta.lastStay && (
                 <View style={gS.dateRow}>
-                  <Text style={gS.dateLabel}>\u00daltima Estadia</Text>
+                  <Text style={gS.dateLabel}>Última Estadia</Text>
                   <Text style={gS.dateValue}>{fmtDate(meta.lastStay.startDate || meta.lastStay.checkIn)}</Text>
                 </View>
               )}
               {meta.nextBooking && (
                 <View style={gS.dateRow}>
-                  <Text style={gS.dateLabel}>Pr\u00f3xima Chegada</Text>
+                  <Text style={gS.dateLabel}>Próxima Chegada</Text>
                   <Text style={[gS.dateValue, { color: '#1D4ED8' }]}>{fmtDate(meta.nextBooking.startDate || meta.nextBooking.checkIn)}</Text>
                 </View>
               )}
             </View>
           )}
 
-          {!!guest.preferences && (
+          {!!localGuest.preferences && (
             <>
-              <Text style={gS.sectionTitle}>Prefer\u00eancias</Text>
+              <Text style={gS.sectionTitle}>Preferências</Text>
               <View style={gS.requestCard}>
                 <Icon name="star" size={14} color="#D97706" strokeWidth={2} />
-                <Text style={gS.requestText}>{guest.preferences}</Text>
+                <Text style={gS.requestText}>{localGuest.preferences}</Text>
               </View>
             </>
           )}
-          {!!guest.notes && (
+          {!!localGuest.notes && (
             <>
               <Text style={gS.sectionTitle}>Notas</Text>
               <View style={[gS.requestCard, { backgroundColor: '#F0F9FF', borderLeftColor: '#1D4ED8' }]}>
                 <Icon name="fileText" size={14} color="#1D4ED8" strokeWidth={2} />
-                <Text style={[gS.requestText, { color: '#1E3A5F' }]}>{guest.notes}</Text>
+                <Text style={[gS.requestText, { color: '#1E3A5F' }]}>{localGuest.notes}</Text>
               </View>
             </>
           )}
 
-          <Text style={gS.sectionTitle}>Hist\u00f3rico de Estadias</Text>
+          <Text style={gS.sectionTitle}>Histórico de Estadias</Text>
           {sortedBks.length === 0 ? (
             <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 8 }}>Sem estadias registadas.</Text>
           ) : (
@@ -335,7 +527,7 @@ function GuestProfile({ guest, onClose }) {
                   <View style={[gS.stayDot, { backgroundColor: bst.color }]} />
                   <View style={gS.stayBody}>
                     <Text style={gS.stayRoom}>{b.roomType?.name || 'Quarto'}</Text>
-                    <Text style={gS.stayDate}>{fmtDate(b.startDate || b.checkIn)} \u2192 {fmtDate(b.endDate || b.checkOut)}</Text>
+                    <Text style={gS.stayDate}>{fmtDate(b.startDate || b.checkIn)} → {fmtDate(b.endDate || b.checkOut)}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <View style={[gS.badge, { backgroundColor: bst.bg }]}>
@@ -352,11 +544,21 @@ function GuestProfile({ guest, onClose }) {
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
+
+      {showEdit && (
+        <EditGuestModal
+          guest={localGuest}
+          businessId={businessId}
+          accessToken={accessToken}
+          onSave={handleSaved}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
     </View>
   );
 }
 
-// \u2500\u2500\u2500 Ecr\u00e3 principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Ecrã principal ──────────────────────────────────────────────────────────────────────────────
 export function GuestsScreen({ businessId, accessToken, onClose }) {
   const [guests, setGuests]               = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -423,7 +625,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
   const FILTERS = [
     ['all',      'Todos'],
     ['in_house', 'Em Casa'],
-    ['upcoming', 'Pr\u00f3ximos'],
+    ['upcoming', 'Próximos'],
     ['past',     'Anteriores'],
   ];
 
@@ -437,9 +639,9 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
               <Icon name="x" size={22} color="#111" strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={gS.headerTitle}>H\u00f3spedes</Text>
+              <Text style={gS.headerTitle}>Hóspedes</Text>
               <Text style={gS.headerSub}>
-                {loading ? 'A carregar\u2026' : `${enriched.length} perfil${enriched.length !== 1 ? 's' : ''}`}
+                {loading ? 'A carregar…' : `${enriched.length} perfil${enriched.length !== 1 ? 's' : ''}`}
               </Text>
             </View>
             <View style={gS.iconBtn} />
@@ -450,7 +652,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
           <Icon name="search" size={16} color="#999" strokeWidth={2} />
           <TextInput
             style={gS.searchInput}
-            placeholder="Nome, telefone ou documento\u2026"
+            placeholder="Nome, telefone ou documento…"
             placeholderTextColor="#AAA"
             value={search}
             onChangeText={setSearch}
@@ -476,7 +678,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
           <View style={gS.demoBanner}>
             <Icon name="info" size={13} color="#D97706" strokeWidth={2} />
             <Text style={gS.demoBannerText}>
-              Dados de demonstra\u00e7\u00e3o \u2014 perfis reais surgem ap\u00f3s check-ins na Rece\u00e7\u00e3o
+              Dados de demonstração — perfis reais surgem após check-ins na Receção
             </Text>
           </View>
         )}
@@ -502,20 +704,20 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
         {loading ? (
           <View style={gS.empty}>
             <ActivityIndicator size="large" color="#1D4ED8" />
-            <Text style={gS.emptyHint}>A carregar h\u00f3spedes\u2026</Text>
+            <Text style={gS.emptyHint}>A carregar hóspedes…</Text>
           </View>
         ) : filtered.length === 0 ? (
           <View style={gS.empty}>
             <Icon name="users" size={40} color="#CCC" strokeWidth={1.5} />
             <Text style={gS.emptyTitle}>
-              {search.trim() || filterStatus !== 'all' ? 'Sem resultados' : 'Sem h\u00f3spedes'}
+              {search.trim() || filterStatus !== 'all' ? 'Sem resultados' : 'Sem hóspedes'}
             </Text>
             <Text style={gS.emptyHint}>
               {search.trim()
                 ? `Nenhum resultado para "${search}".`
                 : filterStatus !== 'all'
-                  ? 'Nenhum h\u00f3spede nesta categoria.'
-                  : 'Os perfis surgem ap\u00f3s check-ins registados na Rece\u00e7\u00e3o.'}
+                  ? 'Nenhum hóspede nesta categoria.'
+                  : 'Os perfis surgem após check-ins registados na Receção.'}
             </Text>
           </View>
         ) : (
@@ -540,14 +742,23 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
         )}
 
         {selectedGuest && (
-          <GuestProfile guest={selectedGuest} onClose={() => setSelected(null)} />
+          <GuestProfile
+            guest={selectedGuest}
+            businessId={businessId}
+            accessToken={accessToken}
+            onClose={() => setSelected(null)}
+            onGuestUpdated={(updated) => {
+              setSelected(updated);
+              setGuests(prev => prev.map(g => g.id === updated.id ? { ...g, ...updated } : g));
+            }}
+          />
         )}
       </View>
     </Modal>
   );
 }
 
-// \u2500\u2500\u2500 Estilos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Estilos ──────────────────────────────────────────────────────────────────────────────
 const gS = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#F7F6F2' },
   headerSafe:   { backgroundColor: '#fff', paddingTop: 16,
@@ -558,22 +769,23 @@ const gS = StyleSheet.create({
   headerTitle:  { fontSize: 16, fontWeight: '700', color: '#111' },
   headerSub:    { fontSize: 12, color: '#888', marginTop: 1 },
   searchWrap:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12,
-                  marginTop: 10, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6,
+                  marginTop: 8, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 6,
                   backgroundColor: '#fff', borderRadius: 10,
                   borderWidth: 1, borderColor: '#E5E7EB', gap: 8 },
   searchInput:  { flex: 1, fontSize: 13, color: '#111', padding: 0 },
-  filterBar:    { paddingHorizontal: 12, paddingBottom: 8, gap: 8, flexDirection: 'row' },
-  filterChip:   { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+  filterBar:    { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 6, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  filterChip:   { height: 32, paddingHorizontal: 16, borderRadius: 16,
+                  alignItems: 'center', justifyContent: 'center',
                   backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
   chipActive:   { backgroundColor: '#111827', borderColor: '#111827' },
-  chipText:     { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  chipText:     { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   chipTextActive: { color: '#fff' },
   demoBanner:     { flexDirection: 'row', alignItems: 'center', gap: 6,
                     marginHorizontal: 12, marginBottom: 6, paddingHorizontal: 10, paddingVertical: 6,
                     backgroundColor: '#FFFBEB', borderRadius: 8,
                     borderWidth: 1, borderColor: '#FDE68A' },
   demoBannerText: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 15 },
-  list:         { paddingHorizontal: 12, paddingBottom: 24, paddingTop: 4 },
+  list:         { paddingHorizontal: 12, paddingBottom: 24, paddingTop: 2 },
   empty:        { flex: 1, alignItems: 'center', justifyContent: 'center',
                   gap: 8, paddingHorizontal: 32 },
   emptyTitle:   { fontSize: 15, fontWeight: '700', color: '#6B7280', textAlign: 'center' },
@@ -630,4 +842,42 @@ const gS = StyleSheet.create({
   stayRoom:     { fontSize: 13, fontWeight: '700', color: '#111', marginBottom: 2 },
   stayDate:     { fontSize: 12, color: '#888' },
   stayPrice:    { fontSize: 12, fontWeight: '700', color: '#166534', marginTop: 3 },
+  editBtn:      { width: 32, height: 32, borderRadius: 8, alignItems: 'center',
+                  justifyContent: 'center', backgroundColor: '#EFF6FF',
+                  borderWidth: 1, borderColor: '#BFDBFE' },
+});
+
+// ─── Estilos do modal de edição ───────────────────────────────────────────────────────
+const eS = StyleSheet.create({
+  root:         { flex: 1, backgroundColor: '#fff' },
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12,
+                  borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
+  headerTitle:  { fontSize: 16, fontWeight: '700', color: '#111' },
+  saveBtn:      { paddingHorizontal: 16, paddingVertical: 7, backgroundColor: '#1D4ED8',
+                  borderRadius: 8, minWidth: 70, alignItems: 'center' },
+  saveBtnText:  { fontSize: 13, fontWeight: '700', color: '#fff' },
+  scroll:       { padding: 16, gap: 4 },
+  section:      { fontSize: 11, fontWeight: '700', color: '#888', textTransform: 'uppercase',
+                  letterSpacing: 0.6, marginTop: 16, marginBottom: 6 },
+  fieldWrap:    { marginBottom: 10 },
+  label:        { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 4 },
+  input:        { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
+                  borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9,
+                  fontSize: 14, color: '#111' },
+  inputMulti:   { minHeight: 72, textAlignVertical: 'top' },
+  segmented:    { flexDirection: 'row', gap: 8 },
+  segBtn:       { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
+                  backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  segBtnActive: { backgroundColor: '#1D4ED8', borderColor: '#1D4ED8' },
+  segText:      { fontSize: 13, fontWeight: '700', color: '#6B7280' },
+  segTextActive:{ color: '#fff' },
+  switchRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+                  borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  switchLabel:  { fontSize: 14, fontWeight: '600', color: '#111', marginBottom: 2 },
+  switchHint:   { fontSize: 12, color: '#888' },
+  errorBanner:  { flexDirection: 'row', alignItems: 'center', gap: 8,
+                  backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10,
+                  borderWidth: 1, borderColor: '#FECACA', marginBottom: 4 },
+  errorText:    { flex: 1, fontSize: 12, color: '#DC2626' },
 });
