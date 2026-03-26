@@ -18,14 +18,16 @@ import React, {
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, Alert, ActivityIndicator, RefreshControl, FlatList,
-  SafeAreaView, Platform,
+  SafeAreaView, Platform, Dimensions,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
 // ─── Constantes de layout ─────────────────────────────────────────────────────
 const ROOM_COL_WIDTH = 90;
-const DATE_COL_WIDTH = 52;
+// Garante exactamente 7 dias visíveis em qualquer tamanho de ecrã
+const { width: SCREEN_W } = Dimensions.get('window');
+const DATE_COL_WIDTH = Math.max(40, Math.floor((SCREEN_W - ROOM_COL_WIDTH) / 7));
 const ROW_HEIGHT     = 52;
 const BAR_HEIGHT     = 28;
 
@@ -43,6 +45,53 @@ const BOOKING_COLORS = {
   CANCELLED:    '#EF4444',
   ical_block:   '#4338CA',
 };
+
+// Legenda de cores — regra de negócio visual
+const LEGEND_BOOKINGS = [
+  { label: 'Pendente',      color: '#D97706' },
+  { label: 'Confirmado',    color: '#1565C0' },
+  { label: 'Check-in',      color: '#22A06B' },
+  { label: 'Check-out',     color: '#9CA3AF' },
+  { label: 'Cancelado',     color: '#EF4444' },
+  { label: 'Externo/iCal',  color: '#4338CA' },
+];
+const LEGEND_HK = [
+  { label: 'Limpo',       icon: '🟢' },
+  { label: 'Sujo',        icon: '🟡' },
+  { label: 'A limpar',    icon: '🟠' },
+  { label: 'Manutenção',  icon: '🔴' },
+  { label: 'Inspecção',   icon: '🔵' },
+];
+
+function LegendPanel({ visible }) {
+  if (!visible) return null;
+  return (
+    <View style={gS.legendPanel}>
+      <View style={gS.legendSection}>
+        <Text style={gS.legendTitle}>Reservas</Text>
+        <View style={gS.legendRow}>
+          {LEGEND_BOOKINGS.map((item) => (
+            <View key={item.label} style={gS.legendItem}>
+              <View style={[gS.legendDot, { backgroundColor: item.color }]} />
+              <Text style={gS.legendLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={[gS.legendSection, { borderTopWidth: 1, borderTopColor: '#E5E7EB', marginTop: 6, paddingTop: 6 }]}>
+        <Text style={gS.legendTitle}>Housekeeping</Text>
+        <View style={gS.legendRow}>
+          {LEGEND_HK.map((item) => (
+            <View key={item.label} style={gS.legendItem}>
+              <Text style={{ fontSize: 12 }}>{item.icon}</Text>
+              <Text style={gS.legendLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // ─── Ícones por status de housekeeping ───────────────────────────────────────
 const HK_ICONS = {
@@ -375,7 +424,8 @@ function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef, onS
             const realCapacity = overbookingBuffer < 100
               ? Math.floor(totalRooms * overbookingBuffer / 100)
               : totalRooms;
-            const stopSell = overbookingBuffer < 100 && occupiedCount >= realCapacity;
+            // stopSell: só activar se houver realmente capacidade definida e ocupação acima do buffer
+            const stopSell = overbookingBuffer < 100 && realCapacity > 0 && occupiedCount >= realCapacity;
 
             const cellColor = stopSell ? '#FEF3C7'
               : rate > 90 ? '#FEE2E2'
@@ -556,15 +606,33 @@ function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom }) {
           <View style={{ gap: 8, paddingHorizontal: 20, paddingBottom: 16 }}>
             <Text style={gS.sheetMeta}>🏨 {room.typeName}</Text>
             <Text style={gS.sheetMeta}>🏢 Piso {room.floor}</Text>
-            <Text style={gS.sheetMeta}>{HK_ICONS[room.status]} {room.status}</Text>
+            {/* Estado housekeeping em português com ícone e rótulo */}
+            <View style={[gS.statusPill, { backgroundColor: '#F3F4F6', alignSelf: 'flex-start' }]}>
+              <Text style={{ fontSize: 14, color: '#374151' }}>
+                {HK_ICONS[room.status]}
+                {'  '}
+                <Text style={{ fontWeight: '700' }}>{HK_LABELS[room.status] || room.status}</Text>
+              </Text>
+            </View>
+            {/* Legenda de housekeeping */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+              {LEGEND_HK.map((item) => (
+                <View key={item.label} style={[gS.legendItem, { backgroundColor: '#F9FAFB', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }]}>
+                  <Text style={{ fontSize: 11 }}>{item.icon}</Text>
+                  <Text style={[gS.legendLabel, { fontSize: 10, color: '#6B7280' }]}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
             {loading ? (
               <ActivityIndicator color={COLORS.blue} style={{ marginTop: 12 }} />
             ) : (
-              <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#1565C0', marginTop: 12 }]} onPress={handleChangeStatus}>
-                <Text style={gS.actionBtnText}>Mudar estado</Text>
+              <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#1565C0', marginTop: 12, flexDirection: 'row', gap: 6 }]} onPress={handleChangeStatus}>
+                <Text style={{ fontSize: 16 }}>🔄</Text>
+                <Text style={gS.actionBtnText}>Mudar estado de housekeeping</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4 }]} onPress={onClose}>
+            <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]} onPress={onClose}>
+              <Text style={{ fontSize: 16 }}>✕</Text>
               <Text style={[gS.actionBtnText, { color: '#374151' }]}>Fechar</Text>
             </TouchableOpacity>
           </View>
@@ -592,6 +660,7 @@ export function RoomGanttScreen({
   const [startDate, setStartDate] = useState(() => addDays(TODAY, -1));
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedRoom,    setSelectedRoom]    = useState(null);
+  const [showLegend,      setShowLegend]      = useState(false);
   const alive = useRef(true);
   const loadingRef = useRef(false);
   // Refs estáveis para props array — evitam loop infinito de useEffect
@@ -778,13 +847,15 @@ export function RoomGanttScreen({
 
   // ── Botão Hoje ──────────────────────────────────────────────────────────────
   const scrollToToday = useCallback(() => {
-    const todayIdx = dates.findIndex((d) => d === TODAY);
-    if (todayIdx >= 0) {
-      const x = Math.max(0, (todayIdx - 1) * DATE_COL_WIDTH);
-      scrollXRef.current = -9999; // força sync mesmo que x===0
+    // Sempre repor a janela para hoje ser visível (funciona em qualquer mês)
+    setStartDate(addDays(TODAY, -1));
+    setTimeout(() => {
+      // Após re-render, hoje está sempre no índice 1 (startDate = TODAY-1)
+      const x = Math.max(0, 0 * DATE_COL_WIDTH); // scroll até ao início
+      scrollXRef.current = -9999;
       syncAllScroll(x);
-    }
-  }, [dates, syncAllScroll]);
+    }, 150);
+  }, [syncAllScroll]);
 
   // ── Navegar janela ───────────────────────────────────────────────────────────
   const shiftWindow = useCallback((days) => {
@@ -958,7 +1029,17 @@ export function RoomGanttScreen({
               </TouchableOpacity>
             ))}
           </View>
+          {/* Botão legenda */}
+          <TouchableOpacity
+            style={[gS.navBtn, showLegend && { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE' }]}
+            onPress={() => setShowLegend((v) => !v)}
+          >
+            <Text style={{ fontSize: 14, color: showLegend ? '#1565C0' : '#374151' }}>ℹ️</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Painel de legenda */}
+        <LegendPanel visible={showLegend} />
 
         {loading ? (
           <View style={gS.center}>
@@ -1118,6 +1199,17 @@ const gS = StyleSheet.create({
                   borderRightWidth: 1, borderRightColor: '#F0F0EE', height: 44 },
   footerRate:   { fontSize: 12, fontWeight: '800' },
   footerSub:    { fontSize: 9, fontWeight: '600', marginTop: 1 },
+
+  // Legend panel
+  legendPanel:  { backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10,
+                  borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  legendSection:{ },
+  legendTitle:  { fontSize: 9, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase',
+                  letterSpacing: 0.5, marginBottom: 4 },
+  legendRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  legendItem:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot:    { width: 10, height: 10, borderRadius: 5 },
+  legendLabel:  { fontSize: 11, color: '#374151', fontWeight: '500' },
 
   // Loading / empty
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
