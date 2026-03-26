@@ -20,6 +20,7 @@ import { HousekeepingScreen } from './HousekeepingScreen';
 import { ReceptionScreen } from './ReceptionScreen';
 import { ReservationMapModal } from './ReservationMapModal';
 import { GuestsScreen } from './GuestsScreen';
+import { RoomGanttScreen } from './RoomGanttScreen';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -165,7 +166,7 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [], onOpenGantt }) {
+export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [] }) {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -177,6 +178,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   const [showRooms, setShowRooms]               = useState(false);
   const [showReception, setShowReception]       = useState(false);
   const [showGuests, setShowGuests]             = useState(false);
+  const [showGantt, setShowGantt]               = useState(false);
   const [pendingReceptionAction, setPendingReceptionAction] = useState(null);
   const [showMap, setShowMap]                   = useState(false);
   const alive = useRef(true);
@@ -457,8 +459,8 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               </TouchableOpacity>
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#0891B2' }]}
-                onPress={() => onOpenGantt?.()}
-                disabled={!onOpenGantt}
+                onPress={() => setShowGantt(true)}
+                activeOpacity={0.8}
               >
                 <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Mapa · Gantt · Quartos</Text>
@@ -562,16 +564,48 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           onClose={() => { setShowMap(false); load(true); }}
           onBookingAction={async (bookingId, action, bk) => {
             setShowMap(false);
-            // Executar a acção directamente via backendApi
             const token = accessToken;
             try {
-              if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
-              if (action === 'checkin')  {
+              // Regra: check-in requer CONFIRMED
+              if (action === 'checkin') {
+                if (bk?.status === 'PENDING') {
+                  Alert.alert(
+                    '⚠️ Reserva não confirmada',
+                    'Não é possível fazer check-in numa reserva pendente.\nConfirme primeiro a reserva.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Confirmar Reserva', onPress: async () => {
+                          try { await backendApi.confirmBooking(bookingId, { businessId }, token); load(true); }
+                          catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível confirmar.'); }
+                      }},
+                    ]
+                  );
+                  return;
+                }
                 setPendingReceptionAction({ bookingId, action: 'checkin', bk });
                 setShowReception(true);
                 return;
               }
-              if (action === 'checkout') await backendApi.htCheckOut(bookingId, token);
+              // Regra: checkout requer folio encerrado
+              if (action === 'checkout') {
+                let balance = 0;
+                try {
+                  const folio = await backendApi.getHtFolio(bookingId, token);
+                  balance = folio?.summary?.balance ?? 0;
+                } catch { /* best effort */ }
+                if (balance > 0) {
+                  Alert.alert(
+                    '⚠️ Folio não encerrado',
+                    `Existe um saldo em dívida de ${balance.toLocaleString('pt-PT')} Kz.\nEncerre o folio antes do check-out.`,
+                    [{ text: 'OK', style: 'cancel' }]
+                  );
+                  return;
+                }
+                await backendApi.htCheckOut(bookingId, token);
+                load(true);
+                return;
+              }
+              if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
               if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
               if (action === 'cancel')   await backendApi.updateBooking(bookingId, { status: 'CANCELLED' }, token);
               if (action === 'edit')     {
@@ -579,7 +613,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 setShowReception(true);
                 return;
               }
-              load(true); // refresh do dashboard
+              load(true);
             } catch (e) {
               Alert.alert('Erro', e?.message || 'Operação falhou.');
             }
@@ -600,6 +634,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           businessId={businessId}
           accessToken={accessToken}
           onClose={() => setShowGuests(false)}
+        />
+      )}
+      {showGantt && (
+        <RoomGanttScreen
+          businessId={businessId}
+          accessToken={accessToken}
+          bookings={guestBookings}
+          overbookingBuffer={Number(businessMetadata?.pms?.sellablePercent ?? 100)}
+          onClose={() => setShowGantt(false)}
         />
       )}
     </Modal>

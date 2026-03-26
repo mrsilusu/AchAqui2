@@ -477,7 +477,8 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
   const todayYmd = toYMD(new Date());
   const showConfirm  = booking.status === 'pending' || booking.status === 'PENDING';
   const showCancel   = booking.status === 'pending' || booking.status === 'PENDING';
-  const showCheckin  = (booking.status === 'confirmed' || booking.status === 'CONFIRMED') && booking.checkIn === todayYmd;
+  // Check-in apenas disponível quando CONFIRMED (regra: não permite check-in em PENDING)
+  const showCheckin  = (booking.status === 'CONFIRMED') && booking.checkIn === todayYmd;
   const showCheckout = booking.status === 'CHECKED_IN' || booking.status === 'checked_in';
 
   async function doAction(action) {
@@ -919,6 +920,37 @@ export function RoomGanttScreen({
   const handleBookingAction = useCallback(async (booking, action) => {
     if (!businessId || !accessToken) return;
     try {
+      // Regra: check-in requer CONFIRMED
+      if (action === 'checkin') {
+        const st = booking.status;
+        if (st === 'PENDING' || st === 'pending') {
+          Alert.alert(
+            '⚠️ Reserva não confirmada',
+            'Não é possível fazer check-in numa reserva pendente.\nConfirme primeiro a reserva.',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Confirmar Reserva', onPress: () => handleBookingAction(booking, 'confirm') },
+            ]
+          );
+          return;
+        }
+      }
+      // Regra: checkout requer folio encerrado (saldo zero)
+      if (action === 'checkout') {
+        let balance = 0;
+        try {
+          const folio = await backendApi.getHtFolio(booking.id, accessToken);
+          balance = folio?.summary?.balance ?? 0;
+        } catch { /* se API falhar, deixar continuar */ }
+        if (balance > 0) {
+          Alert.alert(
+            '⚠️ Folio não encerrado',
+            `Existe um saldo em dívida de ${balance.toLocaleString('pt-PT')} Kz.\nEncerre o folio antes do check-out.`,
+            [{ text: 'OK', style: 'cancel' }]
+          );
+          return;
+        }
+      }
       if (action === 'confirm')  await backendApi.confirmBooking(booking.id, { businessId }, accessToken).catch(() => {});
       if (action === 'checkin')  await backendApi.htCheckIn(booking.id, { businessId }, accessToken).catch(() => {});
       if (action === 'checkout') await backendApi.htCheckOut(booking.id, accessToken).catch(() => {});

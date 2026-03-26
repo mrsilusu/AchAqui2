@@ -636,7 +636,7 @@ function GuestProfileModal({ visible, businessId, accessToken, prefilledName, pr
                         <View style={{ flex: 1 }}>
                           <Text style={rpS.roomNum}>{fmt(b.startDate)} → {fmt(b.endDate)}</Text>
                           <Text style={rpS.roomFloor}>
-                            {b.roomType?.name || 'Quarto'} · {b.status}
+                            {b.roomType?.name || 'Quarto'}{b.room?.number ? ` · Nº ${b.room.number}` : ''} · {b.status}
                             {b.totalPrice ? ` · ${Math.round(b.totalPrice).toLocaleString()} Kz` : ''}
                           </Text>
                         </View>
@@ -1092,7 +1092,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                     {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={rS.btnWhite}>Confirmar</Text>}
                   </TouchableOpacity>
                 )}
-                {(booking.status === 'PENDING' || booking.status === 'CONFIRMED') && (
+                {(booking.status === 'CONFIRMED') && (
                   <>
                     <TouchableOpacity style={[rS.btn, rS.btnGreen]} onPress={() => onAction(booking.id, 'checkin')} disabled={busy}>
                       {busy ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -1502,6 +1502,20 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
 
     // Check-in: passar pelo doCheckIn para verificar early check-in primeiro
     if (action === 'checkin') {
+      // Regra de negócio: não pode fazer check-in numa reserva pendente
+      const bkForCheckIn = bookingObj
+        || [...(data.arrivals || []), ...(data.guests || [])].find(b => b.id === bookingId);
+      if (bkForCheckIn?.status === 'PENDING') {
+        Alert.alert(
+          '⚠️ Reserva não confirmada',
+          'Não é possível fazer check-in numa reserva pendente.\nConfirme primeiro a reserva.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Confirmar Reserva', onPress: () => handleAction(bookingId, 'confirm') },
+          ]
+        );
+        return;
+      }
       doCheckIn(bookingId);
       return;
     }
@@ -1528,6 +1542,30 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       const bk = bookingObj || [...(data.guests || [])].find(b => b.id === bookingId);
       if (bk) setChangeModal(bk);
       return;
+    }
+
+    // Checkout: verificar se o folio está encerrado antes de prosseguir
+    if (action === 'checkout') {
+      setActionLoading(bookingId);
+      let folioBalance = 0;
+      try {
+        const folio = await backendApi.getHtFolio(bookingId, accessToken);
+        folioBalance = folio?.summary?.balance ?? 0;
+      } catch { /* se API falhar, deixar continuar */ }
+      setActionLoading(null);
+      if (folioBalance > 0) {
+        const bkForFolio = bookingObj
+          || [...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
+        Alert.alert(
+          '⚠️ Folio não encerrado',
+          `Existe um saldo em dívida de ${folioBalance.toLocaleString('pt-PT')} Kz.\nEncerrre o folio antes do check-out.`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir Folio', onPress: () => { if (bkForFolio) setFolioBooking(bkForFolio); } },
+          ]
+        );
+        return;
+      }
     }
 
     Alert.alert(labels[action], msgs[action], [
