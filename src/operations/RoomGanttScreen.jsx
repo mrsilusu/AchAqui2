@@ -1084,6 +1084,8 @@ export function RoomGanttScreen({
         try {
           const folio = await backendApi.getHtFolio(booking.id, accessToken);
           balance = folio?.summary?.balance ?? 0;
+          // paymentStatus = 'PAID' significa que o checkout financeiro foi concluído
+          if (folio?.booking?.paymentStatus === 'PAID') balance = 0;
         } catch { /* se API falhar, deixar continuar */ }
         if (balance > 0) {
           Alert.alert(

@@ -592,6 +592,8 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 try {
                   const folio = await backendApi.getHtFolio(bookingId, token);
                   balance = folio?.summary?.balance ?? 0;
+                  // paymentStatus = 'PAID' significa que o checkout financeiro foi concluído
+                  if (folio?.booking?.paymentStatus === 'PAID') balance = 0;
                 } catch { /* best effort */ }
                 if (balance > 0) {
                   Alert.alert(

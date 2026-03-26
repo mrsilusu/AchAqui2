@@ -1551,6 +1551,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       try {
         const folio = await backendApi.getHtFolio(bookingId, accessToken);
         folioBalance = folio?.summary?.balance ?? 0;
+        // paymentStatus = 'PAID' significa que o checkout financeiro foi concluído
+        if (folio?.booking?.paymentStatus === 'PAID') folioBalance = 0;
       } catch { /* se API falhar, deixar continuar */ }
       setActionLoading(null);
       if (folioBalance > 0) {

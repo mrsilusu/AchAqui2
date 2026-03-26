@@ -222,11 +222,23 @@ export class HtFolioService {
       throw new BadRequestException('Reserva não está em estado válido para checkout financeiro.');
     }
 
-    const subtotal     = booking.folio.reduce((s, i) => s + i.amount, 0);
-    const discount     = dto.discountAmount ?? 0;
-    const finalTotal   = Math.max(0, subtotal - discount);
-    const depositPaid  = dto.depositPaid ?? booking.depositPaid ?? 0;
-    const balance      = Math.max(0, finalTotal - depositPaid);
+    // Calcular totalPrice da mesma forma que getFolio para garantir consistência:
+    // acomodação (virtual) + extras explícitos + descontos já no folio
+    const nights = Math.max(1, Math.round(
+      (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
+    ));
+    const baseAccomPrice = booking.roomType
+      ? (booking.roomType.pricePerNight ?? 0) * nights * (booking.rooms ?? 1)
+      : (booking.totalPrice ?? 0);
+    const extraItems    = booking.folio.filter(i => i.type !== 'ACCOMMODATION' && !i.removedAt);
+    const discountInFolio = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+    const extrasTotal   = extraItems.reduce((s, i) => s + i.amount, 0);
+    const discountsFolioTotal = discountInFolio.reduce((s, i) => s + i.amount, 0);
+    const subtotal      = baseAccomPrice + extrasTotal + discountsFolioTotal;
+    const discount      = dto.discountAmount ?? 0;
+    const finalTotal    = Math.max(0, subtotal - discount);
+    const depositPaid   = dto.depositPaid ?? booking.depositPaid ?? 0;
+    const balance       = Math.max(0, finalTotal - depositPaid);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // Aplicar desconto como item negativo se houver
