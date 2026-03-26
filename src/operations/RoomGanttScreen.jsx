@@ -18,14 +18,15 @@ import React, {
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, Alert, ActivityIndicator, RefreshControl, FlatList,
+  SafeAreaView, Platform,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
 // ─── Constantes de layout ─────────────────────────────────────────────────────
-const ROOM_COL_WIDTH = 80;
+const ROOM_COL_WIDTH = 90;
 const DATE_COL_WIDTH = 52;
-const ROW_HEIGHT     = 44;
+const ROW_HEIGHT     = 52;
 const BAR_HEIGHT     = 28;
 
 // ─── Cores por status de reserva ─────────────────────────────────────────────
@@ -153,43 +154,77 @@ const DEMO_BOOKINGS = [
 ];
 
 // ─── GanttHeader ─────────────────────────────────────────────────────────────
-function GanttHeader({ dates, scrollX }) {
+const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function GanttHeader({ dates, onScroll, scrollRef }) {
   return (
-    <View style={gS.headerRow}>
-      {/* Célula de canto fixa */}
-      <View style={gS.cornerCell}>
-        <Text style={gS.cornerText}>QUARTO</Text>
+    <View>
+      {/* Faixa de meses */}
+      <View style={[gS.headerRow, { borderBottomWidth: 0, paddingVertical: 0 }]}>
+        <View style={[gS.cornerCell, { height: 18 }]} />
+        <ScrollView horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row' }}>
+            {(() => {
+              const segments = [];
+              let cur = null; let count = 0;
+              dates.forEach((ymd) => {
+                const m = Number(ymd.slice(5, 7)) - 1;
+                if (cur === null || m !== cur) {
+                  if (cur !== null) segments.push({ month: cur, count });
+                  cur = m; count = 1;
+                } else { count++; }
+              });
+              if (cur !== null) segments.push({ month: cur, count });
+              return segments.map((seg, i) => (
+                <View key={i} style={{ width: seg.count * DATE_COL_WIDTH, justifyContent: 'center',
+                  alignItems: 'flex-start', paddingLeft: 4, height: 18,
+                  borderLeftWidth: i > 0 ? 1 : 0, borderLeftColor: '#E5E7EB' }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: '#1565C0', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {MONTH_NAMES[seg.month]}
+                  </Text>
+                </View>
+              ));
+            })()}
+          </View>
+        </ScrollView>
       </View>
-      {/* Datas — scrolla junto com o conteúdo */}
-      <ScrollView
-        horizontal
-        scrollEnabled={false}
-        showsHorizontalScrollIndicator={false}
-        ref={scrollX}
-        style={{ flex: 1 }}
-      >
-        <View style={{ flexDirection: 'row' }}>
-          {dates.map((ymd) => {
-            const isToday = ymd === TODAY;
-            const weekend = isWeekend(ymd);
-            const { weekday, day } = fmtDayLabel(ymd);
-            return (
-              <View
-                key={ymd}
-                style={[
-                  gS.dateCell,
-                  weekend && gS.dateCellWeekend,
-                  isToday && gS.dateCellToday,
-                  { width: DATE_COL_WIDTH },
-                ]}
-              >
-                <Text style={[gS.dateWeekday, isToday && gS.dateTodayText]}>{weekday}</Text>
-                <Text style={[gS.dateDay, isToday && gS.dateTodayText]}>{day}</Text>
-              </View>
-            );
-          })}
+      {/* Faixa de dias — scrollEnabled=true, master de scroll */}
+      <View style={gS.headerRow}>
+        <View style={gS.cornerCell}>
+          <Text style={gS.cornerText}>QUARTO</Text>
         </View>
-      </ScrollView>
+        <ScrollView
+          horizontal
+          scrollEnabled
+          showsHorizontalScrollIndicator={false}
+          ref={scrollRef}
+          onScroll={(e) => onScroll(e.nativeEvent.contentOffset.x)}
+          scrollEventThrottle={16}
+          style={{ flex: 1 }}
+        >
+          <View style={{ flexDirection: 'row' }}>
+            {dates.map((ymd) => {
+              const isToday = ymd === TODAY;
+              const weekend = isWeekend(ymd);
+              const { weekday, day } = fmtDayLabel(ymd);
+              return (
+                <View
+                  key={ymd}
+                  style={[
+                    gS.dateCell,
+                    weekend && gS.dateCellWeekend,
+                    isToday && gS.dateCellToday,
+                    { width: DATE_COL_WIDTH },
+                  ]}
+                >
+                  <Text style={[gS.dateWeekday, isToday && gS.dateTodayText]}>{weekday}</Text>
+                  <Text style={[gS.dateDay, isToday && gS.dateTodayText]}>{day}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -246,7 +281,7 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
 
 // ─── GanttRoomRow ────────────────────────────────────────────────────────────
 const GanttRoomRow = memo(function GanttRoomRow({
-  room, dates, bookings, onCellPress, onBarPress, onRoomPress, hasConflict, scrollRef,
+  room, dates, bookings, onCellPress, onBarPress, onRoomPress, hasConflict, scrollRef, onScroll,
 }) {
   return (
     <View style={[gS.roomRow, { height: ROW_HEIGHT }]}>
@@ -256,17 +291,22 @@ const GanttRoomRow = memo(function GanttRoomRow({
         onPress={() => onRoomPress(room)}
         activeOpacity={0.7}
       >
-        <Text style={gS.roomNumber}>{room.roomNumber}</Text>
-        <Text style={gS.roomHkIcon}>{HK_ICONS[room.status] || '⚪'}</Text>
-        {hasConflict && <Text style={{ fontSize: 10 }}>⚠️</Text>}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Text style={gS.roomNumber}>{room.roomNumber}</Text>
+          <Text style={gS.roomHkIcon}>{HK_ICONS[room.status] || '⚪'}</Text>
+          {hasConflict && <Text style={{ fontSize: 9 }}>⚠️</Text>}
+        </View>
+        <Text style={gS.roomType} numberOfLines={1}>{room.typeName || '—'}</Text>
       </TouchableOpacity>
 
-      {/* Células de datas — scrolla horizontalmente */}
+      {/* Células de datas — scroll horizontal habilitado, sincronizado */}
       <ScrollView
         horizontal
-        scrollEnabled={false}
+        scrollEnabled
         showsHorizontalScrollIndicator={false}
         ref={scrollRef}
+        onScroll={(e) => onScroll(e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={16}
         style={{ flex: 1 }}
       >
         <View style={{ flexDirection: 'row', position: 'relative', height: ROW_HEIGHT }}>
@@ -289,7 +329,7 @@ const GanttRoomRow = memo(function GanttRoomRow({
               />
             );
           })}
-          {/* Barras de reserva */}
+          {/* Barras de reserva — zIndex alto para receber toques */}
           {bookings.map((bk) => (
             <GanttBar
               key={bk.id}
@@ -306,7 +346,7 @@ const GanttRoomRow = memo(function GanttRoomRow({
 });
 
 // ─── GanttFooter ─────────────────────────────────────────────────────────────
-function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef }) {
+function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef, onScroll }) {
   const totalRooms = rooms.length;
 
   return (
@@ -316,9 +356,11 @@ function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef }) {
       </View>
       <ScrollView
         horizontal
-        scrollEnabled={false}
+        scrollEnabled
         showsHorizontalScrollIndicator={false}
         ref={scrollRef}
+        onScroll={(e) => onScroll(e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={16}
         style={{ flex: 1 }}
       >
         <View style={{ flexDirection: 'row' }}>
@@ -335,20 +377,13 @@ function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef }) {
               : totalRooms;
             const stopSell = overbookingBuffer < 100 && occupiedCount >= realCapacity;
 
-            const cellColor = stopSell
-              ? '#FEF3C7'
-              : rate > 90
-              ? '#FEE2E2'
-              : rate > 80
-              ? '#FFFBEB'
+            const cellColor = stopSell ? '#FEF3C7'
+              : rate > 90 ? '#FEE2E2'
+              : rate > 80 ? '#FFFBEB'
               : '#F0FDF4';
-
-            const textColor = stopSell
-              ? '#92400E'
-              : rate > 90
-              ? '#DC2626'
-              : rate > 80
-              ? '#D97706'
+            const textColor = stopSell ? '#92400E'
+              : rate > 90 ? '#DC2626'
+              : rate > 80 ? '#D97706'
               : '#166534';
 
             return (
@@ -356,11 +391,12 @@ function GanttFooter({ dates, rooms, bookings, overbookingBuffer, scrollRef }) {
                 key={ymd}
                 style={[gS.footerCell, { width: DATE_COL_WIDTH, backgroundColor: cellColor }]}
                 onLongPress={() => {
-                  if (stopSell) Alert.alert('Stop-Sell activo', `Buffer: ${overbookingBuffer}%\nQuartos ocupados: ${occupiedCount}/${realCapacity}`);
+                  if (stopSell) Alert.alert('Stop-Sell activo', `Buffer: ${overbookingBuffer}%\nOcupados: ${occupiedCount}/${realCapacity}`);
                 }}
                 activeOpacity={0.7}
               >
                 <Text style={[gS.footerRate, { color: textColor }]}>{rate}%</Text>
+                <Text style={[gS.footerSub, { color: textColor + 'CC' }]}>{occupiedCount}/{totalRooms}</Text>
               </TouchableOpacity>
             );
           })}
@@ -403,7 +439,7 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={gS.sheetOverlay}>
-        <View style={gS.sheet}>
+        <View style={[gS.sheet, { maxHeight: '88%' }]}>
           <View style={gS.sheetHandle} />
           <View style={gS.sheetHeader}>
             <Text style={gS.sheetTitle}>{isIcal ? 'Bloco Externo' : booking.guestName}</Text>
@@ -412,7 +448,7 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
             </TouchableOpacity>
           </View>
 
-          <View style={{ gap: 8, paddingHorizontal: 20, paddingBottom: 8 }}>
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 20, paddingBottom: 8 }}>
             <View style={[gS.statusPill, { backgroundColor: color + '22' }]}>
               <Text style={[gS.statusPillText, { color }]}>
                 {STATUS_LABELS[booking.status] || booking.status}
@@ -434,7 +470,7 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
             {booking.specialRequest ? (
               <Text style={gS.sheetMeta} numberOfLines={2}>📝 {booking.specialRequest}</Text>
             ) : null}
-          </View>
+          </ScrollView>
 
           {loading ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
@@ -557,6 +593,12 @@ export function RoomGanttScreen({
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedRoom,    setSelectedRoom]    = useState(null);
   const alive = useRef(true);
+  const loadingRef = useRef(false);
+  // Refs estáveis para props array — evitam loop infinito de useEffect
+  const bookingsPropRef = useRef(bookingsProp);
+  const icalBlocksRef   = useRef(icalBlocks);
+  useEffect(() => { bookingsPropRef.current = bookingsProp; }, [bookingsProp]);
+  useEffect(() => { icalBlocksRef.current   = icalBlocks;   }, [icalBlocks]);
 
   // Refs para sincronização do scroll horizontal
   const headerScrollRef  = useRef(null);
@@ -569,41 +611,89 @@ export function RoomGanttScreen({
     return () => { alive.current = false; };
   }, []);
 
-  // ── Sprint 2: Carregar rooms via API ────────────────────────────────────────
-  const loadRooms = useCallback(async () => {
-    if (!businessId || !accessToken) { setRooms(DEMO_ROOMS); return; }
-    try {
-      const data = await backendApi.getHtRooms(businessId, accessToken);
-      if (!alive.current) return;
-      setRooms(data?.length ? data : DEMO_ROOMS);
-    } catch {
-      if (alive.current) setRooms(DEMO_ROOMS);
-    }
-  }, [businessId, accessToken]);
+  // ── Carregar dados via API (uma única chamada getHtMap) ─────────────────────
+  const load = useCallback(async (isRefresh = false) => {
+    if (loadingRef.current && !isRefresh) return; // evitar chamadas concorrentes
+    loadingRef.current = true;
+    isRefresh ? setRefreshing(true) : setLoading(true);
 
-  // ── Sprint 2: Carregar bookings da API + merge com prop local ───────────────
-  const loadBookings = useCallback(async () => {
+    const fallbackBookings = bookingsPropRef.current;
+    const fallbackIcal     = icalBlocksRef.current;
+
     if (!businessId || !accessToken) {
-      setBookings(bookingsProp.length ? bookingsProp : DEMO_BOOKINGS);
+      setRooms(DEMO_ROOMS);
+      const normalized = fallbackBookings.map((b) => ({
+        ...b,
+        checkIn:  b.checkIn  ? toYMD(new Date(b.checkIn))  : b.checkIn,
+        checkOut: b.checkOut ? toYMD(new Date(b.checkOut)) : b.checkOut,
+      }));
+      setBookings(normalized.length ? normalized : DEMO_BOOKINGS);
+      setLoading(false);
+      setRefreshing(false);
+      loadingRef.current = false;
       return;
     }
+
     try {
-      const [arrivals, guests, departures] = await Promise.all([
-        backendApi.getHtArrivals(businessId, accessToken).catch(() => []),
-        backendApi.getHtCurrentGuests(businessId, accessToken).catch(() => []),
-        backendApi.getHtDepartures(businessId, accessToken).catch(() => []),
-      ]);
+      const from = addDays(TODAY, -7);
+      const to   = addDays(TODAY, 60);
+      // Uma única chamada: getHtMap devolve rooms (em roomTypes) + bookings
+      const mapData = await backendApi.getHtMap(businessId, from, to, accessToken).catch(() => null);
       if (!alive.current) return;
-      // Merge + deduplicate por id
-      const merged = [...(arrivals || []), ...(guests || []), ...(departures || [])];
-      const seen = new Set();
-      const deduped = merged.filter((b) => {
-        if (seen.has(b.id)) return false;
-        seen.add(b.id);
-        return true;
+
+      // ── Normalizar quartos ────────────────────────────────────────────────
+      // getHtMap devolve: { roomTypes: [{id, name, rooms:[{id,number,floor,status}]}], bookings:[...] }
+      // Precisamos de flatten com typeName injectado
+      const roomTypesList = mapData?.roomTypes || [];
+      const flatRooms = [];
+      const typeIdToRooms = {}; // { typeId: room[] } — para fallback de roomId nulo
+      roomTypesList.forEach((rt) => {
+        typeIdToRooms[rt.id] = typeIdToRooms[rt.id] || [];
+        (rt.rooms || []).forEach((r) => {
+          const room = {
+            id:         r.id,
+            roomNumber: r.number ?? r.roomNumber ?? '?',
+            floor:      r.floor  ?? 0,
+            typeName:   rt.name  ?? '—',
+            status:     r.status ?? 'CLEAN',
+            roomTypeId: rt.id,
+          };
+          flatRooms.push(room);
+          typeIdToRooms[rt.id].push(room);
+        });
       });
-      // Adicionar iCal blocks como bookings especiais
-      const icalAsBookings = icalBlocks.map((bl) => ({
+      setRooms(flatRooms.length ? flatRooms : DEMO_ROOMS);
+      const knownRoomIds = new Set(flatRooms.map((r) => r.id));
+
+      // ── Normalizar bookings ───────────────────────────────────────────────
+      // getHtMap devolve: startDate/endDate (ISO), não checkIn/checkOut
+      const rawBookings = mapData?.bookings || [];
+      const apiBookings = rawBookings.map((b) => {
+        const ci = b.checkIn  || b.startDate;
+        const co = b.checkOut || b.endDate;
+        const ciYmd = ci ? toYMD(new Date(ci)) : null;
+        const coYmd = co ? toYMD(new Date(co)) : null;
+        // Resolver roomId: se nulo ou desconhecido, tentar pelo roomTypeId
+        let resolvedRoomId = b.roomId;
+        if (!resolvedRoomId || !knownRoomIds.has(resolvedRoomId)) {
+          const typeRooms = typeIdToRooms[b.roomTypeId] || [];
+          resolvedRoomId = typeRooms[0]?.id ?? null;
+        }
+        return {
+          ...b,
+          roomId:     resolvedRoomId,
+          guestName:  b.guestName  || 'Hóspede',
+          checkIn:    ciYmd,
+          checkOut:   coYmd,
+          nights:     b.nights ?? (ciYmd && coYmd
+            ? Math.max(1, Math.round((new Date(coYmd) - new Date(ciYmd)) / 86400000))
+            : 1),
+          totalPrice: b.totalPrice ?? 0,
+          specialRequest: b.specialRequest || b.notes || '',
+        };
+      }).filter((b) => b.checkIn && b.checkOut && b.roomId);
+
+      const icalAsBookings = (fallbackIcal || []).map((bl) => ({
         id:         `ical_${bl.roomId}_${bl.start}`,
         guestName:  bl.source || 'Externo',
         guestPhone: '',
@@ -616,19 +706,25 @@ export function RoomGanttScreen({
         source:     bl.source,
         specialRequest: '',
       }));
-      const all = [...deduped, ...icalAsBookings];
-      if (alive.current) setBookings(all.length ? all : (bookingsProp.length ? bookingsProp : DEMO_BOOKINGS));
+
+      const merged = [...apiBookings, ...icalAsBookings];
+      const seen   = new Set();
+      const deduped = merged.filter((b) => { if (seen.has(b.id)) return false; seen.add(b.id); return true; });
+
+      const final = deduped.length ? deduped : (fallbackBookings.length ? fallbackBookings : DEMO_BOOKINGS);
+      if (alive.current) setBookings(final);
     } catch {
-      if (alive.current) setBookings(bookingsProp.length ? bookingsProp : DEMO_BOOKINGS);
+      if (alive.current) {
+        setRooms(DEMO_ROOMS);
+        setBookings(fallbackBookings.length ? fallbackBookings : DEMO_BOOKINGS);
+      }
+    } finally {
+      if (alive.current) { setLoading(false); setRefreshing(false); }
+      loadingRef.current = false;
     }
-  }, [businessId, accessToken, bookingsProp, icalBlocks]);
+  }, [businessId, accessToken]); // ← apenas deps estáveis: sem arrays de props
 
-  const load = useCallback(async (isRefresh = false) => {
-    isRefresh ? setRefreshing(true) : setLoading(true);
-    await Promise.all([loadRooms(), loadBookings()]);
-    if (alive.current) { setLoading(false); setRefreshing(false); }
-  }, [loadRooms, loadBookings]);
-
+  // Carregar apenas uma vez ao montar (businessId + accessToken estáveis)
   useEffect(() => { load(); }, [load]);
 
   // ── Janela de datas ──────────────────────────────────────────────────────────
@@ -805,6 +901,7 @@ export function RoomGanttScreen({
         onBarPress={handleBarPress}
         onRoomPress={setSelectedRoom}
         hasConflict={conflict}
+        onScroll={syncAllScroll}
         scrollRef={(ref) => { rowScrollRefs.current[room.id] = ref; }}
       />
     );
@@ -814,7 +911,7 @@ export function RoomGanttScreen({
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={gS.root}>
+      <SafeAreaView style={gS.root}>
 
         {/* ── Header ── */}
         <View style={gS.topHeader}>
@@ -864,7 +961,7 @@ export function RoomGanttScreen({
         ) : (
           <View style={{ flex: 1 }}>
             {/* ── Cabeçalho de datas (fixo) ── */}
-            <GanttHeader dates={dates} scrollX={headerScrollRef} />
+            <GanttHeader dates={dates} scrollRef={headerScrollRef} onScroll={syncAllScroll} />
 
             {/* ── Linhas de quartos (scroll vertical + horizontal sincronizado) ── */}
             <FlatList
@@ -896,12 +993,13 @@ export function RoomGanttScreen({
               bookings={bookings}
               overbookingBuffer={overbookingBuffer}
               scrollRef={footerScrollRef}
+              onScroll={syncAllScroll}
             />
           </View>
         )}
 
         {/* ── Canvas horizontal centralizado com ScrollView maestro ── */}
-      </View>
+      </SafeAreaView>
 
       {/* ── Detalhe de reserva ── */}
       {selectedBooking && (
@@ -959,7 +1057,7 @@ const gS = StyleSheet.create({
                   borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   cornerCell:   { width: ROOM_COL_WIDTH, paddingHorizontal: 6, paddingVertical: 8,
                   justifyContent: 'center', alignItems: 'center',
-                  borderRightWidth: 1, borderRightColor: '#E5E7EB' },
+                  borderRightWidth: 1, borderRightColor: '#E5E7EB', flexShrink: 0 },
   cornerText:   { fontSize: 9, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   dateCell:     { paddingVertical: 6, alignItems: 'center', justifyContent: 'center',
@@ -973,11 +1071,12 @@ const gS = StyleSheet.create({
   // Room rows
   roomRow:      { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F0F0EE',
                   backgroundColor: '#fff' },
-  roomLabel:    { width: ROOM_COL_WIDTH, flexDirection: 'row', alignItems: 'center',
-                  justifyContent: 'center', gap: 3, paddingHorizontal: 6,
+  roomLabel:    { width: ROOM_COL_WIDTH, flexDirection: 'column', alignItems: 'flex-start',
+                  justifyContent: 'center', paddingHorizontal: 6,
                   borderRightWidth: 1, borderRightColor: '#E5E7EB' },
   roomNumber:   { fontSize: 13, fontWeight: '700', color: '#111' },
   roomHkIcon:   { fontSize: 10 },
+  roomType:     { fontSize: 9, color: '#9CA3AF', marginTop: 1, fontWeight: '500' },
 
   floorHeader:  { flexDirection: 'row', backgroundColor: '#F9FAFB',
                   borderBottomWidth: 1, borderBottomColor: '#E5E7EB', height: 26 },
@@ -988,7 +1087,7 @@ const gS = StyleSheet.create({
   cellWeekend:  { backgroundColor: '#FAFAF8' },
   cellToday:    { backgroundColor: '#EFF6FF' },
 
-  // Bars
+  // Bars — zIndex elevado para receber toques por cima das células
   bar:          {
     position: 'absolute',
     height: BAR_HEIGHT,
@@ -996,18 +1095,22 @@ const gS = StyleSheet.create({
     borderRadius: 6,
     justifyContent: 'center',
     paddingHorizontal: 6,
+    zIndex: 10,
+    elevation: 2,
   },
   barText:      { fontSize: 11, fontWeight: '700', color: '#fff' },
 
   // Footer
   footerRow:    { flexDirection: 'row', backgroundColor: '#F9FAFB',
-                  borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+                  borderTopWidth: 1, borderTopColor: '#E5E7EB',
+                  paddingBottom: Platform.OS === 'ios' ? 8 : 4 },
   footerCorner: { width: ROOM_COL_WIDTH, alignItems: 'center', justifyContent: 'center',
-                  borderRightWidth: 1, borderRightColor: '#E5E7EB', paddingVertical: 6 },
+                  borderRightWidth: 1, borderRightColor: '#E5E7EB', paddingVertical: 8 },
   footerCornerText: { fontSize: 9, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
   footerCell:   { paddingVertical: 6, alignItems: 'center', justifyContent: 'center',
-                  borderRightWidth: 1, borderRightColor: '#F0F0EE' },
-  footerRate:   { fontSize: 11, fontWeight: '700' },
+                  borderRightWidth: 1, borderRightColor: '#F0F0EE', height: 44 },
+  footerRate:   { fontSize: 12, fontWeight: '800' },
+  footerSub:    { fontSize: 9, fontWeight: '600', marginTop: 1 },
 
   // Loading / empty
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -1016,7 +1119,7 @@ const gS = StyleSheet.create({
   // Bottom sheets
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet:        { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-                  paddingBottom: 34 },
+                  paddingBottom: 34, overflow: 'hidden' },
   sheetHandle:  { width: 36, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB',
                   alignSelf: 'center', marginTop: 12, marginBottom: 4 },
   sheetHeader:  { flexDirection: 'row', alignItems: 'center', padding: 20,
