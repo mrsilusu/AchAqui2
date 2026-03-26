@@ -477,8 +477,8 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
   const todayYmd = toYMD(new Date());
   const showConfirm  = booking.status === 'pending' || booking.status === 'PENDING';
   const showCancel   = booking.status === 'pending' || booking.status === 'PENDING';
-  // Check-in apenas disponível quando CONFIRMED (regra: não permite check-in em PENDING)
-  const showCheckin  = (booking.status === 'CONFIRMED') && booking.checkIn === todayYmd;
+  // Check-in disponível para CONFIRMED (não só hoje — check-in antecipado também permitido)
+  const showCheckin  = booking.status === 'CONFIRMED' || booking.status === 'confirmed';
   const showCheckout = booking.status === 'CHECKED_IN' || booking.status === 'checked_in';
 
   async function doAction(action) {
@@ -561,36 +561,59 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
 }
 
 // ─── RoomDetailSheet ──────────────────────────────────────────────────────────
-function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom }) {
-  const [loading, setLoading] = useState(false);
+const HK_STATUS_OPTIONS = ['CLEAN', 'DIRTY', 'CLEANING', 'MAINTENANCE', 'INSPECTING'];
+const HK_LABELS_PT = {
+  CLEAN:       'Limpo',
+  DIRTY:       'Sujo',
+  CLEANING:    'A limpar',
+  MAINTENANCE: 'Manutenção',
+  INSPECTING:  'Em inspecção',
+};
+const HK_COLORS = {
+  CLEAN:       '#22A06B',
+  DIRTY:       '#D97706',
+  CLEANING:    '#F59E0B',
+  MAINTENANCE: '#DC2626',
+  INSPECTING:  '#1565C0',
+};
+
+function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom, bookings = [] }) {
+  const [loading,    setLoading]    = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   if (!room) return null;
 
-  const HK_STATUS_OPTIONS = ['CLEAN', 'DIRTY', 'CLEANING', 'MAINTENANCE', 'INSPECTING'];
-  const HK_LABELS = {
-    CLEAN: 'Limpo', DIRTY: 'Sujo', CLEANING: 'A limpar',
-    MAINTENANCE: 'Manutenção', INSPECTING: 'Em inspecção',
-  };
+  // Verificar se o quarto está actualmente ocupado
+  const todayYmd = toYMD(new Date());
+  const activeGuest = bookings.find((bk) => {
+    const active = bk.status === 'CHECKED_IN' || bk.status === 'checked_in';
+    return active && bk.roomId === room.id && bk.checkIn <= todayYmd && bk.checkOut > todayYmd;
+  });
+  const isOccupied = !!activeGuest;
 
-  async function handleChangeStatus() {
-    Alert.alert(
-      `Quarto ${room.roomNumber} — Estado`,
-      'Seleccionar novo estado housekeeping:',
-      HK_STATUS_OPTIONS.map((st) => ({
-        text: `${HK_ICONS[st]} ${HK_LABELS[st]}`,
-        onPress: async () => {
-          setLoading(true);
-          try {
-            await backendApi.updateHtRoom(room.id, { status: st }, accessToken);
-            onUpdateRoom(room.id, { status: st });
-          } catch {
-            Alert.alert('Erro', 'Não foi possível actualizar o estado.');
-          } finally {
-            setLoading(false);
-            onClose();
-          }
-        },
-      })).concat([{ text: 'Cancelar', style: 'cancel' }]),
-    );
+  async function applyStatus(st) {
+    setLoading(true);
+    try {
+      await backendApi.updateHtRoom(room.id, { status: st }, accessToken);
+      onUpdateRoom(room.id, { status: st });
+      setShowPicker(false);
+      onClose();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível actualizar o estado.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleChangeStatus() {
+    if (isOccupied) {
+      Alert.alert(
+        '🚫 Quarto Ocupado',
+        `O hóspede "${activeGuest.guestName}" está neste quarto.\nPara alterar o estado, transfira primeiro o hóspede para outro quarto.`,
+        [{ text: 'OK', style: 'cancel' }]
+      );
+      return;
+    }
+    setShowPicker(true);
   }
 
   return (
@@ -607,35 +630,92 @@ function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom }) {
           <View style={{ gap: 8, paddingHorizontal: 20, paddingBottom: 16 }}>
             <Text style={gS.sheetMeta}>🏨 {room.typeName}</Text>
             <Text style={gS.sheetMeta}>🏢 Piso {room.floor}</Text>
-            {/* Estado housekeeping em português com ícone e rótulo */}
-            <View style={[gS.statusPill, { backgroundColor: '#F3F4F6', alignSelf: 'flex-start' }]}>
-              <Text style={{ fontSize: 14, color: '#374151' }}>
-                {HK_ICONS[room.status]}
-                {'  '}
-                <Text style={{ fontWeight: '700' }}>{HK_LABELS[room.status] || room.status}</Text>
+
+            {/* Estado actual */}
+            <View style={[gS.statusPill, { backgroundColor: (HK_COLORS[room.status] || '#9CA3AF') + '22', alignSelf: 'flex-start' }]}>
+              <Text style={{ fontSize: 14, color: HK_COLORS[room.status] || '#9CA3AF', fontWeight: '700' }}>
+                {HK_ICONS[room.status]}{'  '}{HK_LABELS_PT[room.status] || room.status}
               </Text>
             </View>
-            {/* Legenda de housekeeping */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-              {LEGEND_HK.map((item) => (
-                <View key={item.label} style={[gS.legendItem, { backgroundColor: '#F9FAFB', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }]}>
-                  <Text style={{ fontSize: 11 }}>{item.icon}</Text>
-                  <Text style={[gS.legendLabel, { fontSize: 10, color: '#6B7280' }]}>{item.label}</Text>
-                </View>
-              ))}
-            </View>
-            {loading ? (
-              <ActivityIndicator color={COLORS.blue} style={{ marginTop: 12 }} />
-            ) : (
-              <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#1565C0', marginTop: 12, flexDirection: 'row', gap: 6 }]} onPress={handleChangeStatus}>
-                <Text style={{ fontSize: 16 }}>🔄</Text>
-                <Text style={gS.actionBtnText}>Mudar estado de housekeeping</Text>
-              </TouchableOpacity>
+
+            {/* Aviso de quarto ocupado */}
+            {isOccupied && (
+              <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: '#D97706' }}>
+                <Text style={{ fontSize: 12, color: '#92400E', fontWeight: '600' }}>
+                  👤 Ocupado por {activeGuest.guestName}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                  Saída: {fmtFull(activeGuest.checkOut)}
+                </Text>
+              </View>
             )}
-            <TouchableOpacity style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]} onPress={onClose}>
-              <Text style={{ fontSize: 16 }}>✕</Text>
-              <Text style={[gS.actionBtnText, { color: '#374151' }]}>Fechar</Text>
-            </TouchableOpacity>
+
+            {/* Picker inline de estado HK */}
+            {showPicker ? (
+              <View style={{ marginTop: 8, gap: 6 }}>
+                <Text style={[gS.sheetMeta, { fontWeight: '700', marginBottom: 4 }]}>Seleccionar novo estado:</Text>
+                {HK_STATUS_OPTIONS.map((st) => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[
+                      gS.actionBtn,
+                      {
+                        flexDirection: 'row', gap: 10, justifyContent: 'flex-start',
+                        paddingHorizontal: 14,
+                        backgroundColor: st === room.status ? (HK_COLORS[st] + '22') : '#F9FAFB',
+                        borderWidth: st === room.status ? 2 : 1,
+                        borderColor: st === room.status ? HK_COLORS[st] : '#E5E7EB',
+                      },
+                    ]}
+                    onPress={() => applyStatus(st)}
+                    disabled={loading || st === room.status}
+                  >
+                    <Text style={{ fontSize: 20 }}>{HK_ICONS[st]}</Text>
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: HK_COLORS[st] }}>
+                        {HK_LABELS_PT[st]}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#6B7280' }}>
+                        {st === room.status ? '(estado actual)' : 'Toque para aplicar'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]}
+                  onPress={() => setShowPicker(false)}
+                >
+                  <Text style={{ fontSize: 16 }}>✕</Text>
+                  <Text style={[gS.actionBtnText, { color: '#374151' }]}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.blue} style={{ marginTop: 12 }} />
+                ) : (
+                  <TouchableOpacity
+                    style={[gS.actionBtn, {
+                      marginTop: 12, flexDirection: 'row', gap: 6,
+                      backgroundColor: isOccupied ? '#9CA3AF' : '#1565C0',
+                    }]}
+                    onPress={handleChangeStatus}
+                  >
+                    <Text style={{ fontSize: 16 }}>🔄</Text>
+                    <Text style={gS.actionBtnText}>
+                      {isOccupied ? 'Quarto Ocupado' : 'Mudar estado de housekeeping'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]}
+                  onPress={onClose}
+                >
+                  <Text style={{ fontSize: 16 }}>✕</Text>
+                  <Text style={[gS.actionBtnText, { color: '#374151' }]}>Fechar</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -705,8 +785,8 @@ export function RoomGanttScreen({
     }
 
     try {
-      const from = addDays(TODAY, -7);
-      const to   = addDays(TODAY, 60);
+      const from = addDays(TODAY, -30);
+      const to   = addDays(TODAY, 180);
       // Uma única chamada: getHtMap devolve rooms (em roomTypes) + bookings
       const mapData = await backendApi.getHtMap(businessId, from, to, accessToken).catch(() => null);
       if (!alive.current) return;
@@ -1137,6 +1217,7 @@ export function RoomGanttScreen({
         <RoomDetailSheet
           room={selectedRoom}
           accessToken={accessToken}
+          bookings={bookings}
           onClose={() => setSelectedRoom(null)}
           onUpdateRoom={handleUpdateRoom}
         />
