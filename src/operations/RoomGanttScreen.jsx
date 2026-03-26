@@ -761,23 +761,30 @@ export function RoomGanttScreen({
     return conflicted;
   }, [roomBookingMap]);
 
-  // ── Scroll sincronizado ──────────────────────────────────────────────────────
-  const syncScroll = useCallback((x) => {
+  // ── Scroll sincronizado — guard evita loops infinitos entre as ScrollViews ──
+  const scrollXRef   = useRef(0);
+  const syncingRef   = useRef(false);
+
+  const syncAllScroll = useCallback((x) => {
+    if (syncingRef.current) return;
+    if (Math.abs(x - scrollXRef.current) < 1) return;
+    scrollXRef.current = x;
+    syncingRef.current = true;
     headerScrollRef.current?.scrollTo({ x, animated: false });
     footerScrollRef.current?.scrollTo({ x, animated: false });
-    Object.values(rowScrollRefs.current).forEach((ref) => {
-      ref?.scrollTo?.({ x, animated: false });
-    });
+    Object.values(rowScrollRefs.current).forEach((ref) => ref?.scrollTo?.({ x, animated: false }));
+    setTimeout(() => { syncingRef.current = false; }, 50);
   }, []);
 
   // ── Botão Hoje ──────────────────────────────────────────────────────────────
   const scrollToToday = useCallback(() => {
     const todayIdx = dates.findIndex((d) => d === TODAY);
     if (todayIdx >= 0) {
-      const x = Math.max(0, todayIdx * DATE_COL_WIDTH - DATE_COL_WIDTH);
-      syncScroll(x);
+      const x = Math.max(0, (todayIdx - 1) * DATE_COL_WIDTH);
+      scrollXRef.current = -9999; // força sync mesmo que x===0
+      syncAllScroll(x);
     }
-  }, [dates, syncScroll]);
+  }, [dates, syncAllScroll]);
 
   // ── Navegar janela ───────────────────────────────────────────────────────────
   const shiftWindow = useCallback((days) => {
