@@ -42,6 +42,7 @@ import {
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
 import { HousekeepingScreen } from './HousekeepingScreen';
+import { RoomGanttScreen } from './RoomGanttScreen';
 import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1158,6 +1159,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [checkingRooms, setCheckingRooms] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showGantt, setShowGantt] = useState(false);
   const [showReception, setShowReception] = useState(false);
   const [showHousekeeping, setShowHousekeeping] = useState(false);
   const [dashboardReloadTrigger, setDashboardReloadTrigger] = useState(0);
@@ -1809,6 +1811,17 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           reloadTrigger={dashboardReloadTrigger}
           guestBookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+          onOpenGantt={() => { setShowDashboard(false); setShowGantt(true); }}
+        />
+      )}
+      {isOwner && showGantt && (
+        <RoomGanttScreen
+          businessId={ownerBusinessPrivate?.id || business?.id}
+          accessToken={ctx?.accessToken}
+          bookings={activeBookings}
+          icalBlocks={icalStatus?.ranges || []}
+          overbookingBuffer={Number(ownerBusinessPrivate?.metadata?.pms?.sellablePercent ?? 100)}
+          onClose={() => setShowGantt(false)}
         />
       )}
       {isOwner && showReception && (

@@ -165,7 +165,7 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [] }) {
+export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [], onOpenGantt }) {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -453,6 +453,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               >
                 <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#0891B2' }]}
+                onPress={() => onOpenGantt?.()}
+                disabled={!onOpenGantt}
+              >
+                <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Mapa · Gantt · Quartos</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               <TouchableOpacity
