@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Switch,
   Modal, TextInput, FlatList, StyleSheet, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Icon } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
@@ -230,7 +230,9 @@ function EditGuestModal({ guest, businessId, accessToken, onSave, onClose }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
+    // Validações client-side
     if (!form.fullName.trim()) { setError('Nome é obrigatório.'); return; }
+    if (!form.documentNumber.trim()) { setError('Nº de documento é obrigatório.'); return; }
     setSaving(true); setError('');
     try {
       let dob = null;
@@ -257,7 +259,12 @@ function EditGuestModal({ guest, businessId, accessToken, onSave, onClose }) {
       const updated = await backendApi.updateHtGuest(guest.id, businessId, payload, accessToken);
       onSave(updated || { ...guest, ...payload });
     } catch (e) {
-      setError(e?.message || 'Erro ao guardar. Tente novamente.');
+      // Alert.alert garante visibilidade independente da posição de scroll
+      Alert.alert(
+        '⚠️ Não foi possível guardar',
+        e?.message || 'Erro ao guardar. Tente novamente.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setSaving(false);
     }
