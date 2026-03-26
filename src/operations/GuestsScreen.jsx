@@ -573,7 +573,8 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
     try {
       const res = await backendApi.getHtGuests(businessId, accessToken, q);
       setGuests(Array.isArray(res) ? res : []);
-    } catch {
+    } catch (e) {
+      console.warn('[GuestsScreen] load error:', e?.message);
       setGuests([]);
     } finally {
       setLoading(false);
@@ -615,7 +616,8 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
     try {
       const full = await backendApi.getHtGuest(guest.id, businessId, accessToken);
       setSelected(full || guest);
-    } catch {
+    } catch (e) {
+      console.warn('[GuestsScreen] openDetail error:', e?.message);
       setSelected(guest);
     } finally {
       setDetailLoading(false);

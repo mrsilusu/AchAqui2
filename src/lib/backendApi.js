@@ -115,7 +115,16 @@ export async function apiRequest(path, { method = 'GET', body, accessToken, skip
       : response.status === 404
         ? 'url'
         : 'http';
-    const message = rawError || `Erro HTTP ${response.status}`;
+    // NestJS devolve JSON: { statusCode, message, error } — extrair campo legível
+    let message = rawError || `Erro HTTP ${response.status}`;
+    try {
+      const parsed = JSON.parse(rawError);
+      if (parsed?.message) {
+        message = Array.isArray(parsed.message)
+          ? parsed.message.join('; ')
+          : String(parsed.message);
+      }
+    } catch { /* não é JSON — usar texto bruto */ }
     const error = new ApiRequestError(message, {
       type,
       status: response.status,
