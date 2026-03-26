@@ -256,8 +256,8 @@ function EditGuestModal({ guest, businessId, accessToken, onSave, onClose }) {
       };
       const updated = await backendApi.updateHtGuest(guest.id, businessId, payload, accessToken);
       onSave(updated || { ...guest, ...payload });
-    } catch {
-      setError('Erro ao guardar. Tente novamente.');
+    } catch (e) {
+      setError(e?.message || 'Erro ao guardar. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -526,7 +526,7 @@ function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated 
                   {i < sortedBks.length - 1 && <View style={gS.timelineLine} />}
                   <View style={[gS.stayDot, { backgroundColor: bst.color }]} />
                   <View style={gS.stayBody}>
-                    <Text style={gS.stayRoom}>{b.roomType?.name || 'Quarto'}</Text>
+                    <Text style={gS.stayRoom}>{b.roomType?.name || 'Quarto'}{b.room?.number ? ` · Nº ${b.room.number}` : ''}</Text>
                     <Text style={gS.stayDate}>{fmtDate(b.startDate || b.checkIn)} → {fmtDate(b.endDate || b.checkOut)}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
