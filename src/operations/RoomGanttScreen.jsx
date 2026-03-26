@@ -576,6 +576,23 @@ const HK_COLORS = {
   MAINTENANCE: '#DC2626',
   INSPECTING:  '#1565C0',
 };
+const HK_DESCRIPTIONS = {
+  CLEAN:       'Pronto para receber hóspede',
+  DIRTY:       'Necessita de limpeza',
+  CLEANING:    'Limpeza em curso',
+  MAINTENANCE: 'Fora de serviço — manutenção',
+  INSPECTING:  'A aguardar inspecção final',
+};
+
+// Bolinha colorida nativa (não emoji — compatível com todos os devices)
+function HkDot({ status, size = 12 }) {
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: HK_COLORS[status] || '#9CA3AF',
+    }} />
+  );
+}
 
 function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom, bookings = [] }) {
   const [loading,    setLoading]    = useState(false);
@@ -591,6 +608,7 @@ function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom, bookings = 
   const isOccupied = !!activeGuest;
 
   async function applyStatus(st) {
+    if (st === room.status) return;
     setLoading(true);
     try {
       await backendApi.updateHtRoom(room.id, { status: st }, accessToken);
@@ -627,20 +645,48 @@ function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom, bookings = 
               <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
-          <View style={{ gap: 8, paddingHorizontal: 20, paddingBottom: 16 }}>
+
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 10, paddingHorizontal: 20, paddingBottom: 20 }}>
             <Text style={gS.sheetMeta}>🏨 {room.typeName}</Text>
             <Text style={gS.sheetMeta}>🏢 Piso {room.floor}</Text>
 
-            {/* Estado actual */}
-            <View style={[gS.statusPill, { backgroundColor: (HK_COLORS[room.status] || '#9CA3AF') + '22', alignSelf: 'flex-start' }]}>
-              <Text style={{ fontSize: 14, color: HK_COLORS[room.status] || '#9CA3AF', fontWeight: '700' }}>
-                {HK_ICONS[room.status]}{'  '}{HK_LABELS_PT[room.status] || room.status}
+            {/* Estado actual com bolinha colorida */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: (HK_COLORS[room.status] || '#9CA3AF') + '15',
+              borderRadius: 8, padding: 10, borderLeftWidth: 3,
+              borderLeftColor: HK_COLORS[room.status] || '#9CA3AF' }}>
+              <HkDot status={room.status} size={14} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: HK_COLORS[room.status] || '#374151' }}>
+                {HK_LABELS_PT[room.status] || room.status}
               </Text>
+              <Text style={{ fontSize: 12, color: '#6B7280', flex: 1 }}>
+                — {HK_DESCRIPTIONS[room.status] || ''}
+              </Text>
+            </View>
+
+            {/* Legenda de todos os estados */}
+            <View style={{ backgroundColor: '#F9FAFB', borderRadius: 8, padding: 10, gap: 6 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#9CA3AF',
+                textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
+                Legenda de estados
+              </Text>
+              {HK_STATUS_OPTIONS.map((st) => (
+                <View key={st} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <HkDot status={st} size={10} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: HK_COLORS[st], minWidth: 80 }}>
+                    {HK_LABELS_PT[st]}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#9CA3AF', flex: 1 }}>
+                    {HK_DESCRIPTIONS[st]}
+                  </Text>
+                </View>
+              ))}
             </View>
 
             {/* Aviso de quarto ocupado */}
             {isOccupied && (
-              <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: '#D97706' }}>
+              <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10,
+                borderLeftWidth: 3, borderLeftColor: '#D97706' }}>
                 <Text style={{ fontSize: 12, color: '#92400E', fontWeight: '600' }}>
                   👤 Ocupado por {activeGuest.guestName}
                 </Text>
@@ -652,71 +698,88 @@ function RoomDetailSheet({ room, onClose, accessToken, onUpdateRoom, bookings = 
 
             {/* Picker inline de estado HK */}
             {showPicker ? (
-              <View style={{ marginTop: 8, gap: 6 }}>
-                <Text style={[gS.sheetMeta, { fontWeight: '700', marginBottom: 4 }]}>Seleccionar novo estado:</Text>
-                {HK_STATUS_OPTIONS.map((st) => (
-                  <TouchableOpacity
-                    key={st}
-                    style={[
-                      gS.actionBtn,
-                      {
-                        flexDirection: 'row', gap: 10, justifyContent: 'flex-start',
-                        paddingHorizontal: 14,
-                        backgroundColor: st === room.status ? (HK_COLORS[st] + '22') : '#F9FAFB',
-                        borderWidth: st === room.status ? 2 : 1,
-                        borderColor: st === room.status ? HK_COLORS[st] : '#E5E7EB',
-                      },
-                    ]}
-                    onPress={() => applyStatus(st)}
-                    disabled={loading || st === room.status}
-                  >
-                    <Text style={{ fontSize: 20 }}>{HK_ICONS[st]}</Text>
-                    <View>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: HK_COLORS[st] }}>
-                        {HK_LABELS_PT[st]}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#6B7280' }}>
-                        {st === room.status ? '(estado actual)' : 'Toque para aplicar'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#111', marginBottom: 2 }}>
+                  Seleccionar novo estado:
+                </Text>
+                {HK_STATUS_OPTIONS.map((st) => {
+                  const isCurrent = st === room.status;
+                  return (
+                    <TouchableOpacity
+                      key={st}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 12,
+                        paddingHorizontal: 14, paddingVertical: 12,
+                        borderRadius: 10,
+                        backgroundColor: isCurrent ? HK_COLORS[st] + '18' : '#F9FAFB',
+                        borderWidth: isCurrent ? 2 : 1,
+                        borderColor: isCurrent ? HK_COLORS[st] : '#E5E7EB',
+                        opacity: loading ? 0.5 : 1,
+                      }}
+                      onPress={() => applyStatus(st)}
+                      disabled={loading || isCurrent}
+                    >
+                      <HkDot status={st} size={16} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: HK_COLORS[st] }}>
+                          {HK_LABELS_PT[st]}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 1 }}>
+                          {isCurrent ? 'Estado actual' : HK_DESCRIPTIONS[st]}
+                        </Text>
+                      </View>
+                      {isCurrent && (
+                        <View style={{ backgroundColor: HK_COLORS[st], borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 10, color: '#fff', fontWeight: '700' }}>ACTUAL</Text>
+                        </View>
+                      )}
+                      {!isCurrent && !loading && (
+                        <Text style={{ fontSize: 18, color: '#9CA3AF' }}>›</Text>
+                      )}
+                      {loading && <ActivityIndicator size="small" color={HK_COLORS[st]} />}
+                    </TouchableOpacity>
+                  );
+                })}
                 <TouchableOpacity
-                  style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    gap: 8, paddingVertical: 12, borderRadius: 10,
+                    borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff', marginTop: 4 }}
                   onPress={() => setShowPicker(false)}
+                  disabled={loading}
                 >
-                  <Text style={{ fontSize: 16 }}>✕</Text>
-                  <Text style={[gS.actionBtnText, { color: '#374151' }]}>Cancelar</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151' }}>Cancelar</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <>
+              <View style={{ gap: 8, marginTop: 4 }}>
                 {loading ? (
-                  <ActivityIndicator color={COLORS.blue} style={{ marginTop: 12 }} />
+                  <ActivityIndicator color={COLORS.blue} />
                 ) : (
                   <TouchableOpacity
-                    style={[gS.actionBtn, {
-                      marginTop: 12, flexDirection: 'row', gap: 6,
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                      gap: 8, paddingVertical: 14, borderRadius: 10,
                       backgroundColor: isOccupied ? '#9CA3AF' : '#1565C0',
-                    }]}
+                    }}
                     onPress={handleChangeStatus}
                   >
                     <Text style={{ fontSize: 16 }}>🔄</Text>
-                    <Text style={gS.actionBtnText}>
-                      {isOccupied ? 'Quarto Ocupado' : 'Mudar estado de housekeeping'}
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
+                      Alterar estado do quarto
                     </Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={[gS.actionBtn, { backgroundColor: '#F3F4F6', marginTop: 4, flexDirection: 'row', gap: 6 }]}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    gap: 8, paddingVertical: 14, borderRadius: 10,
+                    borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff' }}
                   onPress={onClose}
                 >
-                  <Text style={{ fontSize: 16 }}>✕</Text>
-                  <Text style={[gS.actionBtnText, { color: '#374151' }]}>Fechar</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151' }}>Cancelar</Text>
                 </TouchableOpacity>
-              </>
+              </View>
             )}
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
