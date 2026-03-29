@@ -59,7 +59,8 @@ export class HtGuestService {
         bookings: {
           select: {
             id: true, startDate: true, endDate: true, status: true,
-            totalPrice: true, roomType: { select: { name: true } },
+            totalPrice: true, roomId: true, roomType: { select: { name: true } },
+            room: { select: { number: true } },
           },
           orderBy: { startDate: 'desc' },
         },

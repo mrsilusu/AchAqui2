@@ -1510,12 +1510,12 @@ export function OwnerModule({
                         <View style={{flex:1}}><Text style={bizS.actionTitle}>Editar Tipos de Quarto</Text><Text style={bizS.actionDesc}>{(roomTypes||[]).length} tipos</Text></View>
                         <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                       </TouchableOpacity>
-                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
+                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowRoomBookingsManager(true)}>
                         <View style={bizS.actionIcon}><Icon name="calendar" size={22} color={COLORS.red} strokeWidth={2} /></View>
                         <View style={{flex:1}}><Text style={bizS.actionTitle}>Reservas de Quartos</Text><Text style={bizS.actionDesc}>{roomBookings.filter(rb=>rb.status==='pending').length} pendentes · {roomBookings.filter(rb=>rb.status==='confirmed').length} confirmadas</Text></View>
                         <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                       </TouchableOpacity>
-                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => openAppLayer('ownerReservas')}>
+                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
                         <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
                         <View style={{flex:1}}><Text style={bizS.actionTitle}>Disponibilidade & Quartos</Text><Text style={bizS.actionDesc}>{(roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text></View>
                         <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
