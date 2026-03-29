@@ -137,19 +137,10 @@ export class HtBookingService {
     }
 
     if (existingByDocument) {
-      await this.prisma.htGuestProfile.update({
-        where: { id: existingByDocument.id },
-        data: {
-          fullName,
-          phone,
-          documentType,
-          companyName,
-          nif,
-          nationality,
-          dateOfBirth,
-        } as any,
-      });
-      return existingByDocument.id;
+      throw new BadRequestException(
+        'Número de documento já registado para outro hóspede neste estabelecimento. ' +
+        'Use um perfil existente em vez de criar um novo no check-in.'
+      );
     }
 
     const created = await this.prisma.htGuestProfile.create({

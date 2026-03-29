@@ -396,6 +396,21 @@ function GuestProfileModal({ visible, businessId, accessToken, prefilledName, pr
     if (!form.documentNumber.trim()) { Alert.alert('Erro', 'Documento obrigatório para criar perfil.'); return; }
     setLoading(true);
     try {
+      // Validar previamente se o número de documento já existe neste estabelecimento
+      const docNorm = form.documentNumber.trim().replace(/\s+/g, '').toUpperCase();
+      const existing = await backendApi.getHtGuests(businessId, accessToken, docNorm).catch(() => []);
+      const duplicate = Array.isArray(existing)
+        ? existing.find(g => (g.documentNumber || '').replace(/\s+/g, '').toUpperCase() === docNorm)
+        : null;
+      if (duplicate) {
+        Alert.alert(
+          '🚫 Documento já registado',
+          `O número de documento "${form.documentNumber.trim()}" já pertence ao hóspede "${duplicate.fullName}".\n\nUse a pesquisa para localizar e ligar este perfil existente.`,
+          [{ text: 'OK' }]
+        );
+        setLoading(false);
+        return;
+      }
       const guest = await backendApi.createHtGuest({ ...form, businessId }, accessToken);
       onLink(guest);
     } catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível criar o perfil.'); }

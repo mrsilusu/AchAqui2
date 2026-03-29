@@ -507,6 +507,13 @@ function normalizeBusiness(rawBusiness) {
       physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
     })),
     metadata: meta,
+    feedSlot: rawBusiness.feedSlot || null,
+    rankingScore: Number.isFinite(rawBusiness.rankingScore) ? Number(rawBusiness.rankingScore) : null,
+    position: Number.isFinite(rawBusiness.position) ? Number(rawBusiness.position) : null,
+    hasActiveStatus: !!(rawBusiness.hasActiveStatus ?? meta.hasActiveStatus ?? base.hasActiveStatus),
+    isNew: !!(rawBusiness.isNew ?? meta.isNew),
+    hasPromo: !!(rawBusiness.hasPromo ?? meta.hasPromo ?? base.promo ?? meta.promo),
+    isSponsored: !!(rawBusiness.isSponsored ?? meta.isSponsored ?? meta.isPatrocinado ?? base.isPremium ?? meta.isPremium),
     owner: rawBusiness.owner || null,
   };
 }
@@ -617,6 +624,44 @@ function AppContent() {
   const handleHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
     try {
+      if (userLocation?.latitude && userLocation?.longitude) {
+        const [feedRes, allRes] = await Promise.all([
+          backendApi.getHybridHomeFeed({
+            lat: userLocation.latitude,
+            lng: userLocation.longitude,
+            radiusKm: 20,
+            limit: 15,
+          }).catch(() => null),
+          backendApi.getBusinesses(),
+        ]);
+
+        const feedItems = Array.isArray(feedRes?.items) ? feedRes.items : [];
+        if (feedItems.length > 0) {
+          const fromFeed = feedItems
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .map((biz, idx) => {
+              const raw = feedItems[idx] || {};
+              return {
+                ...biz,
+                recommendationScore: Number(raw.rankingScore || biz.recommendationScore || 0),
+                recommendationReason: raw.feedSlot || biz.recommendationReason || 'Feed híbrido',
+              };
+            });
+
+          const feedIds = new Set(fromFeed.map((b) => b.id));
+          const fromApi = (Array.isArray(allRes) ? allRes : [])
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .filter((b) => !feedIds.has(b.id));
+
+          const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
+          const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
+          setBusinesses([...fromFeed, ...fromApi, ...mocksFallback]);
+          return;
+        }
+      }
+
       const response = await backendApi.getBusinesses();
       const fromApi = (Array.isArray(response) ? response : [])
         .map(normalizeBusiness).filter(Boolean);
@@ -625,7 +670,7 @@ function AppContent() {
       filters.refreshShuffle?.();
     } catch {}
     finally { setHomeRefreshing(false); }
-  }, [filters]);
+  }, [filters, userLocation?.latitude, userLocation?.longitude]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
@@ -830,6 +875,7 @@ function AppContent() {
 
   // Ref para guardar a subscription do watch -- permite parar e reiniciar
   const locationWatchRef = React.useRef(null);
+  const hybridFeedLoadedRef = React.useRef(false);
 
   const requestLocationPermission = async () => {
     try {
@@ -938,13 +984,21 @@ function AppContent() {
       .catch(() => {});
   }, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!userLocation?.latitude || !userLocation?.longitude) return;
+    if (isStartupLoading) return;
+    if (hybridFeedLoadedRef.current) return;
+    hybridFeedLoadedRef.current = true;
+    handleHomeRefresh();
+  }, [userLocation?.latitude, userLocation?.longitude, isStartupLoading, handleHomeRefresh]);
+
   // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
     let cancelled = false;
 
     const startup = async () => {
       try {
-        const [meRes, dashRes, bizRes, recRes] = await Promise.all([
+        const [meRes, dashRes, bizRes, recRes, hybridRes] = await Promise.all([
           authSession.accessToken
             ? backendApi.getMe(authSession.accessToken)
             : Promise.resolve(null),
@@ -955,12 +1009,46 @@ function AppContent() {
           authSession.accessToken
             ? backendApi.getRecommendations(40, authSession.accessToken).catch(() => [])
             : Promise.resolve([]),
+          userLocation?.latitude && userLocation?.longitude
+            ? backendApi.getHybridHomeFeed({
+                lat: userLocation.latitude,
+                lng: userLocation.longitude,
+                radiusKm: 20,
+                limit: 15,
+              }).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         if (cancelled) return;
 
         setProfileData(meRes || null);
         setOwnerDashboardData(authSession.isOwner ? (dashRes || null) : null);
+
+        const hybridItems = Array.isArray(hybridRes?.items) ? hybridRes.items : [];
+        if (hybridItems.length > 0) {
+          const fromFeed = hybridItems
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .map((biz, idx) => {
+              const raw = hybridItems[idx] || {};
+              return {
+                ...biz,
+                recommendationScore: Number(raw.rankingScore || biz.recommendationScore || 0),
+                recommendationReason: raw.feedSlot || biz.recommendationReason || 'Feed híbrido',
+              };
+            });
+
+          const feedIds = new Set(fromFeed.map((b) => b.id));
+          const fromApi = (Array.isArray(bizRes) ? bizRes : [])
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .filter((b) => !feedIds.has(b.id));
+
+          const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
+          const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
+          setBusinesses([...fromFeed, ...fromApi, ...mocksFallback]);
+          return;
+        }
 
         const fromApi = (Array.isArray(bizRes) ? bizRes : [])
           .map(normalizeBusiness)
@@ -998,7 +1086,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.accessToken]);
+  }, [authSession.accessToken, userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     if (!authSession.accessToken) return;

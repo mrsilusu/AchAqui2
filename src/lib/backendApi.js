@@ -172,6 +172,15 @@ export async function apiRequest(path, { method = 'GET', body, accessToken, skip
 
 export const backendApi = {
   getBusinesses: () => apiRequest('/businesses'),
+  getHybridHomeFeed: ({ lat, lng, radiusKm = 20, limit = 15 } = {}) => {
+    const qs = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+      radiusKm: String(radiusKm),
+      limit: String(limit),
+    });
+    return apiRequest(`/businesses/home-feed?${qs.toString()}`);
+  },
   signIn: (payload) => apiRequest('/auth/signin', { method: 'POST', body: payload }),
   signUp: (payload) => apiRequest('/auth/signup', { method: 'POST', body: payload }),
   forgotPassword: (email) => apiRequest('/auth/forgot-password', { method: 'POST', body: { email } }),

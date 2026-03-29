@@ -10,6 +10,406 @@ import { UpdateBusinessDto } from './dto/update-business.dto';
 export class BusinessService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private clamp01(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    if (value <= 0) return 0;
+    if (value >= 1) return 1;
+    return value;
+  }
+
+  private parseNumber(value: unknown, fallback = 0): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  private parseBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return v === 'true' || v === '1' || v === 'yes';
+    }
+    if (typeof value === 'number') return value === 1;
+    return false;
+  }
+
+  private categoryMatchesNow(category: string, now: Date): boolean {
+    const hour = now.getHours();
+    const cat = (category || '').toLowerCase();
+
+    const isCafe = /(cafe|caf[ée]|padaria|pastelaria|breakfast)/.test(cat);
+    if (isCafe && hour >= 7 && hour < 10) return true;
+
+    const isRestaurant = /(restaurante|restaurant|comida|food|pizza|churrasc)/.test(cat);
+    if (isRestaurant && hour >= 19 && hour < 22) return true;
+
+    const isBarNight = /(bar|pub|lounge|discoteca|night)/.test(cat);
+    if (isBarNight && hour >= 21 && hour <= 23) return true;
+
+    const isBeauty = /(beleza|beauty|barbearia|barber|spa|wellness|sal[aã]o)/.test(cat);
+    if (isBeauty && hour >= 10 && hour < 18) return true;
+
+    const isHealth = /(sa[úu]de|health|clinic|cl[ií]nica|farm[áa]cia|pharmacy)/.test(cat);
+    if (isHealth && hour >= 8 && hour < 17) return true;
+
+    return false;
+  }
+
+  private isPromoActive(meta: Record<string, unknown>, now: Date): boolean {
+    if (meta.promo || this.parseBoolean(meta.hasPromo)) return true;
+
+    const deals = Array.isArray(meta.deals) ? meta.deals : [];
+    if (deals.length > 0) return true;
+
+    const promos = Array.isArray(meta.promos) ? meta.promos : [];
+    for (const promo of promos) {
+      if (!promo || typeof promo !== 'object') continue;
+      const p = promo as Record<string, unknown>;
+      const enabled = p.isActive === undefined ? true : this.parseBoolean(p.isActive);
+      if (!enabled) continue;
+
+      const start = p.startDate ? new Date(String(p.startDate)) : null;
+      const end = p.endDate ? new Date(String(p.endDate)) : null;
+
+      if (start && Number.isNaN(start.getTime())) continue;
+      if (end && Number.isNaN(end.getTime())) continue;
+
+      if (start && now < start) continue;
+      if (end && now > end) continue;
+
+      return true;
+    }
+
+    return false;
+  }
+
+  private isSponsored(meta: Record<string, unknown>): boolean {
+    return this.parseBoolean(meta.isPatrocinado)
+      || this.parseBoolean(meta.isSponsored)
+      || this.parseBoolean(meta.sponsored)
+      || this.parseBoolean(meta.isPremium);
+  }
+
+  private formatDistance(km: number): string {
+    if (!Number.isFinite(km)) return '—';
+    if (km < 1) return `${Math.round(km * 1000)}m`;
+    return `${km.toFixed(1)}km`;
+  }
+
+  private pickNext<T extends { id: string }>(
+    source: T[],
+    used: Set<string>,
+    predicate?: (item: T) => boolean,
+  ): T | null {
+    for (const item of source) {
+      if (used.has(item.id)) continue;
+      if (predicate && !predicate(item)) continue;
+      used.add(item.id);
+      return item;
+    }
+    return null;
+  }
+
+  async getHybridHomeFeed(params: {
+    latitude: string;
+    longitude: string;
+    radiusKm?: string;
+    limit?: string;
+  }) {
+    const latitude = Number(params.latitude);
+    const longitude = Number(params.longitude);
+    const radiusKm = params.radiusKm ? Number(params.radiusKm) : 20;
+    const limit = params.limit ? Number(params.limit) : 15;
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(30, Math.floor(limit))) : 15;
+    const bufferSize = 40;
+
+    if (Number.isNaN(latitude) || Number.isNaN(longitude) || Number.isNaN(radiusKm)) {
+      throw new BadRequestException('latitude, longitude e radiusKm devem ser numéricos.');
+    }
+    if (radiusKm <= 0) {
+      throw new BadRequestException('radiusKm deve ser maior que 0.');
+    }
+
+    const radiusMeters = radiusKm * 1000;
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const buffer = await this.prisma.$queryRaw<Array<{
+      id: string;
+      name: string;
+      category: string;
+      description: string;
+      municipality: string | null;
+      metadata: Prisma.JsonValue | null;
+      latitude: number;
+      longitude: number;
+      createdAt: Date;
+      distance_meters: number;
+    }>>(
+      Prisma.sql`
+        SELECT
+          b."id",
+          b."name",
+          b."category",
+          b."description",
+          b."municipality",
+          b."metadata",
+          b."latitude",
+          b."longitude",
+          b."createdAt",
+          ST_DistanceSphere(
+            ST_MakePoint(b."longitude", b."latitude"),
+            ST_MakePoint(${longitude}, ${latitude})
+          ) AS distance_meters
+        FROM "Business" b
+        WHERE ST_DistanceSphere(
+          ST_MakePoint(b."longitude", b."latitude"),
+          ST_MakePoint(${longitude}, ${latitude})
+        ) <= ${radiusMeters}
+          AND b."isActive" = true
+        ORDER BY distance_meters ASC
+        LIMIT ${bufferSize}
+      `,
+    );
+
+    if (buffer.length === 0) {
+      return {
+        items: [],
+        meta: {
+          latitude,
+          longitude,
+          radiusKm,
+          bufferSize: 0,
+          returned: 0,
+          strategy: 'HYBRID_DYNAMIC_V1',
+        },
+      };
+    }
+
+    const businessIds = buffer.map((b) => b.id);
+
+    const trendingInteractions = new Map<string, number>();
+    const trendingReviews = new Map<string, number>();
+    const activeStatusSet = new Set<string>();
+
+    try {
+      const interactionRows = await this.prisma.userBusinessInteraction.groupBy({
+        by: ['businessId'],
+        where: {
+          businessId: { in: businessIds },
+          createdAt: { gte: sevenDaysAgo },
+        },
+        _count: { businessId: true },
+      });
+      for (const row of interactionRows) {
+        trendingInteractions.set(row.businessId, row._count.businessId);
+      }
+    } catch (error) {
+      if (!this.isSocialStorageMissing(error)) {
+        throw error;
+      }
+    }
+
+    try {
+      const reviewRows = await this.prisma.review.groupBy({
+        by: ['businessId'],
+        where: {
+          businessId: { in: businessIds },
+          createdAt: { gte: sevenDaysAgo },
+        },
+        _count: { businessId: true },
+      });
+      for (const row of reviewRows) {
+        trendingReviews.set(row.businessId, row._count.businessId);
+      }
+    } catch (error) {
+      if (!this.isReviewStorageMissing(error)) {
+        throw error;
+      }
+    }
+
+    try {
+      const activeStatusRows = await this.prisma.businessFeedPost.findMany({
+        where: {
+          businessId: { in: businessIds },
+          createdAt: { gte: oneDayAgo },
+        },
+        select: { businessId: true },
+        distinct: ['businessId'],
+      });
+
+      for (const row of activeStatusRows) {
+        activeStatusSet.add(row.businessId);
+      }
+    } catch (error) {
+      if (!this.isFeedStorageMissing(error)) {
+        throw error;
+      }
+    }
+
+    const maxDistanceKm = Math.max(...buffer.map((b) => Number(b.distance_meters || 0) / 1000), 0.1);
+    const maxTrendRaw = Math.max(
+      ...buffer.map((b) => (trendingInteractions.get(b.id) ?? 0) + (trendingReviews.get(b.id) ?? 0)),
+      1,
+    );
+
+    const ranked = buffer.map((business) => {
+      const meta = this.asMetadataObject(business.metadata);
+      const distanceKm = Number(business.distance_meters || 0) / 1000;
+      const recencyDays = (now.getTime() - new Date(business.createdAt).getTime()) / (24 * 60 * 60 * 1000);
+      const trendRaw = (trendingInteractions.get(business.id) ?? 0) + (trendingReviews.get(business.id) ?? 0);
+
+      const proximityScore = this.clamp01(1 - (distanceKm / maxDistanceKm));
+      const recencyScore = recencyDays <= 7 ? this.clamp01(1 - (recencyDays / 7)) : 0;
+      const temporalScore = this.categoryMatchesNow(String(business.category || ''), now) ? 1 : 0;
+      const engagementScore = this.clamp01(Math.log1p(trendRaw) / Math.log1p(maxTrendRaw));
+      const randomScore = Math.random();
+
+      const weightedScore =
+        proximityScore * 40 +
+        recencyScore * 20 +
+        temporalScore * 20 +
+        engagementScore * 10 +
+        randomScore * 10;
+
+      const rating = this.parseNumber(meta.rating, 0);
+      const isNew = recencyDays <= 7;
+      const hasPromo = this.isPromoActive(meta, now);
+
+      return {
+        ...business,
+        metadata: meta,
+        distanceKm,
+        distanceText: this.formatDistance(distanceKm),
+        rating,
+        isSponsored: this.isSponsored(meta),
+        hasActiveStatus: activeStatusSet.has(business.id),
+        hasPromo,
+        isNew,
+        scoreBreakdown: {
+          proximity: Number(proximityScore.toFixed(4)),
+          recency: Number(recencyScore.toFixed(4)),
+          temporal: Number(temporalScore.toFixed(4)),
+          engagement: Number(engagementScore.toFixed(4)),
+          random: Number(randomScore.toFixed(4)),
+        },
+        rankingScore: Number(weightedScore.toFixed(4)),
+      };
+    });
+
+    const distanceRank = [...ranked].sort((a, b) => {
+      if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
+      return b.rankingScore - a.rankingScore;
+    });
+
+    const ranking = [...ranked].sort((a, b) => b.rankingScore - a.rankingScore);
+    const sponsoredTemporal = ranked.filter((b) => b.isSponsored && b.scoreBreakdown.temporal > 0);
+    const sponsoredAny = ranked.filter((b) => b.isSponsored);
+
+    const shuffleLight = <T,>(items: T[]): T[] =>
+      items
+        .map((item) => ({ item, random: Math.random() }))
+        .sort((a, b) => a.random - b.random)
+        .map(({ item }) => item);
+
+    const noveltyCandidate = [...ranked]
+      .filter((b) => b.distanceKm <= 10)
+      .sort((a, b) => {
+        const t = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        if (t !== 0) return t;
+        return b.rankingScore - a.rankingScore;
+      })[0] ?? null;
+
+    const exploreCandidates = [...ranked]
+      .filter((b) => b.rating > 4.5 && b.distanceKm > 5)
+      .sort((a, b) => b.rankingScore - a.rankingScore);
+
+    const used = new Set<string>();
+    const final: Array<any> = [];
+
+    const pushFrom = (source: any[], count: number, slot: string, predicate?: (item: any) => boolean) => {
+      for (let i = 0; i < count; i += 1) {
+        const picked = this.pickNext(source, used, predicate);
+        if (!picked) break;
+        final.push({ ...picked, feedSlot: slot, position: final.length + 1 });
+      }
+    };
+
+    pushFrom(distanceRank, 4, 'UTILITY_NEARBY');
+
+    const sponsoredPool1 = sponsoredTemporal.length > 0 ? shuffleLight(sponsoredTemporal) : shuffleLight(sponsoredAny);
+    pushFrom(sponsoredPool1, 1, 'SPONSORED_1');
+
+    pushFrom(distanceRank, 2, 'UTILITY_NEARBY');
+
+    if (noveltyCandidate && !used.has(noveltyCandidate.id)) {
+      used.add(noveltyCandidate.id);
+      final.push({ ...noveltyCandidate, feedSlot: 'NOVELTY_10KM', position: final.length + 1 });
+    } else {
+      pushFrom(ranking, 1, 'NOVELTY_FALLBACK');
+    }
+
+    pushFrom(ranking, 4, 'LOCAL_EXPLORATION');
+
+    const firstSponsoredId = final.find((item) => item.feedSlot === 'SPONSORED_1')?.id;
+    const sponsoredPool2 = shuffleLight(sponsoredAny);
+    pushFrom(
+      sponsoredPool2,
+      1,
+      'SPONSORED_2',
+      (item) => item.id !== firstSponsoredId,
+    );
+
+    pushFrom(exploreCandidates, 2, 'EXPLORE_FAR_HIGH_RATING');
+
+    if (final.length < safeLimit) {
+      pushFrom(ranking, safeLimit - final.length, 'FILL_RANKING');
+    }
+
+    const items = final
+      .slice(0, safeLimit)
+      .map((item, index) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        description: item.description,
+        municipality: item.municipality,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        createdAt: item.createdAt,
+        metadata: item.metadata,
+        distanceKm: Number(item.distanceKm.toFixed(3)),
+        distanceText: item.distanceText,
+        rankingScore: item.rankingScore,
+        scoreBreakdown: item.scoreBreakdown,
+        feedSlot: item.feedSlot,
+        position: index + 1,
+        isSponsored: item.isSponsored,
+        hasActiveStatus: item.hasActiveStatus,
+        isNew: item.isNew,
+        hasPromo: item.hasPromo,
+      }));
+
+    return {
+      items,
+      meta: {
+        latitude,
+        longitude,
+        radiusKm,
+        bufferSize: buffer.length,
+        returned: items.length,
+        strategy: 'HYBRID_DYNAMIC_V1',
+        weights: {
+          proximity: 0.4,
+          recency: 0.2,
+          temporal: 0.2,
+          engagement: 0.1,
+          random: 0.1,
+        },
+      },
+    };
+  }
+
   private isStorageMissing(error: unknown, needles: string[] = []): boolean {
     const maybePrismaError = error as {
       code?: string;

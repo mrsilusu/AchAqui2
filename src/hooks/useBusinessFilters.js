@@ -169,7 +169,22 @@ export function useBusinessFilters(businesses, isBusinessMode) {
     const hasFilters = !!(searchWhat.trim() || activeFilter !== 'all' || activeCategoryId ||
       priceFilter !== 'all' || distanceFilter !== 'all' || selectedAmenities.length > 0 ||
       sortBy !== 'recommended');
-    return hasFilters ? sorted : seededShuffle(sorted, Math.floor(shuffleSeed * 2147483647));
+
+    if (hasFilters) return sorted;
+
+    const hasDistanceData = sorted.some((b) => Number.isFinite(b?.distance));
+    if (!hasDistanceData) {
+      return seededShuffle(sorted, Math.floor(shuffleSeed * 2147483647));
+    }
+
+    return [...sorted].sort((a, b2) => {
+      const ad = Number.isFinite(a?.distance) ? a.distance : Number.POSITIVE_INFINITY;
+      const bd = Number.isFinite(b2?.distance) ? b2.distance : Number.POSITIVE_INFINITY;
+      if (ad !== bd) return ad - bd;
+
+      if (b2.isPremium !== a.isPremium) return b2.isPremium ? 1 : -1;
+      return (b2.recommendationScore || 0) - (a.recommendationScore || 0);
+    });
   }, [
     businesses, searchWhat, activeFilter, sortBy, activeCategoryId,
     priceFilter, distanceFilter, selectedAmenities, includeClosed, isBusinessMode,

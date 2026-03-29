@@ -64,6 +64,16 @@ import { backendApi } from '../../lib/backendApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const FEED_SLOT_LABEL = {
+  SPONSORED_1: 'Patrocinado',
+  SPONSORED_2: 'Patrocinado',
+  NOVELTY_10KM: 'Novidade',
+  NOVELTY_FALLBACK: 'Novidade',
+  EXPLORE_FAR_HIGH_RATING: 'Explorar',
+  LOCAL_EXPLORATION: 'Local',
+  UTILITY_NEARBY: 'Perto de Ti',
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SKELETON — shimmer pulsante enquanto os dados carregam
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,6 +175,7 @@ const BusinessListCell = React.memo(function BusinessListCell({
   business, bookmarked, isComparing, onPress, onToggleBookmark, onToggleCompare,
 }) {
   const b = business;
+  const slotLabel = FEED_SLOT_LABEL[b.feedSlot] || null;
   return (
     <TouchableOpacity style={hS.listCell} onPress={() => onPress(b)} activeOpacity={0.8}>
       <View style={hS.listCellImage}>
@@ -210,6 +221,30 @@ const BusinessListCell = React.memo(function BusinessListCell({
         </View>
         <Text style={hS.listCellCategory} numberOfLines={1}>{b.subcategory}</Text>
         {b.address && <Text style={hS.listCellAddress} numberOfLines={1}>{b.address}</Text>}
+        {(slotLabel || b.hasActiveStatus || b.isNew || b.hasPromo) && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>
+            {slotLabel && (
+              <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>{slotLabel}</Text>
+              </View>
+            )}
+            {b.hasActiveStatus && (
+              <View style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#047857' }}>Status</Text>
+              </View>
+            )}
+            {b.isNew && (
+              <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FDBA74', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#C2410C' }}>Novo</Text>
+              </View>
+            )}
+            {b.hasPromo && (
+              <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#B91C1C' }}>Promo</Text>
+              </View>
+            )}
+          </View>
+        )}
         {(b.amenities || []).length > 0 && (
           <View style={hS.amenitiesRow}>
             {b.amenities.slice(0, 3).map(a => (
@@ -388,6 +423,10 @@ export const HomeModule = React.memo(function HomeModule({
   useEffect(() => () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); }, []);
 
   const unreadNotifs = notifications.filter(n => !n.read).length;
+  const isHybridFeed = useMemo(
+    () => businesses.some((b) => typeof b.feedSlot === 'string' && b.feedSlot.length > 0),
+    [businesses],
+  );
 
   const SPONSORED = useMemo(
     () => (featuredBusinesses.length > 0 ? featuredBusinesses : businesses)
@@ -405,6 +444,10 @@ export const HomeModule = React.memo(function HomeModule({
   );
 
   const interleavedItems = useMemo(() => {
+    if (isHybridFeed) {
+      return businesses.map((b) => ({ type: 'biz', b }));
+    }
+
     const items = [];
     for (let i = 0; i < businesses.length; i += PREMIUM_EVERY) {
       businesses.slice(i, i + PREMIUM_EVERY).forEach(b => items.push({ type: 'biz', b }));
@@ -413,7 +456,7 @@ export const HomeModule = React.memo(function HomeModule({
       }
     }
     return items;
-  }, [businesses, premiumBiz]);
+  }, [businesses, premiumBiz, isHybridFeed]);
 
   // ── RENDER HEADER ─────────────────────────────────────────────────────────
   const renderHeader = () => (
@@ -538,20 +581,24 @@ export const HomeModule = React.memo(function HomeModule({
         item.type === 'premium'
           ? <PremiumInterstitialBlock businesses={premiumBiz} onSelectBusiness={onSelectBusiness} />
           : (
-            <BusinessListCell
-              business={item.b}
-              bookmarked={bookmarkedIds.includes(item.b.id)}
-              isComparing={compareList.includes(item.b.id)}
-              onPress={onSelectBusiness}
-              onToggleBookmark={onToggleBookmark}
-              onToggleCompare={toggleCompare}
-            />
+            isHybridFeed && (item.b.feedSlot === 'SPONSORED_1' || item.b.feedSlot === 'SPONSORED_2')
+              ? <SponsoredCard business={item.b} onPress={() => onSelectBusiness(item.b)} />
+              : (
+                <BusinessListCell
+                  business={item.b}
+                  bookmarked={bookmarkedIds.includes(item.b.id)}
+                  isComparing={compareList.includes(item.b.id)}
+                  onPress={onSelectBusiness}
+                  onToggleBookmark={onToggleBookmark}
+                  onToggleCompare={toggleCompare}
+                />
+              )
           )
       }
       ListHeaderComponent={(
         <>
           {/* Carousel patrocinado */}
-          {SPONSORED.length > 0 && (
+          {!isHybridFeed && SPONSORED.length > 0 && (
             <CarouselSection sponsored={SPONSORED} onSelectBusiness={onSelectBusiness} />
           )}
 

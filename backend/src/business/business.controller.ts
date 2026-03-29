@@ -52,6 +52,27 @@ export class BusinessController {
     });
   }
 
+  @Get('home-feed')
+  @Public()
+  getHybridHomeFeed(
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+    @Query('latitude') latitude?: string,
+    @Query('longitude') longitude?: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const resolvedLat = lat ?? latitude;
+    const resolvedLng = lng ?? longitude;
+
+    return this.businessService.getHybridHomeFeed({
+      latitude: resolvedLat as string,
+      longitude: resolvedLng as string,
+      radiusKm,
+      limit,
+    });
+  }
+
   @Get(':id')
   @Public()
   findOne(@Param('id') id: string) {
