@@ -670,6 +670,8 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
   const [searchingDoc, setSearchingDoc] = useState(false);
   const [docChecked, setDocChecked] = useState(false);
   const [blockedDoc, setBlockedDoc] = useState('');
+  const [selectedRoomId, setSelectedRoomId] = useState(null);
+  const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
 
   const normalizeDoc = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '');
 
@@ -730,6 +732,8 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
     setSearchingDoc(false);
     setDocChecked(false);
     setBlockedDoc('');
+    setSelectedRoomId(null);
+    setRoomDropdownOpen(false);
   }, [visible, booking]);
 
   const searchByDoc = async () => {
@@ -884,22 +888,23 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
     return payload;
   };
 
-  const handleSelect = (roomId) => {
+  const handleSelect = () => {
     const guestPayload = buildGuestPayload();
     if (!guestPayload) return;
-    onSelect(roomId, assignType, note.trim() || null, guestPayload);
+    onSelect(selectedRoomId, assignType, note.trim() || null, guestPayload);
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={rpS.overlay}>
-        <View style={rpS.sheet}>
+        <View style={[rpS.sheet, { maxHeight: '90%' }]}>
           <View style={rpS.header}>
             <Text style={rpS.title}>Atribuir Quarto</Text>
             <TouchableOpacity onPress={onClose}>
               <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} nestedScrollEnabled>
 
           {noClean && (
             <View style={{ backgroundColor: '#FFFBEB', borderRadius: 8, padding: 10, marginBottom: 12,
@@ -1062,38 +1067,90 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
             {noClean ? 'Todos os quartos deste tipo:' : 'Quartos disponíveis:'}
           </Text>
 
-          <ScrollView style={{ maxHeight: 260 }}>
-            {(noClean ? allRooms : cleanRooms).map(r => {
-              const st = STATUS_BADGE[r.status] || STATUS_BADGE.CLEAN;
+          {/* Room dropdown picker */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                     paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#F7F7F8',
+                     borderRadius: 8, borderWidth: 1,
+                     borderColor: selectedRoomId ? '#1565C0' : '#E5E7EB', marginBottom: 4 }}
+            onPress={() => setRoomDropdownOpen(v => !v)}
+            activeOpacity={0.8}>
+            {selectedRoomId ? (() => {
+              const sr = (noClean ? allRooms : cleanRooms).find(r => r.id === selectedRoomId);
+              const st = STATUS_BADGE[sr?.status] || STATUS_BADGE.CLEAN;
               return (
-                <TouchableOpacity key={r.id} style={rpS.roomRow}
-                  onPress={() => handleSelect(r.id)}>
-                  <View style={rpS.roomInfo}>
-                    <Text style={rpS.roomNum}>Nº {r.number}</Text>
-                    <Text style={rpS.roomFloor}>
-                      {r.roomType?.name || 'Quarto'}
-                      {r.floor != null ? ` · Piso ${r.floor}` : ''}
-                      {r.roomType?.id !== roomTypeId ? ' ⚠️' : ''}
+                <>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#111' }}>Nº {sr?.number}</Text>
+                    <Text style={{ fontSize: 12, color: '#888' }}>
+                      {sr?.roomType?.name || 'Quarto'}{sr?.floor != null ? ` · Piso ${sr?.floor}` : ''}
                     </Text>
                   </View>
-                  <View style={[rpS.roomBadge, { backgroundColor: st.bg }]}>
+                  <View style={[rpS.roomBadge, { backgroundColor: st.bg, marginRight: 8 }]}>
                     <View style={[rpS.cleanDot, { backgroundColor: st.color }]} />
                     <Text style={[rpS.cleanLabel, { color: st.color }]}>{st.label}</Text>
                   </View>
-                </TouchableOpacity>
+                  <Icon name={roomDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+                </>
               );
-            })}
-          </ScrollView>
-
-          <TouchableOpacity style={rpS.skipBtn} onPress={() => {
-            const guestPayload = buildGuestPayload();
-            if (!guestPayload) return;
-            onSkip(guestPayload);
-          }}>
-            <Text style={rpS.skipBtnText}>
-              {noClean ? 'Continuar sem atribuir quarto' : 'Atribuir automaticamente'}
-            </Text>
+            })() : (
+              <>
+                <Text style={{ fontSize: 13, color: '#9CA3AF' }}>Toque para selecionar quarto...</Text>
+                <Icon name={roomDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+              </>
+            )}
           </TouchableOpacity>
+
+          {roomDropdownOpen && (
+            <ScrollView
+              style={{ maxHeight: 200, borderWidth: 1, borderColor: '#E5E7EB',
+                       borderRadius: 8, marginBottom: 8 }}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled">
+              {(noClean ? allRooms : cleanRooms).map(r => {
+                const st = STATUS_BADGE[r.status] || STATUS_BADGE.CLEAN;
+                const isSel = r.id === selectedRoomId;
+                return (
+                  <TouchableOpacity key={r.id}
+                    style={[rpS.roomRow, { paddingHorizontal: 12,
+                                          backgroundColor: isSel ? '#EFF6FF' : '#fff' }]}
+                    onPress={() => { setSelectedRoomId(r.id); setRoomDropdownOpen(false); }}>
+                    <View style={rpS.roomInfo}>
+                      <Text style={rpS.roomNum}>Nº {r.number}</Text>
+                      <Text style={rpS.roomFloor}>
+                        {r.roomType?.name || 'Quarto'}
+                        {r.floor != null ? ` · Piso ${r.floor}` : ''}
+                        {r.roomType?.id !== roomTypeId ? ' ⚠️' : ''}
+                      </Text>
+                    </View>
+                    <View style={[rpS.roomBadge, { backgroundColor: st.bg }]}>
+                      <View style={[rpS.cleanDot, { backgroundColor: st.color }]} />
+                      <Text style={[rpS.cleanLabel, { color: st.color }]}>{st.label}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {selectedRoomId ? (
+            <TouchableOpacity
+              style={[rpS.skipBtn, { marginTop: 8, backgroundColor: '#1565C0' }]}
+              onPress={handleSelect}>
+              <Text style={[rpS.skipBtnText, { color: '#fff' }]}>✅ Confirmar Check-In</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={rpS.skipBtn} onPress={() => {
+              const guestPayload = buildGuestPayload();
+              if (!guestPayload) return;
+              onSkip(guestPayload);
+            }}>
+              <Text style={rpS.skipBtnText}>
+                {noClean ? 'Continuar sem atribuir quarto' : 'Atribuir automaticamente'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -1770,15 +1827,11 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
         ...(roomId ? { roomId, assignType, note } : {}),
         ...(sanitizedGuestPayload || {}),
       };
-      const result  = await backendApi.htCheckIn(bookingId, payload, accessToken);
-
+      // Ligar perfil existente ANTES do check-in para que o backend reconheça guestProfileId na reserva
       if (guestProfileIdToLink && businessId && accessToken) {
-        try {
-          await backendApi.linkHtGuestToBooking(guestProfileIdToLink, bookingId, businessId, accessToken);
-        } catch {
-          // Não bloquear o check-in se a ligação de perfil falhar; o perfil pode ser associado manualmente depois.
-        }
+        await backendApi.linkHtGuestToBooking(guestProfileIdToLink, bookingId, businessId, accessToken);
       }
+      const result  = await backendApi.htCheckIn(bookingId, payload, accessToken);
 
       setRoomPicker(null);
       await load(true);
