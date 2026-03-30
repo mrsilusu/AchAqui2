@@ -279,7 +279,7 @@ const piS = StyleSheet.create({
   cardWrap: { paddingHorizontal: 16, marginBottom: 10 },
 });
 
-const PREMIUM_EVERY = 15;
+const PREMIUM_EVERY = 6;
 
 const PremiumInterstitialBlock = React.memo(function PremiumInterstitialBlock({ businesses, onSelectBusiness }) {
   if (!businesses || businesses.length === 0) return null;
@@ -444,19 +444,17 @@ export const HomeModule = React.memo(function HomeModule({
   );
 
   const interleavedItems = useMemo(() => {
-    if (isHybridFeed) {
-      return businesses.map((b) => ({ type: 'biz', b }));
-    }
-
     const items = [];
-    for (let i = 0; i < businesses.length; i += PREMIUM_EVERY) {
-      businesses.slice(i, i + PREMIUM_EVERY).forEach(b => items.push({ type: 'biz', b }));
-      if (premiumBiz.length > 0 && i + PREMIUM_EVERY < businesses.length) {
-        items.push({ type: 'premium' });
+    let pIdx = 0;
+    for (let i = 0; i < businesses.length; i++) {
+      items.push({ type: 'biz', b: businesses[i] });
+      if ((i + 1) % PREMIUM_EVERY === 0 && i + 1 < businesses.length && SPONSORED.length > 0) {
+        items.push({ type: 'sponsored', b: SPONSORED[pIdx % SPONSORED.length] });
+        pIdx++;
       }
     }
     return items;
-  }, [businesses, premiumBiz, isHybridFeed]);
+  }, [businesses, SPONSORED]);
 
   // ── RENDER HEADER ─────────────────────────────────────────────────────────
   const renderHeader = () => (
@@ -576,29 +574,30 @@ export const HomeModule = React.memo(function HomeModule({
       contentContainerStyle={hS.scrollContent}
       showsVerticalScrollIndicator={false}
       data={interleavedItems}
-      keyExtractor={(item, idx) => item.type === 'premium' ? `prem-${idx}` : item.b.id}
-      renderItem={({ item, index }) =>
-        item.type === 'premium'
-          ? <PremiumInterstitialBlock businesses={premiumBiz} onSelectBusiness={onSelectBusiness} />
+      keyExtractor={(item, idx) => item.type === 'sponsored' ? `spons-${item.b.id}-${idx}` : item.b.id}
+      renderItem={({ item }) =>
+        item.type === 'sponsored'
+          ? (
+            <View style={{ marginHorizontal: 16, marginVertical: 8 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#F59E0B', marginBottom: 4, letterSpacing: 0.5 }}>✦ PATROCINADO</Text>
+              <SponsoredCard business={item.b} onPress={() => onSelectBusiness(item.b)} />
+            </View>
+          )
           : (
-            isHybridFeed && (item.b.feedSlot === 'SPONSORED_1' || item.b.feedSlot === 'SPONSORED_2')
-              ? <SponsoredCard business={item.b} onPress={() => onSelectBusiness(item.b)} />
-              : (
-                <BusinessListCell
-                  business={item.b}
-                  bookmarked={bookmarkedIds.includes(item.b.id)}
-                  isComparing={compareList.includes(item.b.id)}
-                  onPress={onSelectBusiness}
-                  onToggleBookmark={onToggleBookmark}
-                  onToggleCompare={toggleCompare}
-                />
-              )
+            <BusinessListCell
+              business={item.b}
+              bookmarked={bookmarkedIds.includes(item.b.id)}
+              isComparing={compareList.includes(item.b.id)}
+              onPress={onSelectBusiness}
+              onToggleBookmark={onToggleBookmark}
+              onToggleCompare={toggleCompare}
+            />
           )
       }
       ListHeaderComponent={(
         <>
           {/* Carousel patrocinado */}
-          {!isHybridFeed && SPONSORED.length > 0 && (
+          {SPONSORED.length > 0 && (
             <CarouselSection sponsored={SPONSORED} onSelectBusiness={onSelectBusiness} />
           )}
 
