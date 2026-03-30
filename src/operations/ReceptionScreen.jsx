@@ -670,7 +670,7 @@ function GuestProfileModal({ visible, businessId, accessToken, prefilledName, pr
 }
 
 // ─── Modal de selecção de quarto para check-in ────────────────────────────────
-function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip, onClose }) {
+function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings = [], businessId, accessToken, onSelect, onSkip, onClose }) {
   const [assignType, setAssignType] = useState('definitivo'); // 'definitivo' | 'temporario'
   const [note, setNote]             = useState('');
   const [guestName, setGuestName]   = useState('');
@@ -681,11 +681,17 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip
   const [nif, setNif] = useState('');
   const [nationality, setNationality] = useState('Angolana');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [foundGuest, setFoundGuest]     = useState(null);   // hóspede encontrado por documento
+  const [searchingDoc, setSearchingDoc] = useState(false);  // indicador de pesquisa
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setFoundGuest(null);
+      return;
+    }
     setAssignType('definitivo');
     setNote('');
+    setFoundGuest(null);
     setGuestName(booking?.guestName || booking?.user?.name || '');
     setGuestPhone(booking?.guestPhone || '');
     setDocumentType(booking?.guestProfile?.documentType || 'BI');
@@ -704,6 +710,43 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip
       setDateOfBirth('');
     }
   }, [visible, booking]);
+
+  const searchByDoc = async () => {
+    const doc = normalizeDoc(documentNumber);
+    if (!doc || !businessId || !accessToken) {
+      Alert.alert('Documento vazio', 'Introduz o número do documento antes de pesquisar.');
+      return;
+    }
+    setSearchingDoc(true);
+    try {
+      const res = await backendApi.getHtGuests(businessId, accessToken, doc);
+      const exact = (Array.isArray(res) ? res : []).find(
+        g => normalizeDoc(g.documentNumber || '') === doc,
+      );
+      if (exact) {
+        setFoundGuest(exact);
+        setGuestName(exact.fullName || exact.name || '');
+        setGuestPhone(exact.phone || '');
+        setDocumentType(exact.documentType || 'BI');
+        setNationality(exact.nationality || 'Angolana');
+        if (exact.dateOfBirth) {
+          const d = new Date(exact.dateOfBirth);
+          if (!Number.isNaN(d.getTime())) {
+            setDateOfBirth(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
+          }
+        }
+        if (exact.companyName) setCompanyName(exact.companyName);
+        if (exact.nif) setNif(exact.nif);
+      } else {
+        setFoundGuest(null);
+        Alert.alert('Não encontrado', 'Nenhum cadastro com este número de documento. Preenche os dados manualmente.');
+      }
+    } catch {
+      setFoundGuest(null);
+    } finally {
+      setSearchingDoc(false);
+    }
+  };
 
   // Quartos CLEAN do tipo correcto
   const cleanRooms = (rooms || []).filter(r =>
@@ -733,12 +776,37 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip
     return null;
   };
 
+  const normalizeDoc = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '');
+
   const buildGuestPayload = () => {
-    const doc = documentNumber.trim();
+    const doc = normalizeDoc(documentNumber);
     if (!doc) {
       Alert.alert('Documento obrigatório', 'Preenche o número do documento (BI/Passaporte/DIRE) para concluir o check-in.');
       return null;
     }
+
+    const currentBookingId = booking?.id || null;
+    const currentGuestId = booking?.guestProfile?.id || booking?.guestId || null;
+
+    const duplicate = (existingBookings || []).find((b) => {
+      if (!b || b.id === currentBookingId) return false;
+      const bDoc = normalizeDoc(b?.guestProfile?.documentNumber || b?.docNumber || '');
+      if (!bDoc || bDoc !== doc) return false;
+
+      const bGuestId = b?.guestProfile?.id || b?.guestId || null;
+      if (currentGuestId && bGuestId && currentGuestId === bGuestId) return false;
+
+      return true;
+    });
+
+    if (duplicate) {
+      Alert.alert(
+        'Documento já utilizado',
+        `O documento ${doc} já está associado ao hóspede ${duplicate?.guestName || 'existente'} (reserva ${duplicate?.id || '—'}).`,
+      );
+      return null;
+    }
+
     const payload = {
       guestName: guestName.trim() || undefined,
       guestPhone: guestPhone.trim() || undefined,
@@ -748,6 +816,7 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip
       nif: nif.trim() || undefined,
       nationality: nationality.trim() || undefined,
       dateOfBirth: toIsoDate(dateOfBirth),
+      guestId: foundGuest?.id || undefined,
     };
     if (dateOfBirth.trim() && !payload.dateOfBirth) {
       Alert.alert('Data inválida', 'A data de nascimento deve estar no formato DD/MM/AAAA ou AAAA-MM-DD.');
@@ -850,17 +919,56 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, onSelect, onSkip
                 autoCorrect={false}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 2 }}>
               <Text style={rpS.fieldLabel}>Nº documento *</Text>
-              <TextInput
-                style={[rpS.dateInput, { marginTop: 0 }]}
-                placeholder="Obrigatório"
-                value={documentNumber}
-                onChangeText={setDocumentNumber}
-                autoCorrect={false}
-              />
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TextInput
+                  style={[rpS.dateInput, { flex: 1, marginTop: 0 }]}
+                  placeholder="Obrigatório"
+                  value={documentNumber}
+                  onChangeText={(v) => { setDocumentNumber(v); setFoundGuest(null); }}
+                  autoCorrect={false}
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                  style={[rpS.skipBtn, { marginTop: 0, paddingHorizontal: 12, paddingVertical: 0,
+                                         backgroundColor: '#1565C0', minWidth: 60, alignItems: 'center', justifyContent: 'center' }]}
+                  onPress={searchByDoc}
+                  disabled={searchingDoc}>
+                  {searchingDoc
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={[rpS.skipBtnText, { color: '#fff', fontSize: 11 }]}>🔍 Buscar</Text>}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
+
+          {/* Card de hóspede encontrado */}
+          {foundGuest && (
+            <View style={{ backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10,
+                           borderWidth: 1, borderColor: '#BBF7D0', marginBottom: 10,
+                           flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#15803D' }}>
+                  ✅ Cadastro encontrado
+                </Text>
+                <Text style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>
+                  {foundGuest.fullName || foundGuest.name || '—'}
+                </Text>
+                {!!foundGuest.phone && (
+                  <Text style={{ fontSize: 11, color: '#166534' }}>{foundGuest.phone}</Text>
+                )}
+                {!!foundGuest.bookings?.length && (
+                  <Text style={{ fontSize: 11, color: '#166534' }}>
+                    {foundGuest.bookings.length} estadia{foundGuest.bookings.length !== 1 ? 's' : ''} anteriore{foundGuest.bookings.length !== 1 ? 's' : 'r'}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setFoundGuest(null)}>
+                <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>✕ Limpar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
             <View style={{ flex: 1 }}>
@@ -1873,6 +1981,9 @@ Deseja continuar mesmo assim (quarto em uso)?`,
           rooms={physicalRooms}
           roomTypeId={roomPicker.roomTypeId}
           booking={roomPicker.booking}
+          existingBookings={[...(data.arrivals || []), ...(data.departures || []), ...(data.guests || [])]}
+          businessId={businessId}
+          accessToken={accessToken}
           onSelect={(roomId, assignType, note, guestPayload) => doCheckIn(roomPicker.bookingId, roomId, assignType, note, guestPayload)}
           onSkip={(guestPayload) => executeCheckIn(roomPicker.bookingId, null, 'definitivo', null, guestPayload)}
           onClose={() => setRoomPicker(null)}
