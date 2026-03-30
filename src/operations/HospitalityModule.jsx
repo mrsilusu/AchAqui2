@@ -98,6 +98,15 @@ export function parseDate(str) {
   return new Date(str);
 }
 
+function toD(str) {
+  if (!str) return null;
+  if (str.includes('/')) {
+    const [d, m, y] = str.split('/').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(str);
+}
+
 export function fmtDate(d) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
@@ -423,6 +432,38 @@ function BookingModal({
       return;
     }
 
+    const duplicate = (activeBookings || []).find(b => {
+      const bPhone = sanitizeInput(b?.guestPhone || '', 30);
+      const bDoc = sanitizeInput((b?.docNumber || '').trim().toUpperCase(), 50);
+      const sameGuest =
+        (sPhone && bPhone === sPhone) ||
+        (sDocNumber && bDoc && bDoc === sDocNumber);
+      const sameType = b.roomTypeId === room.id;
+      const inStart = toD(b.checkIn);
+      const inEnd = toD(b.checkOut);
+      const reqStart = toD(checkIn);
+      const reqEnd = toD(checkOut);
+      if (!inStart || !inEnd || !reqStart || !reqEnd) return false;
+      const overlap = inStart < reqEnd && inEnd > reqStart;
+      const active = !['cancelled', 'CANCELLED', 'rejected'].includes(b.status);
+      return sameGuest && sameType && overlap && active;
+    });
+
+    if (duplicate) {
+      await new Promise(resolve =>
+        Alert.alert(
+          '⚠️ Possível duplicado',
+          `Já existe uma reserva para este hóspede (${duplicate.guestName}) de ${duplicate.checkIn} a ${duplicate.checkOut}.\n\nDeseja criar mesmo assim?`,
+          [
+            { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Criar mesmo assim', onPress: () => resolve(true) },
+          ],
+        ),
+      ).then(confirmed => {
+        if (!confirmed) throw new Error('CANCELLED_BY_USER');
+      });
+    }
+
     if (typeof backendApi.checkRoomAvailability === 'function') {
       try {
         const avail = await backendApi.checkRoomAvailability(
@@ -467,7 +508,9 @@ function BookingModal({
     };
     await onConfirm(booking);
     } catch (e) {
-      Alert.alert('Erro', e?.message || 'Não foi possível criar a reserva.');
+      if (e?.message !== 'CANCELLED_BY_USER') {
+        Alert.alert('Erro', e?.message || 'Não foi possível criar a reserva.');
+      }
     } finally {
       setSaving(false);
     }
