@@ -1400,21 +1400,34 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
     if (!startDate || !endDate || !roomTypeId || !businessId) return;
     const toISO = (str) => {
       if (!str) return null;
-      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
-      return new Date(str).toISOString();
+      try {
+        if (str.includes('/')) {
+          const [d, m, y] = str.split('/').map(Number);
+          const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+          return isNaN(dt.getTime()) ? null : dt.toISOString();
+        }
+        const dt = new Date(str);
+        return isNaN(dt.getTime()) ? null : dt.toISOString();
+      } catch { return null; }
     };
+    const startISO = toISO(startDate);
+    const endISO   = toISO(endDate);
+    if (!startISO || !endISO) return;
     setCheckingAvail(true);
     setAvailabilityData(null);
     setSuggestedDate(null);
-    backendApi.getAvailability(businessId, roomTypeId, toISO(startDate), toISO(endDate))
+    backendApi.getAvailability(businessId, roomTypeId, startISO, endISO)
       .then(data => {
         setAvailabilityData(data);
         setCheckingAvail(false);
         if (!data?.available && data?.nextAvailableDate) {
-          const nextDateISO = data.nextAvailableDate;
-          const nextD = new Date(nextDateISO);
-          const nextFmt = `${String(nextD.getDate()).padStart(2,'0')}/${String(nextD.getMonth()+1).padStart(2,'0')}/${nextD.getFullYear()}`;
-          setSuggestedDate(nextFmt);
+          try {
+            const nextD = new Date(data.nextAvailableDate);
+            if (!isNaN(nextD.getTime())) {
+              const nextFmt = `${String(nextD.getUTCDate()).padStart(2,'0')}/${String(nextD.getUTCMonth()+1).padStart(2,'0')}/${nextD.getUTCFullYear()}`;
+              setSuggestedDate(nextFmt);
+            }
+          } catch { /* data inválida — ignorar */ }
         }
       })
       .catch(() => { setAvailabilityData(null); setCheckingAvail(false); });
@@ -1606,62 +1619,61 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
                 )}
 
                 {/* Validação de disponibilidade */}
-                {nightsCount > 0 && (
+                {nightsCount > 0 ? (
                   <View style={{ marginTop: 12 }}>
-                    {checkingAvail && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    {checkingAvail ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center',
                                      backgroundColor: '#F7F7F8', borderRadius: 10, padding: 14 }}>
-                        <ActivityIndicator size="small" color="#1565C0" />
+                        <ActivityIndicator size="small" color="#1565C0" style={{ marginRight: 10 }} />
                         <Text style={{ fontSize: 13, color: '#555' }}>A verificar disponibilidade...</Text>
                       </View>
-                    )}
-                    {!checkingAvail && availabilityData && availabilityData.available && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                                     backgroundColor: '#F0FDF4', borderRadius: 10, padding: 14,
-                                     borderWidth: 1, borderColor: '#BBF7D0' }}>
-                        <Text style={{ fontSize: 18 }}>✅</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#166534', flex: 1 }}>
-                          Quarto disponível para as datas seleccionadas
-                        </Text>
-                      </View>
-                    )}
-                    {!checkingAvail && availabilityData && !availabilityData.available && (
-                      <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 14,
-                                     borderWidth: 1, borderColor: '#FECACA' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <Text style={{ fontSize: 18 }}>❌</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#DC2626' }}>
-                            Sem disponibilidade para estas datas
+                    ) : availabilityData ? (
+                      availabilityData.available ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center',
+                                       backgroundColor: '#F0FDF4', borderRadius: 10, padding: 14,
+                                       borderWidth: 1, borderColor: '#BBF7D0' }}>
+                          <Text style={{ fontSize: 18, marginRight: 10 }}>✅</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#166534', flex: 1 }}>
+                            Quarto disponível para as datas seleccionadas
                           </Text>
                         </View>
-                        {suggestedDate && (
-                          <View>
-                            <Text style={{ fontSize: 12, color: '#991B1B', marginBottom: 8 }}>
-                              Próxima data disponível: <Text style={{ fontWeight: '700' }}>{suggestedDate}</Text>
+                      ) : (
+                        <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 14,
+                                       borderWidth: 1, borderColor: '#FECACA' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                            <Text style={{ fontSize: 18, marginRight: 8 }}>❌</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#DC2626' }}>
+                              Sem disponibilidade para estas datas
                             </Text>
-                            <TouchableOpacity
-                              style={{ backgroundColor: '#DC2626', borderRadius: 8, padding: 10, alignItems: 'center' }}
-                              onPress={() => {
-                                const [d,m,y] = suggestedDate.split('/').map(Number);
-                                const nextStart = new Date(y,m-1,d);
-                                const daysNights = nightsCount || 1;
-                                const nextEnd = new Date(nextStart);
-                                nextEnd.setDate(nextEnd.getDate() + daysNights);
-                                const fmtE = dd => `${String(dd.getDate()).padStart(2,'0')}/${String(dd.getMonth()+1).padStart(2,'0')}/${dd.getFullYear()}`;
-                                setStartDate(suggestedDate);
-                                setEndDate(fmtE(nextEnd));
-                                setSuggestedDate(null);
-                              }}>
-                              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
-                                Usar {suggestedDate} como entrada
-                              </Text>
-                            </TouchableOpacity>
                           </View>
-                        )}
-                      </View>
-                    )}
+                          {suggestedDate ? (
+                            <View>
+                              <Text style={{ fontSize: 12, color: '#991B1B', marginBottom: 8 }}>
+                                {'Próxima data disponível: '}
+                                <Text style={{ fontWeight: '700' }}>{suggestedDate}</Text>
+                              </Text>
+                              <TouchableOpacity
+                                style={{ backgroundColor: '#DC2626', borderRadius: 8, padding: 10, alignItems: 'center' }}
+                                onPress={() => {
+                                  const [d, m, y] = suggestedDate.split('/').map(Number);
+                                  const nextStart = new Date(y, m - 1, d);
+                                  const nextEnd   = new Date(y, m - 1, d + (nightsCount || 1));
+                                  const fmtD = dt => `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+                                  setStartDate(suggestedDate);
+                                  setEndDate(fmtD(nextEnd));
+                                  setSuggestedDate(null);
+                                }}>
+                                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                                  {'Usar ' + suggestedDate + ' como entrada'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+                        </View>
+                      )
+                    ) : null}
                   </View>
-                )}
+                ) : null}
               </>
             )}
 
