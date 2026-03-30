@@ -875,8 +875,7 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
       nif: nif.trim() || undefined,
       nationality: nationality.trim() || undefined,
       dateOfBirth: toIsoDate(dateOfBirth),
-      guestProfileId: foundGuest?.id || undefined,
-      guestId: foundGuest?.id || undefined,
+      _linkGuestProfileId: foundGuest?.id || undefined,
     };
     if (dateOfBirth.trim() && !payload.dateOfBirth) {
       Alert.alert('Data inválida', 'A data de nascimento deve estar no formato DD/MM/AAAA ou AAAA-MM-DD.');
@@ -1763,11 +1762,24 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const executeCheckIn = useCallback(async (bookingId, roomId, assignType, note, guestPayload = null) => {
     setActionLoading(bookingId);
     try {
+      const guestProfileIdToLink = guestPayload?._linkGuestProfileId || null;
+      const sanitizedGuestPayload = guestPayload
+        ? Object.fromEntries(Object.entries(guestPayload).filter(([k]) => !k.startsWith('_')))
+        : null;
       const payload = {
         ...(roomId ? { roomId, assignType, note } : {}),
-        ...(guestPayload || {}),
+        ...(sanitizedGuestPayload || {}),
       };
       const result  = await backendApi.htCheckIn(bookingId, payload, accessToken);
+
+      if (guestProfileIdToLink && businessId && accessToken) {
+        try {
+          await backendApi.linkHtGuestToBooking(guestProfileIdToLink, bookingId, businessId, accessToken);
+        } catch {
+          // Não bloquear o check-in se a ligação de perfil falhar; o perfil pode ser associado manualmente depois.
+        }
+      }
+
       setRoomPicker(null);
       await load(true);
       if (result?.earlyCheckIn?.daysEarly > 0) {
@@ -1788,7 +1800,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
     } finally {
       if (alive.current) setActionLoading(null);
     }
-  }, [accessToken, load]);
+  }, [accessToken, businessId, load]);
 
   // Ponto de entrada do check-in:
   // - Se early (chegada antes da data prevista): pede confirmacao com custo estimado
