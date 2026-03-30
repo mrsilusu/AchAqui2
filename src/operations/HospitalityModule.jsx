@@ -306,13 +306,27 @@ export function CalendarPicker({ value, onChange, label, minDate }) {
 // BOOKING MODAL — 2 passos: datas/quartos → dados do hóspede
 // SF_H2: implementação completa
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingModal({ visible, room, ownerRoom, business, activeBookings, onClose, onConfirm }) {
+function BookingModal({
+  visible,
+  room,
+  ownerRoom,
+  business,
+  activeBookings,
+  onClose,
+  onConfirm,
+  initialCheckIn = '',
+  initialCheckOut = '',
+  initialAdults = 1,
+  initialChildren = 0,
+}) {
+  const ctx = useContext(AppContext);
+  const accessToken = ctx?.accessToken;
   const [step, setStep]               = useState(1);
-  const [checkIn, setCheckIn]         = useState('');
-  const [checkOut, setCheckOut]       = useState('');
+  const [checkIn, setCheckIn]         = useState(initialCheckIn || '');
+  const [checkOut, setCheckOut]       = useState(initialCheckOut || '');
   const [roomQty, setRoomQty]         = useState(1);
-  const [adults, setAdults]           = useState(1);
-  const [children, setChildren]       = useState(0);
+  const [adults, setAdults]           = useState(initialAdults || 1);
+  const [children, setChildren]       = useState(initialChildren || 0);
   const [guestName, setGuestName]     = useState('');
   const [guestPhone, setGuestPhone]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
@@ -321,7 +335,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const nights = countNights(checkIn, checkOut);
   const minAvailData = (checkIn && checkOut && room && ownerRoom)
     ? getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
-    : { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+    : { minAvailable: 0, bottleneckDate: null };
 
   const { minAvailable, bottleneckDate } = minAvailData;
   const effectiveQty   = Math.min(roomQty, Math.max(1, minAvailable));
@@ -349,10 +363,15 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       setStep(1); setCheckIn(''); setCheckOut(''); setRoomQty(1);
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
       setSpecialRequest(''); setPayOnArrival(false);
+      return;
     }
-  }, [visible]);
+    if (initialCheckIn) setCheckIn(initialCheckIn);
+    if (initialCheckOut) setCheckOut(initialCheckOut);
+    setAdults(initialAdults || 1);
+    setChildren(initialChildren || 0);
+  }, [visible, initialCheckIn, initialCheckOut, initialAdults, initialChildren]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const sName  = sanitizeInput(guestName, 100);
     const sPhone = sanitizeInput(guestPhone, 30);
     const sReq   = sanitizeInput(specialRequest, 300);
@@ -362,6 +381,28 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
     if (nights < (room?.minNights || 1)) {
       Alert.alert('Erro', `Estadia mínima: ${room.minNights} noite${room.minNights !== 1 ? 's' : ''}.`);
       return;
+    }
+
+    if (typeof backendApi.checkRoomAvailability === 'function') {
+      try {
+        const avail = await backendApi.checkRoomAvailability(
+          room.id,
+          checkIn,
+          checkOut,
+          business.id,
+          accessToken,
+        );
+        if (!avail?.available) {
+          Alert.alert(
+            'Quarto indisponível',
+            'Este quarto foi reservado enquanto preenchias o formulário.\nPor favor selecciona outras datas.',
+          );
+          setStep(1);
+          return;
+        }
+      } catch (_) {
+        // Se a API falhar, deixar prosseguir — o backend rejeitará se houver conflito
+      }
     }
 
     const booking = {
@@ -377,7 +418,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       status: payOnArrival ? 'confirmed_unpaid' : 'confirmed',
       createdAt: new Date().toISOString().slice(0, 10),
     };
-    onConfirm(booking);
+    await onConfirm(booking);
   };
 
   if (!room) return null;
@@ -437,6 +478,13 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               {/* Indisponível */}
+              {!ownerRoom && checkIn && checkOut && (
+                <View style={hS.infoBox}>
+                  <Text style={hS.infoBoxText}>
+                    ⏳ A verificar disponibilidade...
+                  </Text>
+                </View>
+              )}
               {isUnavailable && (
                 <View style={hS.unavailBox}>
                   <Text style={hS.unavailTitle}>🔴 Indisponível nestas datas</Text>
@@ -536,8 +584,8 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               <TouchableOpacity
-                style={[hS.primaryBtn, (isUnavailable || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
-                disabled={isUnavailable || nights <= 0 || nights < (room.minNights || 1)}
+                style={[hS.primaryBtn, (isUnavailable || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
+                disabled={isUnavailable || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)}
                 onPress={() => setStep(2)}>
                 <Text style={hS.primaryBtnText}>Continuar →</Text>
               </TouchableOpacity>
@@ -1276,6 +1324,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           ownerRoom={ownerRooms[bookingRoom?.id] || null}
           business={business}
           activeBookings={activeBookings}
+          initialCheckIn={checkIn}
+          initialCheckOut={checkOut}
+          initialAdults={guestCount || 1}
+          initialChildren={0}
           onClose={() => setShowBookingModal(false)}
           onConfirm={handleConfirmBooking}
         />

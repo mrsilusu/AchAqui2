@@ -220,6 +220,11 @@ export const backendApi = {
   // ─── HT — Quartos físicos ───────────────────────────────────────────────────
   getHtRooms: (businessId, accessToken) =>
     apiRequest(`/ht/rooms?businessId=${businessId}`, { accessToken }),
+  checkRoomAvailability: (roomTypeId, checkIn, checkOut, businessId, accessToken) =>
+    apiRequest(
+      `/ht/rooms/availability?roomTypeId=${encodeURIComponent(roomTypeId)}&checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&businessId=${encodeURIComponent(businessId)}`,
+      { accessToken },
+    ),
   createHtRoom: (payload, accessToken) =>
     apiRequest('/ht/rooms', { method: 'POST', body: payload, accessToken }),
   updateHtRoom: (roomId, payload, accessToken) =>
