@@ -6,14 +6,20 @@ export class HtRoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async assertOwnership(businessId: string, ownerId: string) {
-    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
+    const scopedBusinessId = String(businessId || '').trim();
+    if (!scopedBusinessId) {
+      throw new BadRequestException('businessId é obrigatório.');
+    }
+
+    const b = await this.prisma.business.findFirst({ where: { id: scopedBusinessId, ownerId } });
     if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    return scopedBusinessId;
   }
 
   async getAll(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+    const scopedBusinessId = await this.assertOwnership(businessId, ownerId);
     return this.prisma.htRoom.findMany({
-      where: { businessId },
+      where: { businessId: scopedBusinessId },
       include: {
         roomType: { select: { id: true, name: true, pricePerNight: true } },
         bookings: {
@@ -45,15 +51,15 @@ export class HtRoomsService {
   }
 
   async create(ownerId: string, dto: { businessId: string; roomTypeId: string; number: string; floor?: number; notes?: string }) {
-    await this.assertOwnership(dto.businessId, ownerId);
-    const rt = await this.prisma.htRoomType.findFirst({ where: { id: dto.roomTypeId, businessId: dto.businessId } });
+    const scopedBusinessId = await this.assertOwnership(dto.businessId, ownerId);
+    const rt = await this.prisma.htRoomType.findFirst({ where: { id: dto.roomTypeId, businessId: scopedBusinessId } });
     if (!rt) throw new NotFoundException('Tipo de quarto não encontrado.');
     // Verificar número único no estabelecimento
-    const exists = await this.prisma.htRoom.findFirst({ where: { businessId: dto.businessId, number: dto.number } });
+    const exists = await this.prisma.htRoom.findFirst({ where: { businessId: scopedBusinessId, number: dto.number } });
     if (exists) throw new BadRequestException(`Quarto nº ${dto.number} já existe neste estabelecimento.`);
 
     return this.prisma.htRoom.create({
-      data: { businessId: dto.businessId, roomTypeId: dto.roomTypeId, number: dto.number, floor: dto.floor ?? 1, notes: dto.notes ?? null, status: 'CLEAN' },
+      data: { businessId: scopedBusinessId, roomTypeId: dto.roomTypeId, number: dto.number, floor: dto.floor ?? 1, notes: dto.notes ?? null, status: 'CLEAN' },
       include: { roomType: { select: { id: true, name: true } } },
     });
   }
