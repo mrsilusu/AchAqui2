@@ -1410,28 +1410,78 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
         return isNaN(dt.getTime()) ? null : dt.toISOString();
       } catch { return null; }
     };
+    const parseDDMMYYYY = (str) => {
+      const s = String(str || '').trim();
+      if (!s.includes('/')) return null;
+      const [d, m, y] = s.split('/').map(Number);
+      if (!d || !m || !y) return null;
+      const dt = new Date(y, m - 1, d);
+      return isNaN(dt.getTime()) ? null : dt;
+    };
+    const fmtDDMMYYYY = (dt) =>
+      `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+    const normalizeSuggested = (raw) => {
+      const s = String(raw || '').trim();
+      if (!s) return null;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+      const dt = new Date(s);
+      if (isNaN(dt.getTime())) return null;
+      return `${String(dt.getUTCDate()).padStart(2, '0')}/${String(dt.getUTCMonth() + 1).padStart(2, '0')}/${dt.getUTCFullYear()}`;
+    };
+
     const startISO = toISO(startDate);
     const endISO   = toISO(endDate);
     if (!startISO || !endISO) return;
+
+    let cancelled = false;
     setCheckingAvail(true);
     setAvailabilityData(null);
     setSuggestedDate(null);
-    backendApi.getAvailability(businessId, roomTypeId, startISO, endISO)
-      .then(data => {
+    (async () => {
+      try {
+        const data = await backendApi.getAvailability(businessId, roomTypeId, startISO, endISO);
+        if (cancelled) return;
         setAvailabilityData(data);
-        setCheckingAvail(false);
-        if (!data?.available && data?.nextAvailableDate) {
-          try {
-            const nextD = new Date(data.nextAvailableDate);
-            if (!isNaN(nextD.getTime())) {
-              const nextFmt = `${String(nextD.getUTCDate()).padStart(2,'0')}/${String(nextD.getUTCMonth()+1).padStart(2,'0')}/${nextD.getUTCFullYear()}`;
-              setSuggestedDate(nextFmt);
+
+        if (!data?.available) {
+          // Preferir sugestão do backend (já pode vir em DD/MM/AAAA)
+          let next = normalizeSuggested(data?.nextAvailableDate);
+
+          // Fallback: procurar a próxima janela disponível até 60 dias
+          if (!next) {
+            const startBase = parseDDMMYYYY(startDate);
+            const stayNights = Math.max(1, nightsCount || 1);
+            if (startBase) {
+              for (let i = 1; i <= 60; i++) {
+                const probeStart = new Date(startBase);
+                probeStart.setDate(probeStart.getDate() + i);
+                const probeEnd = new Date(probeStart);
+                probeEnd.setDate(probeEnd.getDate() + stayNights);
+                const probeStartISO = toISO(fmtDDMMYYYY(probeStart));
+                const probeEndISO = toISO(fmtDDMMYYYY(probeEnd));
+                if (!probeStartISO || !probeEndISO) continue;
+                // eslint-disable-next-line no-await-in-loop
+                const probe = await backendApi.getAvailability(businessId, roomTypeId, probeStartISO, probeEndISO);
+                if (cancelled) return;
+                if (probe?.available) {
+                  next = fmtDDMMYYYY(probeStart);
+                  break;
+                }
+              }
             }
-          } catch { /* data inválida — ignorar */ }
+          }
+
+          setSuggestedDate(next || null);
         }
-      })
-      .catch(() => { setAvailabilityData(null); setCheckingAvail(false); });
-  }, [startDate, endDate, roomTypeId, businessId]);
+      } catch {
+        if (!cancelled) setAvailabilityData(null);
+      } finally {
+        if (!cancelled) setCheckingAvail(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [startDate, endDate, roomTypeId, businessId, nightsCount]);
 
   const selType = roomTypes.find(rt => rt.id === roomTypeId);
   const ppn     = selType?.pricePerNight ?? 0;
