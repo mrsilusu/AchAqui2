@@ -683,15 +683,21 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [foundGuest, setFoundGuest]     = useState(null);   // hóspede encontrado por documento
   const [searchingDoc, setSearchingDoc] = useState(false);  // indicador de pesquisa
+  const [pendingGuest, setPendingGuest] = useState(null);   // encontrado na BD, aguarda confirmação
+  const [isNewProfile, setIsNewProfile] = useState(false);  // doc verificado → novo perfil
 
   useEffect(() => {
     if (!visible) {
       setFoundGuest(null);
+      setPendingGuest(null);
+      setIsNewProfile(false);
       return;
     }
     setAssignType('definitivo');
     setNote('');
     setFoundGuest(null);
+    setPendingGuest(null);
+    setIsNewProfile(false);
     setGuestName(booking?.guestName || booking?.user?.name || '');
     setGuestPhone(booking?.guestPhone || '');
     setDocumentType(booking?.guestProfile?.documentType || 'BI');
@@ -709,7 +715,34 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
     } else {
       setDateOfBirth('');
     }
+    // Se a reserva já tem um perfil registado na BD, pré-associar
+    if (booking?.guestProfile?.id) setFoundGuest(booking.guestProfile);
   }, [visible, booking]);
+
+    // Helpers ─────────────────────────────────────────────────────────────────
+    const namesMatch = (entered, dbName) => {
+      const norm = s =>
+        String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z ]/g, '').trim();
+      const eTok = norm(entered).split(/\s+/).filter(Boolean);
+      const dTok = norm(dbName).split(/\s+/).filter(Boolean);
+      if (eTok.length < 2 || dTok.length < 1) return false; // precisa 1º e último nome
+      return eTok[0] === dTok[0] && eTok[eTok.length - 1] === dTok[dTok.length - 1];
+    };
+
+    const fillFromGuest = (g) => {
+      setGuestName(g.fullName || g.name || '');
+      if (g.phone) setGuestPhone(g.phone);
+      setDocumentType(g.documentType || 'BI');
+      setNationality(g.nationality || 'Angolana');
+      if (g.companyName) setCompanyName(g.companyName);
+      if (g.nif) setNif(g.nif);
+      if (g.dateOfBirth) {
+        const d = new Date(g.dateOfBirth);
+        if (!Number.isNaN(d.getTime())) {
+          setDateOfBirth(`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`);
+        }
+      }
+    };
 
   const searchByDoc = async () => {
     const doc = normalizeDoc(documentNumber);
@@ -724,28 +757,48 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
         g => normalizeDoc(g.documentNumber || '') === doc,
       );
       if (exact) {
-        setFoundGuest(exact);
-        setGuestName(exact.fullName || exact.name || '');
-        setGuestPhone(exact.phone || '');
-        setDocumentType(exact.documentType || 'BI');
-        setNationality(exact.nationality || 'Angolana');
-        if (exact.dateOfBirth) {
-          const d = new Date(exact.dateOfBirth);
-          if (!Number.isNaN(d.getTime())) {
-            setDateOfBirth(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
-          }
+        // Caminho A: verificar se o nome inserido corresponde ao do cadastro (1º e último token)
+        const enteredName = guestName.trim();
+        if (enteredName && namesMatch(enteredName, exact.fullName || exact.name || '')) {
+          // Nome coincide  → associar automaticamente
+          setFoundGuest(exact);
+          setPendingGuest(null);
+          setIsNewProfile(false);
+          fillFromGuest(exact);
+        } else {
+          // Caminho B: encontrado mas sem confirmação de nome → aguardar decisão do utilizador
+          setPendingGuest(exact);
+          setFoundGuest(null);
+          setIsNewProfile(false);
         }
-        if (exact.companyName) setCompanyName(exact.companyName);
-        if (exact.nif) setNif(exact.nif);
       } else {
+        // Caminho C: documento não existe na BD → novo perfil
+        setPendingGuest(null);
         setFoundGuest(null);
-        Alert.alert('Não encontrado', 'Nenhum cadastro com este número de documento. Preenche os dados manualmente.');
+        setIsNewProfile(true);
       }
     } catch {
+      // Erro de rede – não bloquear; utilizador preenche manualmente
+      setPendingGuest(null);
       setFoundGuest(null);
+      setIsNewProfile(false);
     } finally {
       setSearchingDoc(false);
     }
+  };
+
+  const confirmAssociation = () => {
+    if (!pendingGuest) return;
+    setFoundGuest(pendingGuest);
+    fillFromGuest(pendingGuest);
+    setPendingGuest(null);
+    setIsNewProfile(false);
+  };
+
+  const rejectAssociation = () => {
+    setPendingGuest(null);
+    setFoundGuest(null);
+    setIsNewProfile(true); // prosseguir como novo perfil com os dados inseridos
   };
 
   // Quartos CLEAN do tipo correcto
@@ -782,6 +835,22 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
     const doc = normalizeDoc(documentNumber);
     if (!doc) {
       Alert.alert('Documento obrigatório', 'Preenche o número do documento (BI/Passaporte/DIRE) para concluir o check-in.');
+      return null;
+    }
+
+    // Verificação obrigatória: o documento deve ter sido pesquisado na BD
+    if (!foundGuest && !isNewProfile) {
+      if (pendingGuest) {
+        Alert.alert(
+          'Confirmação necessária',
+          'Foi encontrado um cadastro com este documento. Por favor confirma se pretendes associar ou criar um novo perfil.',
+        );
+      } else {
+        Alert.alert(
+          'Verificação obrigatória',
+          'Clica em "🔍 Buscar" para verificar o documento na base de dados antes de concluir o check-in.',
+        );
+      }
       return null;
     }
 
@@ -926,7 +995,7 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
                   style={[rpS.dateInput, { flex: 1, marginTop: 0 }]}
                   placeholder="Obrigatório"
                   value={documentNumber}
-                  onChangeText={(v) => { setDocumentNumber(v); setFoundGuest(null); }}
+                  onChangeText={(v) => { setDocumentNumber(v); setFoundGuest(null); setPendingGuest(null); setIsNewProfile(false); }}
                   autoCorrect={false}
                   autoCapitalize="characters"
                 />
@@ -943,14 +1012,53 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
             </View>
           </View>
 
-          {/* Card de hóspede encontrado */}
-          {foundGuest && (
+          {/* ── ESTADO A: Pendente de confirmação ── */}
+          {pendingGuest && (
+            <View style={{ backgroundColor: '#FFFBEB', borderRadius: 8, padding: 10,
+                           borderWidth: 1, borderColor: '#FCD34D', marginBottom: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#92400E', marginBottom: 4 }}>
+                🔍 Cadastro encontrado — confirmar associação?
+              </Text>
+              <Text style={{ fontSize: 12, color: '#78350F' }}>
+                {pendingGuest.fullName || pendingGuest.name || '—'}
+              </Text>
+              {!!pendingGuest.phone && (
+                <Text style={{ fontSize: 11, color: '#78350F' }}>{pendingGuest.phone}</Text>
+              )}
+              {!!pendingGuest.nationality && (
+                <Text style={{ fontSize: 11, color: '#78350F' }}>
+                  {pendingGuest.documentType || 'Documento'}: {pendingGuest.documentNumber} · {pendingGuest.nationality}
+                </Text>
+              )}
+              {!!pendingGuest.bookings?.length && (
+                <Text style={{ fontSize: 11, color: '#78350F', marginTop: 2 }}>
+                  {pendingGuest.bookings.length} estadia{pendingGuest.bookings.length !== 1 ? 's' : ''} anterior{pendingGuest.bookings.length !== 1 ? 'es' : ''}
+                </Text>
+              )}
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                <TouchableOpacity
+                  onPress={confirmAssociation}
+                  style={{ flex: 1, backgroundColor: '#15803D', borderRadius: 7, paddingVertical: 8, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✅ Sim, usar este perfil</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={rejectAssociation}
+                  style={{ flex: 1, backgroundColor: '#F3F4F6', borderRadius: 7, paddingVertical: 8, alignItems: 'center',
+                           borderWidth: 1, borderColor: '#D1D5DB' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#374151' }}>👤 Não, criar novo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* ── ESTADO B: Perfil associado (confirmado) ── */}
+          {foundGuest && !pendingGuest && (
             <View style={{ backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10,
                            borderWidth: 1, borderColor: '#BBF7D0', marginBottom: 10,
                            flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#15803D' }}>
-                  ✅ Cadastro encontrado
+                  ✅ Perfil associado
                 </Text>
                 <Text style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>
                   {foundGuest.fullName || foundGuest.name || '—'}
@@ -960,16 +1068,30 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
                 )}
                 {!!foundGuest.bookings?.length && (
                   <Text style={{ fontSize: 11, color: '#166534' }}>
-                    {foundGuest.bookings.length} estadia{foundGuest.bookings.length !== 1 ? 's' : ''} anteriore{foundGuest.bookings.length !== 1 ? 's' : 'r'}
+                    {foundGuest.bookings.length} estadia{foundGuest.bookings.length !== 1 ? 's' : ''} anterior{foundGuest.bookings.length !== 1 ? 'es' : ''}
                   </Text>
                 )}
               </View>
-              <TouchableOpacity onPress={() => setFoundGuest(null)}>
-                <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>✕ Limpar</Text>
+              <TouchableOpacity onPress={() => { setFoundGuest(null); setIsNewProfile(false); }}>
+                <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>✕</Text>
               </TouchableOpacity>
             </View>
           )}
 
+          {/* ── ESTADO C: Novo perfil ── */}
+          {isNewProfile && !foundGuest && !pendingGuest && (
+            <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10,
+                           borderWidth: 1, borderColor: '#BFDBFE', marginBottom: 10,
+                           flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 18 }}>👤</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#1D4ED8' }}>Novo perfil de hóspede</Text>
+                <Text style={{ fontSize: 11, color: '#1E40AF', marginTop: 2 }}>
+                  Documento não encontrado na base de dados. Será criado um novo registo.
+                </Text>
+              </View>
+            </View>
+            )}
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
             <View style={{ flex: 1 }}>
               <Text style={rpS.fieldLabel}>Nacionalidade</Text>
