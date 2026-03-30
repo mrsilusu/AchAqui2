@@ -270,6 +270,12 @@ export const backendApi = {
       `/bookings/availability?businessId=${encodeURIComponent(businessId)}&roomTypeId=${encodeURIComponent(roomTypeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
     ),
 
+  checkRoomAvailability: (roomTypeId, checkIn, checkOut, businessId, accessToken) =>
+    apiRequest(
+      `/ht/rooms/availability?roomTypeId=${encodeURIComponent(roomTypeId)}&checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&businessId=${encodeURIComponent(businessId)}`,
+      { accessToken },
+    ),
+
   // ─── HT — Folio + Checkout Financeiro (Sprint 3)
   getHtFolio: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/folio`, { accessToken }),
@@ -362,6 +368,8 @@ export const backendApi = {
     apiRequest(`/ht/bookings/${bookingId}/checkout`, { method: 'PATCH', body: {}, accessToken }),
   htNoShow: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
+  cancelBooking: (bookingId, payload, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/cancel`, { method: 'PATCH', body: payload, accessToken }),
 
   // ─── SPRINT A — Interacções sociais ─────────────────────────────────────
   getSocialState: (businessId, accessToken) =>

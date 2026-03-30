@@ -86,6 +86,10 @@ const isCancelledStatus = (status) => {
 const isPendingStatus = (status) => normalizeStatus(status) === 'pending';
 const isConfirmedStatus = (status) => normalizeStatus(status) === 'confirmed';
 const isConfirmedUnpaidStatus = (status) => normalizeStatus(status) === 'confirmed_unpaid';
+const canCancelBookingStatus = (status) => {
+  const key = normalizeStatus(status);
+  return key === 'pending' || key === 'confirmed' || key === 'confirmed_unpaid' || key === 'confirmed_paid';
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITIES PURAS — isoladas para testabilidade e reutilização em SF_B*
@@ -175,9 +179,14 @@ export function getPriceLabel(room) {
  * disponível = totalRooms - manualBlocked - bookingBlocked
  * SEGURANÇA: bookedRanges só no ownerRoom (dados privados)
  */
-export function getRealAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings = [], excludeId = null) {
+export function getRealAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings = [], excludeId = null, sellablePercent = 100) {
   // Prioridade: quartos físicos reais > totalRooms do tipo > 1
-  const total = roomPublic?.physicalRoomsCount || roomPublic?.totalRooms || 1;
+  const totalPhysical = roomPublic?.physicalRoomsCount || roomPublic?.totalRooms || 1;
+  const pctRaw = Number(sellablePercent);
+  const pct = Number.isFinite(pctRaw) ? Math.max(50, Math.min(150, Math.round(pctRaw))) : 100;
+  const total = totalPhysical > 0
+    ? Math.max(1, Math.round((totalPhysical * pct) / 100))
+    : 0;
   const cIn   = parseDate(checkIn);
   const cOut  = parseDate(checkOut);
   if (!cIn || !cOut || cOut <= cIn) return { available: total, manualBlocked: 0, bookingBlocked: 0, total };
@@ -207,7 +216,7 @@ export function getRealAvailability(roomPublic, ownerRoom, checkIn, checkOut, ac
 }
 
 /** getMinAvailability — noite-a-noite, devolve o mínimo disponível */
-function getMinAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings) {
+function getMinAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBookings, sellablePercent = 100) {
   const cIn  = parseDate(checkIn);
   const cOut = parseDate(checkOut);
   if (!cIn || !cOut || cOut <= cIn) return { minAvailable: 0, bottleneckDate: null };
@@ -215,7 +224,7 @@ function getMinAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBook
   const cursor = new Date(cIn);
   while (cursor < cOut) {
     const next = new Date(cursor.getTime() + 86400000);
-    const { available } = getRealAvailability(roomPublic, ownerRoom, fmtDate(cursor), fmtDate(next), activeBookings);
+    const { available } = getRealAvailability(roomPublic, ownerRoom, fmtDate(cursor), fmtDate(next), activeBookings, null, sellablePercent);
     if (available < minAvailable) { minAvailable = available; bottleneckDate = fmtDate(cursor); }
     cursor.setTime(next.getTime());
   }
@@ -223,7 +232,7 @@ function getMinAvailability(roomPublic, ownerRoom, checkIn, checkOut, activeBook
 }
 
 /** findNextAvailableDate — procura até 90 dias */
-function findNextAvailableDate(roomPublic, ownerRoom, fromCheckIn, nights = 1, minQty = 1, activeBookings = []) {
+function findNextAvailableDate(roomPublic, ownerRoom, fromCheckIn, nights = 1, minQty = 1, activeBookings = [], sellablePercent = 100) {
   const probe = parseDate(fromCheckIn);
   if (!probe) return null;
   for (let i = 1; i <= 90; i++) {
@@ -231,7 +240,7 @@ function findNextAvailableDate(roomPublic, ownerRoom, fromCheckIn, nights = 1, m
     const tryIn  = fmtDate(d);
     const outD   = new Date(d.getTime() + nights * 86400000);
     const tryOut = fmtDate(outD);
-    const { minAvailable } = getMinAvailability(roomPublic, ownerRoom, tryIn, tryOut, activeBookings);
+    const { minAvailable } = getMinAvailability(roomPublic, ownerRoom, tryIn, tryOut, activeBookings, sellablePercent);
     if (minAvailable >= minQty) return tryIn;
   }
   return null;
@@ -372,7 +381,23 @@ export function CalendarPicker({ value, onChange, label, minDate, isOpen, onTogg
 // BOOKING MODAL — 2 passos: datas/quartos → dados do hóspede
 // SF_H2: implementação completa
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingModal({ visible, room, ownerRoom, business, activeBookings, onClose, onConfirm, initialCheckIn, initialCheckOut }) {
+function BookingModal({
+  visible,
+  room,
+  ownerRoom,
+  business,
+  activeBookings,
+  onClose,
+  onConfirm,
+  initialCheckIn = '',
+  initialCheckOut = '',
+  initialAdults = 1,
+  initialChildren = 0,
+  isOwnerMode = false,
+  sellablePercent = 100,
+}) {
+  const ctx = useContext(AppContext);
+  const accessToken = ctx?.accessToken;
   const [step, setStep]               = useState(1);
   const [checkIn, setCheckIn]         = useState(initialCheckIn || '');
   const [checkOut, setCheckOut]       = useState(initialCheckOut || '');
@@ -381,6 +406,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const [children, setChildren]       = useState(0);
   const [guestName, setGuestName]     = useState('');
   const [guestPhone, setGuestPhone]   = useState('');
+  const [docType, setDocType]         = useState('BI');
+  const [docNumber, setDocNumber]     = useState('');
+  const [nationality, setNationality] = useState('Angolana');
+  const [guestEmail, setGuestEmail]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
   const [activeDateFieldModal, setActiveDateFieldModal] = useState(null); // 'checkin'|'checkout'|null
@@ -412,7 +441,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       // mas se chegou (backend antigo sem physicalRoomsCount), proteger.
       if (apiAvailability.physicalRooms === 0) {
         if (ownerRoom) {
-          return { minAvailable: room?.totalRooms || 1, bottleneckDate: null };
+          const base = room?.totalRooms || 1;
+          const pctRaw = Number(sellablePercent);
+          const pct = Number.isFinite(pctRaw) ? Math.max(50, Math.min(150, Math.round(pctRaw))) : 100;
+          return { minAvailable: Math.max(1, Math.round((base * pct) / 100)), bottleneckDate: null };
         }
         // Cliente sem quartos físicos -> bloquear com minAvailable=0
         return { minAvailable: 0, bottleneckDate: null };
@@ -422,10 +454,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
     }
     // API não respondeu (erro/timeout): fallback para cálculo local
     if (checkIn && checkOut && room && ownerRoom) {
-      return getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings);
+      return getMinAvailability(room, ownerRoom, checkIn, checkOut, activeBookings, sellablePercent);
     }
-    // Sem dados: assumir disponível (melhor UX -- backend valida na criação)
-    return { minAvailable: room?.physicalRoomsCount || room?.totalRooms || 1, bottleneckDate: null };
+    // Sem dados suficientes de owner, bloquear criação até validar disponibilidade.
+    return { minAvailable: 0, bottleneckDate: null };
   })();
 
   const { minAvailable, bottleneckDate } = minAvailData;
@@ -455,7 +487,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       base.setDate(base.getDate() + 1);
       return fmtDate(base);
     }
-    if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings);
+    if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings, sellablePercent);
     return null;
   })();
 
@@ -466,41 +498,80 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
     const next = new Date(d.getTime() + 86400000);
     const from = fmtDate(d);
     const to = fmtDate(next);
-    const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings);
+    const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings, null, sellablePercent);
     const safeTotal = Math.max(0, Number(total) || 0);
     const safeAvail = Math.max(0, Number(available) || 0);
     if (safeTotal <= 0) return null;
     if (safeAvail <= 0) return { state: 'full', available: 0, total: safeTotal };
     if (safeAvail < safeTotal) return { state: 'partial', available: safeAvail, total: safeTotal };
     return { state: 'available', available: safeAvail, total: safeTotal };
-  }, [room, ownerRoom, activeBookings]);
+  }, [room, ownerRoom, activeBookings, sellablePercent]);
 
   // Reset ao fechar
   useEffect(() => {
     if (!visible) {
       setStep(1); setCheckIn(''); setCheckOut(''); setRoomQty(1);
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
+      setDocType('BI'); setDocNumber(''); setNationality('Angolana'); setGuestEmail('');
       setSpecialRequest(''); setPayOnArrival(false);
       setActiveDateFieldModal(null);
+      return;
     }
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
     setCheckIn(initialCheckIn || '');
     setCheckOut(initialCheckOut || '');
-  }, [visible, initialCheckIn, initialCheckOut]);
+    setAdults(initialAdults || 1);
+    setChildren(initialChildren || 0);
+  }, [visible, initialCheckIn, initialCheckOut, initialAdults, initialChildren]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const sName  = sanitizeInput(guestName, 100);
     const sPhone = sanitizeInput(guestPhone, 30);
+    const sDocType = sanitizeInput(docType, 20) || 'BI';
+    const sDocNumber = sanitizeInput(docNumber, 50).toUpperCase();
+    const sNationality = sanitizeInput(nationality, 60);
+    const sGuestEmail = sanitizeInput(guestEmail, 100);
     const sReq   = sanitizeInput(specialRequest, 300);
 
     if (!sName.trim()) { Alert.alert('Erro', 'Insira o nome do hóspede.'); return; }
     if (!sPhone.trim()) { Alert.alert('Erro', 'Insira o telefone.'); return; }
+    if (sDocNumber.trim()) {
+      const duplicate = (activeBookings || []).some((rb) => {
+        const sameBusiness = !rb?.businessId || rb.businessId === business?.id;
+        if (!sameBusiness) return false;
+        const existing = sanitizeInput(rb?.docNumber || rb?.guestProfile?.documentNumber || '', 50).toUpperCase();
+        return !!existing && existing === sDocNumber;
+      });
+      if (duplicate) {
+        Alert.alert('Duplicado', 'Já existe hóspede com este número de documento.');
+        return;
+      }
+    }
     if (nights < (room?.minNights || 1)) {
       Alert.alert('Erro', `Estadia mínima: ${room.minNights} noite${room.minNights !== 1 ? 's' : ''}.`);
       return;
+    }
+
+    // Verificar disponibilidade em tempo real no servidor
+    if (typeof backendApi.checkRoomAvailability === 'function') {
+      try {
+        const avail = await backendApi.checkRoomAvailability(
+          room.id,
+          checkIn,
+          checkOut,
+          business?.id,
+          accessToken,
+        );
+        if (!avail?.available) {
+          Alert.alert(
+            'Quarto indisponível',
+            'Este quarto foi reservado enquanto preenchias o formulário.\nPor favor selecciona outras datas.',
+          );
+          setStep(1);
+          return;
+        }
+      } catch (_) {
+        // Se a API falhar, deixar prosseguir — o backend rejeitará se houver conflito
+      }
     }
 
     const booking = {
@@ -508,6 +579,10 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       businessId: business.id,
       roomTypeId: room.id,
       guestName: sName, guestPhone: sPhone,
+      docType: sDocType,
+      docNumber: sDocNumber,
+      nationality: sNationality,
+      guestEmail: sGuestEmail,
       checkIn, checkOut, nights,
       rooms: effectiveQty, adults, children,
       specialRequest: sReq,
@@ -516,7 +591,7 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
       status: payOnArrival ? 'confirmed_unpaid' : 'confirmed',
       createdAt: new Date().toISOString().slice(0, 10),
     };
-    onConfirm(booking);
+    await onConfirm(booking);
   };
 
   if (!room) return null;
@@ -604,6 +679,13 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               {checkingAvail && checkIn && checkOut && (
                 <View style={hS.checkingBox}>
                   <Text style={hS.checkingText}>🔍 A verificar disponibilidade...</Text>
+                </View>
+              )}
+              {!ownerRoom && checkIn && checkOut && (
+                <View style={hS.infoBox}>
+                  <Text style={hS.infoBoxText}>
+                    ⏳ A verificar disponibilidade...
+                  </Text>
                 </View>
               )}
               {isUnavailable && !checkingAvail && (
@@ -713,8 +795,8 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               )}
 
               <TouchableOpacity
-                style={[hS.primaryBtn, (isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
-                disabled={isUnavailable || checkingAvail || nights <= 0 || nights < (room.minNights || 1)}
+                style={[hS.primaryBtn, (isUnavailable || checkingAvail || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
+                disabled={isUnavailable || checkingAvail || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)}
                 onPress={() => setStep(2)}>
                 <Text style={hS.primaryBtnText}>Continuar →</Text>
               </TouchableOpacity>
@@ -745,6 +827,65 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
                   keyboardType="phone-pad"
                   autoCorrect={false}
                   maxLength={30} />
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Tipo de documento</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['BI', 'Passaporte', 'Outro'].map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={{
+                        flex: 1,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: docType === type ? '#1565C0' : COLORS.grayLine,
+                        backgroundColor: docType === type ? '#EFF6FF' : COLORS.white,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                      }}
+                      onPress={() => setDocType(type)}>
+                      <Text style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: docType === type ? '#1565C0' : COLORS.darkText,
+                      }}>{type}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Número do documento (opcional)</Text>
+                <TextInput style={hS.input}
+                  value={docNumber}
+                  onChangeText={(v) => setDocNumber(sanitizeInput(v, 50).toUpperCase())}
+                  placeholder="000000000LA042"
+                  placeholderTextColor={COLORS.grayText}
+                  keyboardType="default"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={50} />
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Nacionalidade (opcional)</Text>
+                <TextInput style={hS.input}
+                  value={nationality}
+                  onChangeText={(v) => setNationality(sanitizeInput(v, 60))}
+                  placeholder="Angolana"
+                  placeholderTextColor={COLORS.grayText}
+                  autoCorrect={false}
+                  maxLength={60} />
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Email (opcional)</Text>
+                <TextInput style={hS.input}
+                  value={guestEmail}
+                  onChangeText={(v) => setGuestEmail(sanitizeInput(v, 100))}
+                  placeholder="hospede@email.com"
+                  placeholderTextColor={COLORS.grayText}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={100} />
               </View>
               <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Pedido especial (opcional)</Text>
@@ -866,7 +1007,7 @@ function ICalSyncCard({ icalLink, onLinkChange, icalStatus, onSync }) {
 // OWNER: BOOKINGS MANAGER — SF_H3
 // SEGURANÇA: só renderiza quando isOwner === true (verificado no pai)
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditBooking }) {
+function BookingsManager({ bookings, roomTypes, onStatusChange, onCancelBooking, onClose, onEditBooking }) {
   const [filter, setFilter]   = useState('all');
   const [expanded, setExpanded] = useState({});
   const [editModal, setEditModal] = useState(null); // booking a editar
@@ -899,6 +1040,34 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditB
   });
 
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const handleCancel = useCallback((booking) => {
+    if (!booking?.id) return;
+    if (!canCancelBookingStatus(booking.status)) {
+      Alert.alert('Indisponível', 'Só é possível cancelar antes do check-in.');
+      return;
+    }
+    const checkInDate = parseDate(booking.checkIn);
+    const now = new Date();
+    const hoursUntilCheckin = checkInDate ? (checkInDate - now) / 3600000 : -1;
+    const perNight = booking.totalPrice > 0
+      ? Math.round(booking.totalPrice / (booking.nights || 1)).toLocaleString()
+      : '—';
+    const policy = hoursUntilCheckin >= 48
+      ? { msg: 'Cancelamento gratuito (mais de 48h antes do check-in).', fee: 0 }
+      : hoursUntilCheckin >= 24
+        ? { msg: `Cancelamento tardio — será cobrada 1 noite (${perNight} Kz).`, fee: 1 }
+        : { msg: 'Cancelamento de última hora — será cobrada a totalidade da estadia.', fee: booking.nights || 1 };
+
+    Alert.alert('Confirmar Cancelamento', policy.msg, [
+      {
+        text: 'Cancelar reserva',
+        style: 'destructive',
+        onPress: () => onCancelBooking && onCancelBooking(booking, policy.fee),
+      },
+      { text: 'Voltar', style: 'cancel' },
+    ]);
+  }, [onCancelBooking]);
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -961,6 +1130,13 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditB
                         <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>✏️</Text>
                       </TouchableOpacity>
                     )}
+                    {canCancelBookingStatus(statusKey) && (
+                      <TouchableOpacity
+                        style={{ padding: 6, backgroundColor: '#FEF2F2', borderRadius: 6 }}
+                        onPress={() => handleCancel(rb)}>
+                        <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '800' }}>CANCELAR</Text>
+                      </TouchableOpacity>
+                    )}
                     <View style={[hS.statusBadge, { backgroundColor: status.color + '25' }]}>
                       <Text style={[hS.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
@@ -1005,6 +1181,13 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onClose, onEditB
                             <Text style={[hS.approveBtnText, { color: '#7C3AED' }]}>✏️ Editar</Text>
                           </TouchableOpacity>
                         </View>
+                      )}
+                      {canCancelBookingStatus(statusKey) && !(isPendingStatus(statusKey) || isConfirmedStatus(statusKey)) && (
+                        <TouchableOpacity
+                          style={[hS.rejectBtn, { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' }]}
+                          onPress={() => handleCancel(rb)}>
+                          <Text style={[hS.rejectBtnText, { color: '#DC2626' }]}>Cancelar reserva</Text>
+                        </TouchableOpacity>
                       )}
                       {isConfirmedUnpaidStatus(statusKey) && (
                         <TouchableOpacity style={hS.approveBtn}
@@ -1134,6 +1317,20 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
   const updateOwnerBiz = updateOwnerBizProp ?? ctx?.updateOwnerBiz ?? (() => {});
+  const globalSellablePercent = useMemo(() => {
+    const raw = Number(ownerBusinessPrivate?.metadata?.pms?.sellablePercent ?? 100);
+    return Number.isFinite(raw) ? Math.max(50, Math.min(150, Math.round(raw))) : 100;
+  }, [ownerBusinessPrivate?.metadata?.pms?.sellablePercent]);
+  const roomSellablePercentMap = ownerBusinessPrivate?.metadata?.pms?.sellablePercentByRoomType || {};
+  const getSellablePercentForRoom = useCallback((room) => {
+    if (!room) return globalSellablePercent;
+    const byRoomId = Number(roomSellablePercentMap?.[room.id]);
+    const roomLevel = Number(room?.sellablePercent ?? room?.overbookingBuffer);
+    const raw = Number.isFinite(byRoomId)
+      ? byRoomId
+      : (Number.isFinite(roomLevel) ? roomLevel : globalSellablePercent);
+    return Number.isFinite(raw) ? Math.max(50, Math.min(150, Math.round(raw))) : globalSellablePercent;
+  }, [roomSellablePercentMap, globalSellablePercent]);
 
   // ── RBAC Zero Trust ──────────────────────────────────────────────────────
   const isOwner = ownerMode === true;
@@ -1199,6 +1396,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           roomTypeId:  b.roomTypeId || null,
           guestName:   b.guestName  || b.user?.name  || 'Cliente',
           guestPhone:  b.guestPhone || b.user?.email || '',
+          docType:     b.docType || b.guestProfile?.documentType || '',
+          docNumber:   b.docNumber || b.guestProfile?.documentNumber || '',
+          nationality: b.nationality || b.guestProfile?.nationality || '',
+          guestEmail:  b.guestEmail || b.guestProfile?.email || b.user?.email || '',
           checkIn:     toFmt(start),
           checkOut:    toFmt(end),
           nights,
@@ -1474,6 +1675,23 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     }
   }, [isOwner, onStatusChangeProp]);
 
+  const handleCancelBooking = useCallback(async (booking, fee) => {
+    if (!isOwner || !booking?.id) return;
+    setStatusOverrides(prev => ({ ...prev, [booking.id]: 'cancelled' }));
+    try {
+      if (ctx?.accessToken) {
+        await backendApi.cancelBooking(booking.id, { fee, businessId: business.id }, ctx.accessToken);
+      } else if (typeof onStatusChangeProp === 'function') {
+        await onStatusChangeProp(booking.id, 'cancelled');
+      } else {
+        throw new Error('Sem sessão para cancelar reserva.');
+      }
+    } catch (err) {
+      setStatusOverrides(prev => { const n = { ...prev }; delete n[booking.id]; return n; });
+      Alert.alert('Erro', err?.message || 'Não foi possível cancelar a reserva.');
+    }
+  }, [isOwner, ctx?.accessToken, business.id, onStatusChangeProp]);
+
   const allRooms = business?.roomTypes || [];
   // Regra 1: cliente só vê tipos de quarto com quartos físicos configurados.
   // physicalRoomsCount=0  → sem quartos físicos → esconder do cliente
@@ -1562,7 +1780,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     let totalAvail = 0;
     filteredRooms.forEach((room) => {
       const ownerRoom = ownerRoomsWithIcal[room.id] || null;
-      const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings);
+      const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings, null, getSellablePercentForRoom(room));
       totalCap += Math.max(0, Number(total) || 0);
       totalAvail += Math.max(0, Number(available) || 0);
     });
@@ -1571,7 +1789,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     if (totalAvail <= 0) return { state: 'full', available: 0, total: totalCap };
     if (totalAvail < totalCap) return { state: 'partial', available: totalAvail, total: totalCap };
     return { state: 'available', available: totalAvail, total: totalCap };
-  }, [calendarDayAvailMap, filteredRooms, ownerRoomsWithIcal, activeBookings]);
+  }, [calendarDayAvailMap, filteredRooms, ownerRoomsWithIcal, activeBookings, getSellablePercentForRoom]);
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
       <Text style={hS.emptyIcon}>🏨</Text>
@@ -1687,7 +1905,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           // Disponibilidade: API (para todos) tem prioridade sobre cálculo local (dono)
           const apiAvail      = roomAvailMap[room.id] ?? null;
           const localAvail    = (checkIn && checkOut && ownerRoom)
-            ? getRealAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
+            ? getRealAvailability(room, ownerRoom, checkIn, checkOut, activeBookings, null, getSellablePercentForRoom(room))
             : null;
           // Escolher fonte: API se disponível, local como fallback para dono
           const avail = (() => {
@@ -1793,8 +2011,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           ownerRoom={ownerRoomsWithIcal[bookingRoom?.id] || null}
           business={business}
           activeBookings={activeBookings}
+          sellablePercent={getSellablePercentForRoom(bookingRoom)}
           initialCheckIn={checkIn}
           initialCheckOut={checkOut}
+          initialAdults={guestCount || 1}
+          initialChildren={0}
+          isOwnerMode={isOwner}
           onClose={() => setShowBookingModal(false)}
           onConfirm={handleConfirmBooking}
         />
@@ -1835,6 +2057,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           bookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onStatusChange={handleStatusChange}
+          onCancelBooking={handleCancelBooking}
           onEditBooking={handleEditBooking}
           onClose={() => setShowBookingsManager(false)}
         />
