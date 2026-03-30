@@ -329,6 +329,10 @@ function BookingModal({
   const [children, setChildren]       = useState(initialChildren || 0);
   const [guestName, setGuestName]     = useState('');
   const [guestPhone, setGuestPhone]   = useState('');
+  const [docType, setDocType]         = useState('BI');
+  const [docNumber, setDocNumber]     = useState('');
+  const [nationality, setNationality] = useState('Angolana');
+  const [guestEmail, setGuestEmail]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
 
@@ -362,6 +366,7 @@ function BookingModal({
     if (!visible) {
       setStep(1); setCheckIn(''); setCheckOut(''); setRoomQty(1);
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
+      setDocType('BI'); setDocNumber(''); setNationality('Angolana'); setGuestEmail('');
       setSpecialRequest(''); setPayOnArrival(false);
       return;
     }
@@ -374,10 +379,28 @@ function BookingModal({
   const handleConfirm = async () => {
     const sName  = sanitizeInput(guestName, 100);
     const sPhone = sanitizeInput(guestPhone, 30);
+    const sDocType = sanitizeInput(docType, 20) || 'BI';
+    const sDocNumber = sanitizeInput(docNumber.trim().toUpperCase(), 50);
+    const sNationality = sanitizeInput(nationality.trim(), 60);
+    const sGuestEmail = sanitizeInput(guestEmail.toLowerCase(), 100);
     const sReq   = sanitizeInput(specialRequest, 300);
 
     if (!sName.trim()) { Alert.alert('Erro', 'Insira o nome do hóspede.'); return; }
     if (!sPhone.trim()) { Alert.alert('Erro', 'Insira o telefone.'); return; }
+    if (!sDocNumber.trim()) {
+      Alert.alert(
+        'Documento obrigatório',
+        'Insira o número do BI ou Passaporte do hóspede.',
+      );
+      return;
+    }
+    if (!sNationality.trim()) {
+      Alert.alert(
+        'Nacionalidade obrigatória',
+        'Insira a nacionalidade do hóspede.',
+      );
+      return;
+    }
     if (children > 0 && adults === 0) {
       Alert.alert(
         'Acompanhante obrigatório',
@@ -417,6 +440,10 @@ function BookingModal({
       businessId: business.id,
       roomTypeId: room.id,
       guestName: sName, guestPhone: sPhone,
+      docType: sDocType,
+      docNumber: sDocNumber,
+      nationality: sNationality,
+      guestEmail: sGuestEmail,
       checkIn, checkOut, nights,
       rooms: effectiveQty, adults, children,
       specialRequest: sReq,
@@ -623,6 +650,57 @@ function BookingModal({
                   maxLength={30} />
               </View>
               <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Tipo de documento *</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                  {['BI', 'Passaporte', 'Outro'].map(t => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[hS.docChip, docType === t && hS.docChipActive]}
+                      onPress={() => setDocType(t)}>
+                      <Text style={[hS.docChipText, docType === t && hS.docChipTextActive]}>
+                        {t}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Número do documento *</Text>
+                <TextInput
+                  style={hS.input}
+                  value={docNumber}
+                  onChangeText={t => setDocNumber(sanitizeInput(t.toUpperCase(), 50))}
+                  placeholder={docType === 'BI' ? '000000000LA042' : 'P000000000'}
+                  placeholderTextColor={COLORS.grayText}
+                  autoCapitalize="characters"
+                  maxLength={50}
+                />
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Nacionalidade *</Text>
+                <TextInput
+                  style={hS.input}
+                  value={nationality}
+                  onChangeText={t => setNationality(sanitizeInput(t, 60))}
+                  placeholder="Angolana"
+                  placeholderTextColor={COLORS.grayText}
+                  maxLength={60}
+                />
+              </View>
+              <View style={hS.inputGroup}>
+                <Text style={hS.inputLabel}>Email (opcional)</Text>
+                <TextInput
+                  style={hS.input}
+                  value={guestEmail}
+                  onChangeText={t => setGuestEmail(sanitizeInput(t.toLowerCase(), 100))}
+                  placeholder="exemplo@email.com"
+                  placeholderTextColor={COLORS.grayText}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  maxLength={100}
+                />
+              </View>
+              <View style={hS.inputGroup}>
                 <Text style={hS.inputLabel}>Pedido especial (opcional)</Text>
                 <TextInput style={[hS.input, { height: 80, textAlignVertical: 'top' }]}
                   value={specialRequest}
@@ -652,6 +730,16 @@ function BookingModal({
               <View style={hS.summaryCard}>
                 <Text style={hS.summaryTitle}>Resumo da Reserva</Text>
                 <View style={hS.summaryRow}><Text style={hS.summaryLabel}>Quarto</Text><Text style={hS.summaryValue}>{room.name}</Text></View>
+                <View style={hS.summaryRow}>
+                  <Text style={hS.summaryLabel}>Documento</Text>
+                  <Text style={hS.summaryValue}>{docType}: {docNumber || '—'}</Text>
+                </View>
+                {nationality ? (
+                  <View style={hS.summaryRow}>
+                    <Text style={hS.summaryLabel}>Nacionalidade</Text>
+                    <Text style={hS.summaryValue}>{nationality}</Text>
+                  </View>
+                ) : null}
                 <View style={hS.summaryRow}><Text style={hS.summaryLabel}>Check-in</Text><Text style={hS.summaryValue}>{checkIn}</Text></View>
                 <View style={hS.summaryRow}><Text style={hS.summaryLabel}>Check-out</Text><Text style={hS.summaryValue}>{checkOut}</Text></View>
                 <View style={hS.summaryRow}><Text style={hS.summaryLabel}>Hóspedes</Text><Text style={hS.summaryValue}>{adults} adulto{adults !== 1 ? 's' : ''}{children > 0 ? ` + ${children} criança${children !== 1 ? 's' : ''}` : ''}</Text></View>
@@ -1568,6 +1656,11 @@ const hS = StyleSheet.create({
   primaryBtnText:   { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
   inputGroup:       { marginBottom: 14 },
   inputLabel:       { fontSize: 12, fontWeight: '600', color: '#8A8A8A', marginBottom: 6 },
+  docChip:          { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1,
+                      borderColor: '#E5E7EB', backgroundColor: '#fff' },
+  docChipActive:    { backgroundColor: '#EFF6FF', borderColor: '#1565C0' },
+  docChipText:      { fontSize: 13, fontWeight: '600', color: '#888' },
+  docChipTextActive: { color: '#1565C0' },
   input:            { borderWidth: 1.5, borderColor: '#EBEBEB', borderRadius: 10,
                       padding: 12, fontSize: 14, color: '#111111', backgroundColor: '#FFFFFF' },
   switchRow:        { flexDirection: 'row', alignItems: 'center', padding: 14,
