@@ -33,7 +33,7 @@ import React, { useContext,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Modal, TextInput, Alert, Switch, Platform, KeyboardAvoidingView,
+  Modal, TextInput, Alert, Switch, Platform, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import {
   sanitizeInput, validateExternalUrl, Icon, COLORS,
@@ -42,6 +42,7 @@ import {
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
 import { GuestsScreen } from './GuestsScreen';
+import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -318,6 +319,7 @@ function BookingModal({
   initialCheckOut = '',
   initialAdults = 1,
   initialChildren = 0,
+  isOwnerMode = false,
 }) {
   const ctx = useContext(AppContext);
   const accessToken = ctx?.accessToken;
@@ -335,6 +337,8 @@ function BookingModal({
   const [guestEmail, setGuestEmail]   = useState('');
   const [specialRequest, setSpecialRequest] = useState('');
   const [payOnArrival, setPayOnArrival] = useState(false);
+  const [source, setSource] = useState(isOwnerMode ? 'WALK_IN' : 'DIRECT');
+  const [saving, setSaving] = useState(false);
 
   const nights = countNights(checkIn, checkOut);
   const minAvailData = (checkIn && checkOut && room && ownerRoom)
@@ -368,15 +372,21 @@ function BookingModal({
       setAdults(1); setChildren(0); setGuestName(''); setGuestPhone('');
       setDocType('BI'); setDocNumber(''); setNationality('Angolana'); setGuestEmail('');
       setSpecialRequest(''); setPayOnArrival(false);
+      setSource(isOwnerMode ? 'WALK_IN' : 'DIRECT');
+      setSaving(false);
       return;
     }
     if (initialCheckIn) setCheckIn(initialCheckIn);
     if (initialCheckOut) setCheckOut(initialCheckOut);
     setAdults(initialAdults || 1);
     setChildren(initialChildren || 0);
-  }, [visible, initialCheckIn, initialCheckOut, initialAdults, initialChildren]);
+    setSource(isOwnerMode ? 'WALK_IN' : 'DIRECT');
+  }, [visible, initialCheckIn, initialCheckOut, initialAdults, initialChildren, isOwnerMode]);
 
   const handleConfirm = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
     const sName  = sanitizeInput(guestName, 100);
     const sPhone = sanitizeInput(guestPhone, 30);
     const sDocType = sanitizeInput(docType, 20) || 'BI';
@@ -448,11 +458,19 @@ function BookingModal({
       rooms: effectiveQty, adults, children,
       specialRequest: sReq,
       payOnArrival,
+      source: sanitizeInput(source, 20),
       totalPrice: grandTotal,
-      status: payOnArrival ? 'confirmed_unpaid' : 'confirmed',
+      status: isOwnerMode
+        ? 'CONFIRMED'
+        : payOnArrival ? 'confirmed_unpaid' : 'pending',
       createdAt: new Date().toISOString().slice(0, 10),
     };
     await onConfirm(booking);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível criar a reserva.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!room) return null;
@@ -726,6 +744,29 @@ function BookingModal({
                   thumbColor={COLORS.white} />
               </View>
 
+              {isOwnerMode && (
+                <View style={hS.inputGroup}>
+                  <Text style={hS.inputLabel}>Canal de origem</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                    {[
+                      { key: 'WALK_IN', label: 'Walk-in' },
+                      { key: 'PHONE', label: 'Telefone' },
+                      { key: 'DIRECT', label: 'Directo' },
+                      { key: 'WEBSITE', label: 'Website' },
+                    ].map(s => (
+                      <TouchableOpacity
+                        key={s.key}
+                        style={[hS.docChip, source === s.key && hS.docChipActive]}
+                        onPress={() => setSource(s.key)}>
+                        <Text style={[hS.docChipText, source === s.key && hS.docChipTextActive]}>
+                          {s.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {/* Resumo */}
               <View style={hS.summaryCard}>
                 <Text style={hS.summaryTitle}>Resumo da Reserva</Text>
@@ -754,8 +795,8 @@ function BookingModal({
                 )}
               </View>
 
-              <TouchableOpacity style={hS.primaryBtn} onPress={handleConfirm}>
-                <Text style={hS.primaryBtnText}>✓ Confirmar Reserva</Text>
+              <TouchableOpacity style={[hS.primaryBtn, saving && hS.primaryBtnOff]} disabled={saving} onPress={handleConfirm}>
+                {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={hS.primaryBtnText}>✓ Confirmar Reserva</Text>}
               </TouchableOpacity>
             </>
           )}
@@ -1190,9 +1231,15 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           endDate:     toISO(booking.checkOut),
           guestName:   booking.guestName   || undefined,
           guestPhone:  booking.guestPhone  || undefined,
+          docType:     booking.docType     || undefined,
+          docNumber:   booking.docNumber   || undefined,
+          nationality: booking.nationality || undefined,
+          guestEmail:  booking.guestEmail  || undefined,
           adults:      booking.adults      ?? 1,
           children:    booking.children    ?? 0,
           rooms:       booking.rooms       ?? 1,
+          source:      booking.source      || undefined,
+          status:      booking.status      || undefined,
           // SEGURANÇA: totalPrice NÃO é enviado ao backend.
           // O backend recalcula sempre o preço a partir das tarifas na DB.
           // Enviar o preço do frontend permitiria manipulação de valor (ex: 50.000 Kz → 1 Kz).
@@ -1206,7 +1253,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           ...booking,
           id: booking.id || `rb_${Date.now()}`,
           businessId: business.id,
-          status: 'pending',
+          status: booking.status || 'pending',
         };
         setRoomBookings(prev => {
           const exists = prev.some(b => b.id === newBooking.id);
@@ -1458,6 +1505,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           initialCheckOut={checkOut}
           initialAdults={adults || 1}
           initialChildren={children || 0}
+          isOwnerMode={isOwner}
           onClose={() => setShowBookingModal(false)}
           onConfirm={handleConfirmBooking}
         />
