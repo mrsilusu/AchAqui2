@@ -1377,6 +1377,9 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
   const [notes,      setNotes]      = useState('');
   const [loading,    setLoading]    = useState(false);
   const [calField,   setCalField]   = useState(null);
+  const [checkingAvail, setCheckingAvail] = useState(false);
+  const [availabilityData, setAvailabilityData] = useState(null);
+  const [suggestedDate, setSuggestedDate] = useState(null);
 
   // Carregar tipos de quarto com pricePerNight ao abrir
   React.useEffect(() => {
@@ -1391,6 +1394,31 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
       .catch(() => {})
       .finally(() => setRtLoading(false));
   }, [visible, businessId]);
+
+  // Validar disponibilidade quando as datas são seleccionadas
+  React.useEffect(() => {
+    if (!startDate || !endDate || !roomTypeId || !businessId) return;
+    const toISO = (str) => {
+      if (!str) return null;
+      if (str.includes('/')) { const [d,m,y] = str.split('/').map(Number); return new Date(Date.UTC(y,m-1,d,12,0,0)).toISOString(); }
+      return new Date(str).toISOString();
+    };
+    setCheckingAvail(true);
+    setAvailabilityData(null);
+    setSuggestedDate(null);
+    backendApi.getAvailability(businessId, roomTypeId, toISO(startDate), toISO(endDate))
+      .then(data => {
+        setAvailabilityData(data);
+        setCheckingAvail(false);
+        if (!data?.available && data?.nextAvailableDate) {
+          const nextDateISO = data.nextAvailableDate;
+          const nextD = new Date(nextDateISO);
+          const nextFmt = `${String(nextD.getDate()).padStart(2,'0')}/${String(nextD.getMonth()+1).padStart(2,'0')}/${nextD.getFullYear()}`;
+          setSuggestedDate(nextFmt);
+        }
+      })
+      .catch(() => { setAvailabilityData(null); setCheckingAvail(false); });
+  }, [startDate, endDate, roomTypeId, businessId]);
 
   const selType = roomTypes.find(rt => rt.id === roomTypeId);
   const ppn     = selType?.pricePerNight ?? 0;
@@ -1415,7 +1443,7 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
   };
 
   const canNext = step === 1 ? !!roomTypeId
-                : step === 2 ? nightsCount > 0
+                : step === 2 ? (nightsCount > 0 && !checkingAvail && (availabilityData === null || availabilityData?.available))
                 : !!guestName.trim();
 
   const handleNext = () => { if (step < 3) setStep(s => s+1); else handleCreate(); };
@@ -1537,40 +1565,34 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
                     {selType.name}{ppn > 0 ? ` · ${Math.round(ppn).toLocaleString()} Kz/noite` : ''}
                   </Text>
                 )}
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={nbS.label}>Entrada *</Text>
-                    <TouchableOpacity style={nbS.dateBtn}
-                      onPress={() => setCalField(calField === 'start' ? null : 'start')}>
-                      <Icon name="calendar" size={14} color={COLORS.blue} strokeWidth={2} />
-                      <Text style={[nbS.dateTxt, !startDate && { color: '#bbb' }]}>
-                        {startDate || 'DD/MM/AAAA'}
-                      </Text>
-                    </TouchableOpacity>
-                    <CalendarPickerSimple value={startDate} minDate={todayFmt}
-                      isOpen={calField === 'start'}
-                      onToggle={() => setCalField(calField==='start'?null:'start')}
-                      onChange={v => { setStartDate(v); setCalField(null); }} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={nbS.label}>Saída *</Text>
-                    <TouchableOpacity style={nbS.dateBtn}
-                      onPress={() => setCalField(calField === 'end' ? null : 'end')}>
-                      <Icon name="calendar" size={14} color={COLORS.blue} strokeWidth={2} />
-                      <Text style={[nbS.dateTxt, !endDate && { color: '#bbb' }]}>
-                        {endDate || 'DD/MM/AAAA'}
-                      </Text>
-                    </TouchableOpacity>
-                    <CalendarPickerSimple value={endDate} minDate={startDate||todayFmt}
-                      isOpen={calField === 'end'}
-                      onToggle={() => setCalField(calField==='end'?null:'end')}
-                      onChange={v => { setEndDate(v); setCalField(null); }} />
-                  </View>
-                </View>
+
+                {/* Check-in */}
+                <Text style={nbS.label}>📅 Data de Entrada *</Text>
+                <CalendarPickerSimple value={startDate} minDate={todayFmt}
+                  isOpen={calField === 'start'}
+                  onToggle={() => setCalField(calField === 'start' ? null : 'start')}
+                  onChange={v => {
+                    setStartDate(v);
+                    setCalField('end');
+                    // Se saída anterior ficou antes da nova entrada, limpar
+                    if (endDate) {
+                      const p = s => { const [d,m,y] = s.split('/').map(Number); return new Date(y,m-1,d); };
+                      if (p(endDate) <= p(v)) setEndDate('');
+                    }
+                  }} />
+
+                {/* Check-out */}
+                <Text style={[nbS.label, { marginTop: 14 }]}>📅 Data de Saída *</Text>
+                <CalendarPickerSimple value={endDate} minDate={startDate || todayFmt}
+                  isOpen={calField === 'end'}
+                  onToggle={() => setCalField(calField === 'end' ? null : 'end')}
+                  onChange={v => { setEndDate(v); setCalField(null); }} />
+
+                {/* Resumo noites + preço */}
                 {nightsCount > 0 && (
                   <View style={{ backgroundColor: '#EFF6FF', borderRadius: 10, padding: 14, marginTop: 16 }}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: '#1565C0', textAlign: 'center' }}>
-                      {nightsCount} noite{nightsCount!==1?'s':''}
+                      {nightsCount} noite{nightsCount !== 1 ? 's' : ''}
                     </Text>
                     {ppn > 0 && (
                       <Text style={{ fontSize: 22, fontWeight: '800', color: '#1565C0', textAlign: 'center', marginTop: 4 }}>
@@ -1580,6 +1602,64 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
                     <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 4 }}>
                       Estimativa (sem consumos adicionais)
                     </Text>
+                  </View>
+                )}
+
+                {/* Validação de disponibilidade */}
+                {nightsCount > 0 && (
+                  <View style={{ marginTop: 12 }}>
+                    {checkingAvail && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                                     backgroundColor: '#F7F7F8', borderRadius: 10, padding: 14 }}>
+                        <ActivityIndicator size="small" color="#1565C0" />
+                        <Text style={{ fontSize: 13, color: '#555' }}>A verificar disponibilidade...</Text>
+                      </View>
+                    )}
+                    {!checkingAvail && availabilityData && availabilityData.available && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                                     backgroundColor: '#F0FDF4', borderRadius: 10, padding: 14,
+                                     borderWidth: 1, borderColor: '#BBF7D0' }}>
+                        <Text style={{ fontSize: 18 }}>✅</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#166534', flex: 1 }}>
+                          Quarto disponível para as datas seleccionadas
+                        </Text>
+                      </View>
+                    )}
+                    {!checkingAvail && availabilityData && !availabilityData.available && (
+                      <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 14,
+                                     borderWidth: 1, borderColor: '#FECACA' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <Text style={{ fontSize: 18 }}>❌</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#DC2626' }}>
+                            Sem disponibilidade para estas datas
+                          </Text>
+                        </View>
+                        {suggestedDate && (
+                          <View>
+                            <Text style={{ fontSize: 12, color: '#991B1B', marginBottom: 8 }}>
+                              Próxima data disponível: <Text style={{ fontWeight: '700' }}>{suggestedDate}</Text>
+                            </Text>
+                            <TouchableOpacity
+                              style={{ backgroundColor: '#DC2626', borderRadius: 8, padding: 10, alignItems: 'center' }}
+                              onPress={() => {
+                                const [d,m,y] = suggestedDate.split('/').map(Number);
+                                const nextStart = new Date(y,m-1,d);
+                                const daysNights = nightsCount || 1;
+                                const nextEnd = new Date(nextStart);
+                                nextEnd.setDate(nextEnd.getDate() + daysNights);
+                                const fmtE = dd => `${String(dd.getDate()).padStart(2,'0')}/${String(dd.getMonth()+1).padStart(2,'0')}/${dd.getFullYear()}`;
+                                setStartDate(suggestedDate);
+                                setEndDate(fmtE(nextEnd));
+                                setSuggestedDate(null);
+                              }}>
+                              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                                Usar {suggestedDate} como entrada
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
                 )}
               </>
