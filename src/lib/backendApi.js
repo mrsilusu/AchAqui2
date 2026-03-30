@@ -270,11 +270,22 @@ export const backendApi = {
       `/bookings/availability?businessId=${encodeURIComponent(businessId)}&roomTypeId=${encodeURIComponent(roomTypeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
     ),
 
-  checkRoomAvailability: (roomTypeId, checkIn, checkOut, businessId, accessToken) =>
-    apiRequest(
-      `/ht/rooms/availability?roomTypeId=${encodeURIComponent(roomTypeId)}&checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&businessId=${encodeURIComponent(businessId)}`,
-      { accessToken },
-    ),
+  checkRoomAvailability: (roomTypeId, checkIn, checkOut, businessId) => {
+    const toIso = (v) => {
+      const s = String(v || '').trim();
+      if (!s) return '';
+      if (s.includes('/')) {
+        const [d, m, y] = s.split('/').map(Number);
+        return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
+      }
+      const dt = new Date(s);
+      return Number.isNaN(dt.getTime()) ? s : dt.toISOString();
+    };
+
+    return apiRequest(
+      `/bookings/availability?businessId=${encodeURIComponent(businessId)}&roomTypeId=${encodeURIComponent(roomTypeId)}&startDate=${encodeURIComponent(toIso(checkIn))}&endDate=${encodeURIComponent(toIso(checkOut))}`,
+    );
+  },
 
   // ─── HT — Folio + Checkout Financeiro (Sprint 3)
   getHtFolio: (bookingId, accessToken) =>
