@@ -378,6 +378,13 @@ function BookingModal({
 
     if (!sName.trim()) { Alert.alert('Erro', 'Insira o nome do hóspede.'); return; }
     if (!sPhone.trim()) { Alert.alert('Erro', 'Insira o telefone.'); return; }
+    if (children > 0 && adults === 0) {
+      Alert.alert(
+        'Acompanhante obrigatório',
+        'Menores de 18 anos devem ser acompanhados por pelo menos 1 adulto.',
+      );
+      return;
+    }
     if (nights < (room?.minNights || 1)) {
       Alert.alert('Erro', `Estadia mínima: ${room.minNights} noite${room.minNights !== 1 ? 's' : ''}.`);
       return;
@@ -867,7 +874,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   // ── Estado LOCAL — destruído ao desmontar (anti-colisão) ─────────────────
   const [checkIn, setCheckIn]     = useState('');
   const [checkOut, setCheckOut]   = useState('');
-  const [guestCount, setGuestCount] = useState(1);
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
@@ -990,7 +998,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
   // ── Cleanup em mudança de negócio ────────────────────────────────────────
   useEffect(() => {
-    return () => { setCheckIn(''); setCheckOut(''); setGuestCount(1); };
+    return () => { setCheckIn(''); setCheckOut(''); setAdults(1); setChildren(0); };
   }, [business?.id]);
 
   // ── iCal parse ───────────────────────────────────────────────────────────
@@ -1157,7 +1165,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, [isOwner, onStatusChangeProp]);
 
   const rooms = business?.roomTypes || [];
-  const filteredRooms = guestCount > 0 ? rooms.filter(r => r.maxGuests >= guestCount) : rooms;
+  const totalGuests = adults + children;
+  const filteredRooms = rooms.filter(r => r.maxGuests >= totalGuests);
   const activeBookings = roomBookings.filter(rb =>
     rb.businessId === business?.id &&
     (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
@@ -1216,15 +1225,48 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         </View>
         <View style={hS.guestRow}>
           <Text style={hS.guestLabel}>👤 Hóspedes</Text>
-          <View style={hS.guestCounter}>
-            <TouchableOpacity style={[hS.guestBtn, guestCount <= 1 && hS.guestBtnDisabled]}
-              disabled={guestCount <= 1} onPress={() => setGuestCount(g => Math.max(1, g - 1))}>
-              <Text style={hS.guestBtnText}>−</Text>
-            </TouchableOpacity>
-            <Text style={hS.guestCount}>{guestCount}</Text>
-            <TouchableOpacity style={hS.guestBtn} onPress={() => setGuestCount(g => g + 1)}>
-              <Text style={hS.guestBtnText}>+</Text>
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View>
+                <Text style={hS.counterLabel}>Adultos</Text>
+                <Text style={hS.counterSub}>18+</Text>
+              </View>
+              <View style={hS.counterRow}>
+                <TouchableOpacity
+                  style={[hS.cntBtn, adults <= 1 && hS.cntBtnOff]}
+                  disabled={adults <= 1}
+                  onPress={() => setAdults(a => Math.max(1, a - 1))}>
+                  <Text style={hS.cntBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={hS.cntVal}>{adults}</Text>
+                <TouchableOpacity
+                  style={hS.cntBtn}
+                  onPress={() => setAdults(a => a + 1)}>
+                  <Text style={hS.cntBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View>
+                <Text style={hS.counterLabel}>Crianças</Text>
+                <Text style={hS.counterSub}>0–17</Text>
+              </View>
+              <View style={hS.counterRow}>
+                <TouchableOpacity
+                  style={[hS.cntBtn, children <= 0 && hS.cntBtnOff]}
+                  disabled={children <= 0}
+                  onPress={() => setChildren(c => Math.max(0, c - 1))}>
+                  <Text style={hS.cntBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={hS.cntVal}>{children}</Text>
+                <TouchableOpacity
+                  style={hS.cntBtn}
+                  onPress={() => setChildren(c => c + 1)}>
+                  <Text style={hS.cntBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
           {checkIn && checkOut && (
             <View style={hS.nightsBadge}>
@@ -1306,8 +1348,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         })}
         {filteredRooms.length === 0 && (
           <View style={hS.noRoomsMsg}>
-            <Text style={hS.noRoomsMsgText}>Nenhum quarto para {guestCount} hóspedes.</Text>
-            <TouchableOpacity onPress={() => setGuestCount(1)}>
+            <Text style={hS.noRoomsMsgText}>Nenhum quarto para {totalGuests} hóspedes.</Text>
+            <TouchableOpacity onPress={() => { setAdults(1); setChildren(0); }}>
               <Text style={hS.resetGuestsLink}>Limpar filtro</Text>
             </TouchableOpacity>
           </View>
@@ -1326,8 +1368,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           activeBookings={activeBookings}
           initialCheckIn={checkIn}
           initialCheckOut={checkOut}
-          initialAdults={guestCount || 1}
-          initialChildren={0}
+          initialAdults={adults || 1}
+          initialChildren={children || 0}
           onClose={() => setShowBookingModal(false)}
           onConfirm={handleConfirmBooking}
         />
