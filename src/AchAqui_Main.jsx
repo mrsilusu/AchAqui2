@@ -948,10 +948,9 @@ function AppContent() {
         let { status } = await Location.getForegroundPermissionsAsync();
 
         if (status !== 'granted') {
-          // Não pedir permissão automaticamente — o overlay mostra e o utilizador
-          // decide carregar no botão. Se já foi negado antes, apenas mostra a lista.
           setLocationPermission(status);
-          return; // finally bloco trata setIsLocationBootstrapLoading(false)
+          await requestLocationPermission();
+          return;
         }
 
         locationPermissionRequestedRef.current = true;
@@ -1007,7 +1006,7 @@ function AppContent() {
   useEffect(() => {
     if (!userLocation) return;
     setBusinesses(prev => prev.map(b => {
-      if (!b.latitude || !b.longitude) return b;
+      if (!Number.isFinite(b.latitude) || !Number.isFinite(b.longitude)) return b;
       const km = haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude);
       const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
       return { ...b, distance: km, distanceText };
