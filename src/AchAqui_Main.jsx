@@ -20,7 +20,7 @@ import React, {
 } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView,
-  SafeAreaView, StyleSheet, Animated, Alert,
+  SafeAreaView, StyleSheet, Animated, Alert, Linking,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -903,6 +903,40 @@ function AppContent() {
       setIsLocationBootstrapLoading(false);
     }
   };
+  // Chamada explícita pelo utilizador (ícone de localização na search bar).
+  // Não usa a guarda do ref — força sempre o pedido ao SO.
+  // Se a permissão foi negada definitivamente abre as Definições do dispositivo.
+  const handleLocationIconPress = useCallback(async () => {
+    locationPermissionRequestedRef.current = false; // libertar guarda
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+      if (status === 'granted') {
+        locationPermissionRequestedRef.current = true;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        if (!locationWatchRef.current) {
+          locationWatchRef.current = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+            (l) => setUserLocation({ latitude: l.coords.latitude, longitude: l.coords.longitude })
+          );
+        }
+      } else {
+        Alert.alert(
+          'Localização desactivada',
+          'Para ver negócios perto de si, active a localização nas definições do dispositivo.',
+          [
+            { text: 'Agora não', style: 'cancel' },
+            { text: 'Abrir Definições', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+    } catch {
+      setLocationPermission('denied');
+    } finally {
+      setIsLocationBootstrapLoading(false);
+    }
+  }, []);
 
   // Localização: pede permissão ao arrancar + watch contínuo para actualizar com deslocação
   useEffect(() => {
@@ -1159,7 +1193,7 @@ function AppContent() {
               onOpenAppLayer={meta.openAppLayer}
               isBusinessMode={isBusinessMode}
               locationPermission={locationPermission}
-              onRequestLocation={requestLocationPermission}
+              onRequestLocation={handleLocationIconPress}
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
