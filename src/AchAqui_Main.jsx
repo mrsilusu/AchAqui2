@@ -914,9 +914,10 @@ function AppContent() {
         let { status } = await Location.getForegroundPermissionsAsync();
 
         if (status !== 'granted') {
+          // Não pedir permissão automaticamente — o overlay mostra e o utilizador
+          // decide carregar no botão. Se já foi negado antes, apenas mostra a lista.
           setLocationPermission(status);
-          await requestLocationPermission();
-          return;
+          return; // finally bloco trata setIsLocationBootstrapLoading(false)
         }
 
         locationPermissionRequestedRef.current = true;
@@ -1356,7 +1357,7 @@ function AppContent() {
         </View>
       )}
 
-      {locationPermission !== 'granted' && isLocationBootstrapLoading && (
+      {locationPermission === 'undetermined' && (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
           <View style={{ width: '100%', maxWidth: 360, backgroundColor: COLORS.white, borderRadius: 16, padding: 20 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText, marginBottom: 10 }}>

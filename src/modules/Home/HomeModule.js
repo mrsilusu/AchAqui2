@@ -75,7 +75,7 @@ const FEED_SLOT_LABEL = {
 };
 
 function getDistanceBadge(km) {
-  if (!Number.isFinite(km)) return null;
+  if (!Number.isFinite(km) || km <= 0) return null;
   if (km < 0.5) return { label: 'A 5 min a pé', color: '#16a34a' };
   if (km < 2) return { label: 'Perto de Ti', color: '#2563eb' };
   if (km < 5) return { label: 'A poucos minutos', color: '#d97706' };
