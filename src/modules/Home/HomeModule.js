@@ -74,6 +74,15 @@ const FEED_SLOT_LABEL = {
   UTILITY_NEARBY: 'Perto de Ti',
 };
 
+function getDistanceBadge(km) {
+  if (!Number.isFinite(km)) return null;
+  if (km < 0.5) return { label: 'A 5 min a pé', color: '#16a34a' };
+  if (km < 2) return { label: 'Perto de Ti', color: '#2563eb' };
+  if (km < 5) return { label: 'A poucos minutos', color: '#d97706' };
+  if (km < 10) return { label: 'Próximo', color: '#ea580c' };
+  return { label: 'Noutra zona', color: '#6b7280' };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SKELETON — shimmer pulsante enquanto os dados carregam
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,9 +182,11 @@ const SponsoredCard = React.memo(function SponsoredCard({ business, onPress }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const BusinessListCell = React.memo(function BusinessListCell({
   business, bookmarked, isComparing, onPress, onToggleBookmark, onToggleCompare,
+  locationPermission = 'denied',
 }) {
   const b = business;
   const slotLabel = FEED_SLOT_LABEL[b.feedSlot] || null;
+  const distanceBadge = locationPermission === 'granted' ? getDistanceBadge(b.distance) : null;
   return (
     <TouchableOpacity style={hS.listCell} onPress={() => onPress(b)} activeOpacity={0.8}>
       <View style={hS.listCellImage}>
@@ -221,8 +232,13 @@ const BusinessListCell = React.memo(function BusinessListCell({
         </View>
         <Text style={hS.listCellCategory} numberOfLines={1}>{b.subcategory}</Text>
         {b.address && <Text style={hS.listCellAddress} numberOfLines={1}>{b.address}</Text>}
-        {(slotLabel || b.hasActiveStatus || b.isNew || b.hasPromo) && (
+        {(distanceBadge || slotLabel || b.hasActiveStatus || b.isNew || b.hasPromo) && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>
+            {distanceBadge && (
+              <View style={{ backgroundColor: distanceBadge.color + '18', borderColor: distanceBadge.color + '55', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: distanceBadge.color }}>{distanceBadge.label}</Text>
+              </View>
+            )}
             {slotLabel && (
               <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
                 <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>{slotLabel}</Text>
@@ -591,6 +607,7 @@ export const HomeModule = React.memo(function HomeModule({
               onPress={onSelectBusiness}
               onToggleBookmark={onToggleBookmark}
               onToggleCompare={toggleCompare}
+              locationPermission={locationPermission}
             />
           )
       }

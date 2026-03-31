@@ -724,6 +724,8 @@ function AppContent() {
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
   const [locationPermission, setLocationPermission] = useState('loading');
   const [userLocation, setUserLocation] = useState(null); // { latitude, longitude }
+  const [isLocationBootstrapLoading, setIsLocationBootstrapLoading] = useState(true);
+  const locationPermissionRequestedRef = React.useRef(false);
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
@@ -878,6 +880,8 @@ function AppContent() {
   const hybridFeedLoadedRef = React.useRef(false);
 
   const requestLocationPermission = async () => {
+    if (locationPermissionRequestedRef.current) return;
+    locationPermissionRequestedRef.current = true;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
@@ -895,6 +899,8 @@ function AppContent() {
       }
     } catch {
       setLocationPermission('denied');
+    } finally {
+      setIsLocationBootstrapLoading(false);
     }
   };
 
@@ -907,16 +913,14 @@ function AppContent() {
         // Verificar permissão actual
         let { status } = await Location.getForegroundPermissionsAsync();
 
-        // Pedir permissão em qualquer estado que não seja 'granted'
-        // 'undetermined' = primeira vez | 'denied' pode ser re-pedido em Expo Go
         if (status !== 'granted') {
-          const result = await Location.requestForegroundPermissionsAsync();
-          status = result.status;
+          setLocationPermission(status);
+          await requestLocationPermission();
+          return;
         }
 
+        locationPermissionRequestedRef.current = true;
         setLocationPermission(status);
-
-        if (status !== 'granted') return;
 
         // Posição inicial imediata
         const initial = await Location.getCurrentPositionAsync({
@@ -947,6 +951,8 @@ function AppContent() {
         locationWatchRef.current = subscription;
       } catch {
         setLocationPermission('denied');
+      } finally {
+        setIsLocationBootstrapLoading(false);
       }
     };
 
@@ -1163,7 +1169,7 @@ function AppContent() {
               onLogout={handleLogout}
               onRefresh={handleHomeRefresh}
               refreshing={homeRefreshing}
-              isLoading={isStartupLoading}
+              isLoading={isStartupLoading || isLocationBootstrapLoading}
             />
           )}
 
@@ -1347,6 +1353,23 @@ function AppContent() {
             onOwnerRoomBookingsChange={setOwnerRoomBookings}
             liveBusiness={businesses.find(b => b.id === layer.activeBusiness?.id) || layer.activeBusiness}
           />
+        </View>
+      )}
+
+      {locationPermission !== 'granted' && isLocationBootstrapLoading && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
+          <View style={{ width: '100%', maxWidth: 360, backgroundColor: COLORS.white, borderRadius: 16, padding: 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText, marginBottom: 10 }}>
+              O AchAqui precisa da tua localização para mostrar negócios perto de ti
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.red, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+              onPress={requestLocationPermission}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '700' }}>Permitir localização</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
