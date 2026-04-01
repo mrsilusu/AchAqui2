@@ -875,36 +875,46 @@ function AppContent() {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
-  // Ref que rastreia a localição actual (acessível de dentro de closures assíncronas)
-  const userLocationRef = React.useRef(null);
+  const formatDistanceText = (km) => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`);
 
-  // Aplica distâncias em linha recta a um array de negócios usando a localização dada
-  const applyDistances = (arr, loc) => {
+  // Ref que rastreia a localização actual (acessível de dentro de closures assíncronas)
+  const userLocationRef = React.useRef(null);
+  const roadDistanceSyncRef = React.useRef({ key: '', requestId: 0 });
+
+  // Distância estimada para cards: haversine * 1.35 (aproxima estrada em malha urbana)
+  const applyEstimatedDistances = (arr, loc) => {
     if (!loc) return arr;
     return arr.map(b => {
       const lat = Number(b.latitude);
       const lng = Number(b.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return b;
-      const km = haversineKm(loc.latitude, loc.longitude, lat, lng);
-      const distanceText = km < 1 ? `~${Math.round(km * 1000)}m` : `~${km.toFixed(1)}km`;
+      const km = haversineKm(loc.latitude, loc.longitude, lat, lng) * 1.35;
+      const distanceText = formatDistanceText(km);
       return { ...b, distance: km, distanceText };
-      // Aplica distâncias estimadas de estrada (haversine × 1,35) a um array de negócios.
-      // Factor 1,35: correcção empírica para redes urbanas (Luanda) — elimina a diferença
-      // visual face ao Google Maps sem precisar de chamadas de API adicionais.
-      const applyDistances = (arr, loc) => {
-        if (!loc) return arr;
-        return arr.map(b => {
-          const lat = Number(b.latitude);
-          const lng = Number(b.longitude);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return b;
-          const crow = haversineKm(loc.latitude, loc.longitude, lat, lng);
-          // Factor de correcção urbano: linha recta × 1,35 ≈ distância de estrada
-          const km = crow * 1.35;
-          const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
-          return { ...b, distance: km, distanceText };
-        });
-      };
     });
+  };
+
+  // Distância real de estrada para vários cards via OSRM Table API (em lotes)
+  const fetchRoadDistancesMap = async (loc, candidates) => {
+    const result = new Map();
+    const chunkSize = 20;
+    for (let i = 0; i < candidates.length; i += chunkSize) {
+      const chunk = candidates.slice(i, i + chunkSize);
+      const coords = [`${loc.longitude},${loc.latitude}`, ...chunk.map(c => `${c.lng},${c.lat}`)].join(';');
+      const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data?.code !== 'Ok' || !Array.isArray(data?.distances?.[0])) continue;
+        chunk.forEach((c, idx) => {
+          const meters = Number(data.distances[0][idx + 1]);
+          if (Number.isFinite(meters) && meters > 0) result.set(c.id, meters / 1000);
+        });
+      } catch {
+        // Falha silenciosa por lote; mantém distância estimada
+      }
+    }
+    return result;
   };
 
   // Ref para guardar a subscription do watch -- permite parar e reiniciar
@@ -1038,7 +1048,7 @@ function AppContent() {
   useEffect(() => {
     userLocationRef.current = userLocation;
     if (!userLocation) return;
-    setBusinesses(prev => applyDistances(prev, userLocation));
+    setBusinesses(prev => applyEstimatedDistances(prev, userLocation));
 
     // Reverse geocode to update the search location label (only if user hasn't typed a custom location)
     Location.reverseGeocodeAsync(userLocation)
@@ -1051,6 +1061,36 @@ function AppContent() {
       })
       .catch(() => {});
   }, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Upgrade assíncrono dos cards para distância real de estrada via OSRM.
+  // Corre após ter localização + lista de negócios e evita requests repetidos.
+  useEffect(() => {
+    if (!userLocation) return;
+    const candidates = businesses
+      .map((b) => ({ id: b.id, lat: Number(b.latitude), lng: Number(b.longitude) }))
+      .filter((b) => b.id && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+    if (!candidates.length) return;
+
+    const locKey = `${userLocation.latitude.toFixed(4)},${userLocation.longitude.toFixed(4)}`;
+    const bizKey = candidates.map((b) => `${b.id}:${b.lat.toFixed(4)},${b.lng.toFixed(4)}`).join('|');
+    const key = `${locKey}|${bizKey}`;
+    if (roadDistanceSyncRef.current.key === key) return;
+
+    roadDistanceSyncRef.current.key = key;
+    const requestId = roadDistanceSyncRef.current.requestId + 1;
+    roadDistanceSyncRef.current.requestId = requestId;
+
+    (async () => {
+      const map = await fetchRoadDistancesMap(userLocation, candidates);
+      if (!map.size) return;
+      if (roadDistanceSyncRef.current.requestId !== requestId) return;
+      setBusinesses(prev => prev.map((b) => {
+        const km = map.get(b.id);
+        if (!Number.isFinite(km)) return b;
+        return { ...b, distance: km, distanceText: formatDistanceText(km) };
+      }));
+    })();
+  }, [businesses, userLocation]);
 
   useEffect(() => {
     if (!userLocation?.latitude || !userLocation?.longitude) return;
@@ -1114,7 +1154,7 @@ function AppContent() {
 
           const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
           const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
-          setBusinesses(applyDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current));
+          setBusinesses(applyEstimatedDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current));
           return;
         }
 
@@ -1131,7 +1171,7 @@ function AppContent() {
               : biz;
           })
           .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
-        setBusinesses(applyDistances(merged, userLocationRef.current));
+        setBusinesses(applyEstimatedDistances(merged, userLocationRef.current));
       } catch (error) {
         console.error('[Startup][API_FAIL]', {
           reason: error?.type || 'unknown',
