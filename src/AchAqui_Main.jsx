@@ -432,6 +432,32 @@ function normalizeBusiness(rawBusiness) {
   // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
   const meta = rawBusiness.metadata || {};
   const hoursState = computeIsOpenFromMeta(meta);
+  const financeText = [
+    rawBusiness.name,
+    rawBusiness.category,
+    rawBusiness.description,
+    meta.category,
+    meta.subcategory,
+    meta.description,
+    base.name,
+    base.category,
+  ].filter(Boolean).join(' ').toLowerCase();
+  const existingSubCategoryIds = [
+    ...(Array.isArray(meta.subCategoryIds) ? meta.subCategoryIds : []),
+    ...(Array.isArray(rawBusiness.subCategoryIds) ? rawBusiness.subCategoryIds : []),
+    ...(Array.isArray(base.subCategoryIds) ? base.subCategoryIds : []),
+  ];
+  const isAtmBusiness = existingSubCategoryIds.includes('atm')
+    || /\batm\b|multicaixa|caixa electr[oó]nic|caixa eletr[oó]nic|terminal de levantamento/.test(financeText);
+  const isBankBusiness = !isAtmBusiness && (
+    existingSubCategoryIds.includes('bank')
+    || /\bbank\b|\bbanco\b|banc[oá]rio|ag[eê]ncia banc[aá]ria/.test(financeText)
+  );
+  const normalizedSubCategoryIds = Array.from(new Set([
+    ...existingSubCategoryIds,
+    ...(isAtmBusiness ? ['financial', 'atm'] : []),
+    ...(isBankBusiness ? ['financial', 'bank'] : []),
+  ]));
 
   return {
     ...base,
@@ -441,7 +467,7 @@ function normalizeBusiness(rawBusiness) {
     subcategory: meta.subcategory || rawBusiness.category || base.subcategory || 'Serviços',
     businessType: meta.businessType || rawBusiness.businessType || base.businessType || '',
     primaryCategoryId: meta.primaryCategoryId || rawBusiness.primaryCategoryId || base.primaryCategoryId || '',
-    subCategoryIds: meta.subCategoryIds || rawBusiness.subCategoryIds || base.subCategoryIds || [],
+    subCategoryIds: normalizedSubCategoryIds,
     icon: base.icon || meta.icon || '🏢',
     rating: base.rating || meta.rating || 4.8,
     reviews: base.reviews || meta.reviews || 0,
