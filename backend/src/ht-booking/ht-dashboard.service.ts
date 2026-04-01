@@ -215,7 +215,7 @@ export class HtDashboardService {
       this.prisma.htRoomBooking.findMany({
         where: {
           businessId,
-          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'] },
           OR: [
             { startDate: { lte: to }, endDate: { gte: from } },
           ],
@@ -223,6 +223,7 @@ export class HtDashboardService {
         select: {
           id: true, guestName: true, guestPhone: true, startDate: true, endDate: true,
           status: true, roomId: true, roomTypeId: true, totalPrice: true,
+          cancelledAt: true, cancelReason: true,
           paymentStatus: true, adults: true, children: true, rooms: true,
           roomType: { select: { id: true, name: true } },
         },
@@ -251,6 +252,8 @@ export class HtDashboardService {
         roomTypeId:    bk.roomTypeId,
         typeName:      bk.roomType?.name || '—',
         totalPrice:    bk.totalPrice,
+        cancelledAt:   bk.cancelledAt,
+        cancelReason:  bk.cancelReason,
         paymentStatus: bk.paymentStatus,
         adults:        bk.adults   ?? 1,
         children:      bk.children ?? 0,

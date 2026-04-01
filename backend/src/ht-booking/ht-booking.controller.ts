@@ -8,6 +8,7 @@ import { HtIcalService }    from './ht-ical.service';
 import { HtDashboardService } from './ht-dashboard.service';
 import { HtFolioService, AddFolioItemDto, FinancialCheckoutDto } from './ht-folio.service';
 import { CheckInDto } from './dto/check-in.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
@@ -58,6 +59,12 @@ export class HtBookingController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   noShow(@Param('id') id: string, @Req() req: any, @Ip() ip: string) {
     return this.htBookingService.markNoShow(id, req.user.userId, ip);
+  }
+
+  @Patch('bookings/:id/cancel')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  cancelBooking(@Param('id') id: string, @Body() dto: CancelBookingDto, @Req() req: any, @Ip() ip: string) {
+    return this.htBookingService.cancel(id, req.user.userId, dto, ip);
   }
 
   // ─── iCal Sync (backend) ─────────────────────────────────────────────────────

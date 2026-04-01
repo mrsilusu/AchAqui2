@@ -9,6 +9,7 @@ import { HtBookingStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 import { CheckInDto } from './dto/check-in.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 // [TENANT] Todas as queries incluem businessId extraído do JWT.
 // [ACID]   check-in e check-out usam transação Prisma ($transaction).
@@ -401,6 +402,62 @@ export class HtBookingService {
     return updated;
   }
 
+  // CANCELAMENTO (owner) — requer motivo e apenas antes do CHECKED_IN.
+  async cancel(bookingId: string, ownerId: string, dto: CancelBookingDto, ip?: string) {
+    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const reason = String(dto?.reason || '').trim();
+    if (reason.length < 3) {
+      throw new BadRequestException('Motivo do cancelamento é obrigatório (mínimo 3 caracteres).');
+    }
+
+    if (booking.status !== HtBookingStatus.PENDING && booking.status !== HtBookingStatus.CONFIRMED) {
+      throw new BadRequestException(`Só é possível cancelar reservas PENDING/CONFIRMED. Estado actual: ${booking.status}`);
+    }
+
+    const previousStatus = booking.status;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: HtBookingStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancelReason: reason,
+          version: { increment: 1 },
+        },
+      });
+
+      if (booking.roomId) {
+        await tx.htRoom.update({
+          where: { id: booking.roomId },
+          data: { status: 'CLEAN', version: { increment: 1 } },
+        }).catch(() => null);
+      }
+
+      return updatedBooking;
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_CANCELLED',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { status: previousStatus },
+      newData: { status: HtBookingStatus.CANCELLED, cancelledAt: updated.cancelledAt, cancelReason: reason },
+      note: reason,
+      ipAddress: ip,
+    });
+
+    this.eventsGateway.emitToUser(booking.user.id, 'booking.cancelled', {
+      bookingId,
+      businessName: booking.business.name,
+      cancelledAt: updated.cancelledAt,
+      reason,
+    });
+
+    return updated;
+  }
+
   // CHEGADAS — próximos 7 dias (PENDING ou CONFIRMED). Se não houver hoje, mostra as próximas.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
   async getTodayArrivals(businessId: string, ownerId: string) {
@@ -603,6 +660,7 @@ const BOOKING_SELECT = {
   adults: true, children: true, rooms: true,
   startDate: true, endDate: true, status: true,
   notes: true, checkedInAt: true, checkedOutAt: true,
+  cancelledAt: true, cancelReason: true,
   totalPrice: true, paymentStatus: true, roomTypeId: true,
   guestProfile: {
     select: {

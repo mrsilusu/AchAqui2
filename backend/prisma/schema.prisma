@@ -713,6 +713,8 @@ model HtRoomBooking {
   voucherCode     String?
   // Timestamps operacionais — [AUDIT] registados também no CoreAuditLog
   confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
   checkedInAt     DateTime?
   checkedOutAt    DateTime?
   noShowAt        DateTime?

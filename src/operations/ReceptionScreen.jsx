@@ -143,6 +143,45 @@ function ChangeRoomModal({ visible, booking, rooms, onConfirm, onClose }) {
   );
 }
 
+function CancelReasonModal({ visible, booking, reason, setReason, loading, onConfirm, onClose }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={rpS.sheet}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>Cancelar Reserva</Text>
+            <TouchableOpacity onPress={onClose} disabled={loading}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <Text style={rpS.sub}>
+            Informe o motivo do cancelamento
+            {booking?.guestName ? ` para ${booking.guestName}` : ''}.
+          </Text>
+          <TextInput
+            style={[rpS.dateInput, { minHeight: 92, textAlignVertical: 'top', marginTop: 0 }]}
+            placeholder="Ex.: cliente pediu cancelamento por alteração da data"
+            value={reason}
+            onChangeText={setReason}
+            multiline
+            editable={!loading}
+            maxLength={500}
+          />
+          <TouchableOpacity
+            style={[rpS.skipBtn, { backgroundColor: '#DC2626', marginTop: 12, opacity: loading ? 0.7 : 1 }]}
+            onPress={onConfirm}
+            disabled={loading}
+          >
+            {loading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={[rpS.skipBtnText, { color: '#fff', fontWeight: '700' }]}>Confirmar Cancelamento</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── CalendarPicker simples para os modais ────────────────────────────────────
 function CalendarPickerSimple({ value, minDate, maxDate, isOpen, onToggle, onChange }) {
   const parseD = (str) => {
@@ -1304,15 +1343,26 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
               <Text style={[rS.rowText, { flex: 1 }]}>{booking.notes}</Text>
             </View>
           ) : null}
+          {booking.cancelReason ? (
+            <View style={rS.row}>
+              <Icon name="x" size={13} color="#DC2626" strokeWidth={2} />
+              <Text style={[rS.rowText, { flex: 1, color: '#991B1B' }]}>Motivo: {booking.cancelReason}</Text>
+            </View>
+          ) : null}
 
           {/* ── Botões por tab ── */}
           <View style={rS.actions}>
             {tab === 'arrivals' && (
               <>
                 {booking.status === 'PENDING' && (
-                  <TouchableOpacity style={[rS.btn, rS.btnBlue]} onPress={() => onAction(booking.id, 'confirm')} disabled={busy}>
-                    {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={rS.btnWhite}>Confirmar</Text>}
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity style={[rS.btn, rS.btnBlue]} onPress={() => onAction(booking.id, 'confirm')} disabled={busy}>
+                      {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={rS.btnWhite}>Confirmar</Text>}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, rS.btnRed]} onPress={() => onAction(booking.id, 'cancel', booking)} disabled={busy}>
+                      <Text style={[rS.btnText, { color: '#DC2626' }]}>Cancelar</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
                 {(booking.status === 'CONFIRMED') && (
                   <>
@@ -1326,6 +1376,9 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                     </TouchableOpacity>
                     <TouchableOpacity style={[rS.btn, rS.btnRed]} onPress={() => onAction(booking.id, 'noshow')} disabled={busy}>
                       <Text style={[rS.btnText, { color: '#DC2626' }]}>No-Show</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, rS.btnRed]} onPress={() => onAction(booking.id, 'cancel', booking)} disabled={busy}>
+                      <Text style={[rS.btnText, { color: '#DC2626' }]}>Cancelar</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -1803,6 +1856,9 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const [extendModal, setExtendModal]     = useState(null);
   const [changeModal, setChangeModal]     = useState(null);
   const [guestModal, setGuestModal]       = useState(null); // booking
+  const [cancelModal, setCancelModal]     = useState(null);
+  const [cancelReason, setCancelReason]   = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
   const alive = useRef(true);
 
@@ -1908,6 +1964,18 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       return;
     }
 
+    if (action === 'cancel') {
+      const bk = bookingObj || [...(data.arrivals || []), ...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
+      if (!bk) return;
+      if (!(bk.status === 'PENDING' || bk.status === 'CONFIRMED')) {
+        Alert.alert('Cancelamento indisponível', 'Só é possível cancelar reservas pendentes ou confirmadas.');
+        return;
+      }
+      setCancelReason('');
+      setCancelModal(bk);
+      return;
+    }
+
     // Checkout: verificar se o folio está encerrado antes de prosseguir
     if (action === 'checkout') {
       setActionLoading(bookingId);
@@ -1955,6 +2023,26 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       },
     ]);
   }, [accessToken, businessId, load, data]);
+
+  const submitCancelBooking = useCallback(async () => {
+    if (!cancelModal) return;
+    const reason = String(cancelReason || '').trim();
+    if (reason.length < 3) {
+      Alert.alert('Motivo obrigatório', 'Descreva o motivo do cancelamento (mínimo 3 caracteres).');
+      return;
+    }
+    setCancelLoading(true);
+    try {
+      await backendApi.cancelBooking(cancelModal.id, { reason }, accessToken);
+      setCancelModal(null);
+      setCancelReason('');
+      await load(true);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível cancelar a reserva.');
+    } finally {
+      if (alive.current) setCancelLoading(false);
+    }
+  }, [cancelModal, cancelReason, accessToken, load]);
 
   // Executar check-in com roomId opcional (vazio = auto-assign no backend)
   // Executa o check-in efectivo apos confirmacao
@@ -2272,6 +2360,19 @@ Deseja continuar mesmo assim (quarto em uso)?`,
         rooms={physicalRooms}
         onConfirm={(newRoomId, roomsData) => doChangeRoom(changeModal.id, newRoomId, roomsData)}
         onClose={() => setChangeModal(null)}
+      />
+      <CancelReasonModal
+        visible={!!cancelModal}
+        booking={cancelModal}
+        reason={cancelReason}
+        setReason={setCancelReason}
+        loading={cancelLoading}
+        onConfirm={submitCancelBooking}
+        onClose={() => {
+          if (cancelLoading) return;
+          setCancelModal(null);
+          setCancelReason('');
+        }}
       />
     </Modal>
   );

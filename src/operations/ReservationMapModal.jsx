@@ -27,6 +27,7 @@ const STATUS_CFG = {
   CONFIRMED:   { bg: '#BFDBFE', border: '#3B82F6', text: '#1E3A8A', label: 'Confirmada' },
   CHECKED_IN:  { bg: '#A7F3D0', border: '#10B981', text: '#064E3B', label: 'Hospedado'  },
   CHECKED_OUT: { bg: '#E5E7EB', border: '#9CA3AF', text: '#374151', label: 'Saída'      },
+  CANCELLED:   { bg: '#FEE2E2', border: '#EF4444', text: '#991B1B', label: 'Cancelada'  },
 };
 
 const pad      = n => String(n).padStart(2, '0');
@@ -140,6 +141,12 @@ function BookingDetailModal({ bk, onClose, onAction }) {
                   </Text>
                 </View>
               )}
+              {bk.cancelReason ? (
+                <View style={dS.row}>
+                  <Icon name="x" size={13} color="#DC2626" strokeWidth={2} />
+                  <Text style={[dS.rowText, { color: '#991B1B' }]}>Motivo: {bk.cancelReason}</Text>
+                </View>
+              ) : null}
 
               {/* ── Botões de acção (mesmo padrão da Receção) ── */}
               <View style={dS.actions}>
@@ -175,7 +182,7 @@ function BookingDetailModal({ bk, onClose, onAction }) {
                     <Text style={[dS.btnText, { color: '#DC2626' }]}>No-Show</Text>
                   </TouchableOpacity>
                 )}
-                {bk.status !== 'CHECKED_OUT' && bk.status !== 'CANCELLED' && (
+                {(bk.status === 'PENDING' || bk.status === 'CONFIRMED') && (
                   <TouchableOpacity style={[dS.btn, dS.btnCancel]}
                     onPress={() => { onClose(); onAction(bk.id, 'cancel', bk); }}>
                     <Text style={[dS.btnText, { color: '#DC2626' }]}>Cancelar</Text>

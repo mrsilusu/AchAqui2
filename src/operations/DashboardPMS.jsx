@@ -181,6 +181,9 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   const [showGantt, setShowGantt]               = useState(false);
   const [pendingReceptionAction, setPendingReceptionAction] = useState(null);
   const [showMap, setShowMap]                   = useState(false);
+  const [cancelBookingFromMap, setCancelBookingFromMap] = useState(null);
+  const [cancelReasonFromMap, setCancelReasonFromMap] = useState('');
+  const [cancelMapLoading, setCancelMapLoading] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -228,6 +231,26 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
     loadBusinessPolicy();
     return () => { cancelled = true; };
   }, [businessId, accessToken]);
+
+  const submitCancelFromMap = useCallback(async () => {
+    if (!cancelBookingFromMap) return;
+    const reason = String(cancelReasonFromMap || '').trim();
+    if (reason.length < 3) {
+      Alert.alert('Motivo obrigatório', 'Descreva o motivo do cancelamento (mínimo 3 caracteres).');
+      return;
+    }
+    setCancelMapLoading(true);
+    try {
+      await backendApi.cancelBooking(cancelBookingFromMap.id, { reason }, accessToken);
+      setCancelBookingFromMap(null);
+      setCancelReasonFromMap('');
+      load(true);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Operação falhou.');
+    } finally {
+      if (alive.current) setCancelMapLoading(false);
+    }
+  }, [cancelBookingFromMap, cancelReasonFromMap, accessToken, load]);
 
   const handleSaveSellablePercent = useCallback(async () => {
     const raw = Number(sellablePercentInput);
@@ -609,7 +632,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               }
               if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
               if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
-              if (action === 'cancel')   await backendApi.updateBooking(bookingId, { status: 'CANCELLED' }, token);
+              if (action === 'cancel')   {
+                if (!(bk?.status === 'PENDING' || bk?.status === 'CONFIRMED')) {
+                  Alert.alert('Cancelamento indisponível', 'Só é possível cancelar reservas pendentes ou confirmadas.');
+                  return;
+                }
+                setCancelReasonFromMap('');
+                setCancelBookingFromMap({ id: bookingId, guestName: bk?.guestName || 'Hóspede' });
+                return;
+              }
               if (action === 'edit')     {
                 setPendingReceptionAction({ bookingId, action: 'edit', bk });
                 setShowReception(true);
@@ -647,6 +678,48 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           onClose={() => setShowGantt(false)}
         />
       )}
+
+      <Modal visible={!!cancelBookingFromMap} transparent animationType="fade" onRequestClose={() => !cancelMapLoading && setCancelBookingFromMap(null)}>
+        <View style={dS.cancelOverlay}>
+          <View style={dS.cancelCard}>
+            <Text style={dS.cancelTitle}>Cancelar Reserva</Text>
+            <Text style={dS.cancelSub}>
+              Indique o motivo do cancelamento para {cancelBookingFromMap?.guestName || 'o hóspede'}.
+            </Text>
+            <TextInput
+              style={dS.cancelInput}
+              placeholder="Ex.: cliente pediu cancelamento"
+              value={cancelReasonFromMap}
+              onChangeText={setCancelReasonFromMap}
+              multiline
+              editable={!cancelMapLoading}
+              maxLength={500}
+            />
+            <View style={dS.cancelActions}>
+              <TouchableOpacity
+                style={[dS.cancelBtn, { backgroundColor: '#F3F4F6' }]}
+                onPress={() => {
+                  if (cancelMapLoading) return;
+                  setCancelBookingFromMap(null);
+                  setCancelReasonFromMap('');
+                }}
+                disabled={cancelMapLoading}
+              >
+                <Text style={[dS.cancelBtnText, { color: '#374151' }]}>Fechar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.cancelBtn, { backgroundColor: '#DC2626', opacity: cancelMapLoading ? 0.7 : 1 }]}
+                onPress={submitCancelFromMap}
+                disabled={cancelMapLoading}
+              >
+                {cancelMapLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={dS.cancelBtnText}>Confirmar Cancelamento</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -759,6 +832,39 @@ const dS = StyleSheet.create({
   calCellDirty:    { backgroundColor: '#FEF9C3' },
   calCellMaint:    { backgroundColor: '#FEE2E2' },
   calCellText:     { fontSize: 8, color: '#1D4ED8', fontWeight: '600', paddingHorizontal: 2, textAlign: 'center' },
+
+  // Cancel modal (from map actions)
+  cancelOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  cancelCard: {
+    width: '100%',
+    maxWidth: 460,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+  },
+  cancelTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  cancelSub: { fontSize: 13, color: '#6B7280', marginTop: 6, marginBottom: 10 },
+  cancelInput: {
+    minHeight: 92,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textAlignVertical: 'top',
+    fontSize: 13,
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+  cancelActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  cancelBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10, paddingVertical: 11 },
+  cancelBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // Empty
   empty:        { alignItems: 'center', padding: 24 },

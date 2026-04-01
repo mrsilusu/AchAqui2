@@ -17,7 +17,7 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Modal, Alert, ActivityIndicator, RefreshControl, FlatList,
+  Modal, Alert, ActivityIndicator, RefreshControl, FlatList, TextInput,
   SafeAreaView, Platform, Dimensions,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
@@ -476,7 +476,7 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
 
   const todayYmd = toYMD(new Date());
   const showConfirm  = booking.status === 'pending' || booking.status === 'PENDING';
-  const showCancel   = booking.status === 'pending' || booking.status === 'PENDING';
+  const showCancel   = booking.status === 'pending' || booking.status === 'PENDING' || booking.status === 'CONFIRMED' || booking.status === 'confirmed';
   // Check-in disponível para CONFIRMED (não só hoje — check-in antecipado também permitido)
   const showCheckin  = booking.status === 'CONFIRMED' || booking.status === 'confirmed';
   const showCheckout = booking.status === 'CHECKED_IN' || booking.status === 'checked_in';
@@ -520,6 +520,9 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
             )}
             {booking.specialRequest ? (
               <Text style={gS.sheetMeta} numberOfLines={2}>📝 {booking.specialRequest}</Text>
+            ) : null}
+            {booking.cancelReason ? (
+              <Text style={[gS.sheetMeta, { color: '#991B1B' }]}>❌ Motivo: {booking.cancelReason}</Text>
             ) : null}
           </ScrollView>
 
@@ -805,6 +808,9 @@ export function RoomGanttScreen({
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedRoom,    setSelectedRoom]    = useState(null);
   const [showLegend,      setShowLegend]      = useState(false);
+  const [cancelTarget,    setCancelTarget]    = useState(null);
+  const [cancelReason,    setCancelReason]    = useState('');
+  const [cancelLoading,   setCancelLoading]   = useState(false);
   const alive = useRef(true);
   const loadingRef = useRef(false);
   // Refs estáveis para props array — evitam loop infinito de useEffect
@@ -1099,13 +1105,42 @@ export function RoomGanttScreen({
       if (action === 'confirm')  await backendApi.confirmBooking(booking.id, { businessId }, accessToken).catch(() => {});
       if (action === 'checkin')  await backendApi.htCheckIn(booking.id, { businessId }, accessToken).catch(() => {});
       if (action === 'checkout') await backendApi.htCheckOut(booking.id, accessToken).catch(() => {});
-      if (action === 'cancel')   await backendApi.updateBooking(booking.id, { status: 'CANCELLED' }, accessToken).catch(() => {});
+      if (action === 'cancel') {
+        if (!(booking.status === 'PENDING' || booking.status === 'pending' || booking.status === 'CONFIRMED' || booking.status === 'confirmed')) {
+          Alert.alert('Cancelamento indisponível', 'Só é possível cancelar reservas pendentes ou confirmadas.');
+          return;
+        }
+        setCancelReason('');
+        setCancelTarget(booking);
+        return;
+      }
       setSelectedBooking(null);
       await load(true);
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Operação falhou.');
     }
   }, [businessId, accessToken, load]);
+
+  const submitCancelBooking = useCallback(async () => {
+    if (!cancelTarget) return;
+    const reason = String(cancelReason || '').trim();
+    if (reason.length < 3) {
+      Alert.alert('Motivo obrigatório', 'Descreva o motivo do cancelamento (mínimo 3 caracteres).');
+      return;
+    }
+    setCancelLoading(true);
+    try {
+      await backendApi.cancelBooking(cancelTarget.id, { reason }, accessToken);
+      setCancelTarget(null);
+      setCancelReason('');
+      setSelectedBooking(null);
+      await load(true);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível cancelar a reserva.');
+    } finally {
+      if (alive.current) setCancelLoading(false);
+    }
+  }, [cancelTarget, cancelReason, accessToken, load]);
 
   // ── Actualizar quarto localmente ─────────────────────────────────────────────
   const handleUpdateRoom = useCallback((roomId, patch) => {
@@ -1287,6 +1322,48 @@ export function RoomGanttScreen({
           onUpdateRoom={handleUpdateRoom}
         />
       )}
+
+      <Modal visible={!!cancelTarget} transparent animationType="fade" onRequestClose={() => !cancelLoading && setCancelTarget(null)}>
+        <View style={gS.cancelOverlay}>
+          <View style={gS.cancelCard}>
+            <Text style={gS.cancelTitle}>Cancelar Reserva</Text>
+            <Text style={gS.cancelSub}>
+              Indique o motivo do cancelamento{cancelTarget?.guestName ? ` para ${cancelTarget.guestName}` : ''}.
+            </Text>
+            <TextInput
+              style={gS.cancelInput}
+              placeholder="Ex.: cliente pediu reagendamento"
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              multiline
+              editable={!cancelLoading}
+              maxLength={500}
+            />
+            <View style={gS.cancelActions}>
+              <TouchableOpacity
+                style={[gS.cancelBtn, { backgroundColor: '#F3F4F6' }]}
+                onPress={() => {
+                  if (cancelLoading) return;
+                  setCancelTarget(null);
+                  setCancelReason('');
+                }}
+                disabled={cancelLoading}
+              >
+                <Text style={[gS.cancelBtnText, { color: '#374151' }]}>Fechar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[gS.cancelBtn, { backgroundColor: '#DC2626', opacity: cancelLoading ? 0.7 : 1 }]}
+                onPress={submitCancelBooking}
+                disabled={cancelLoading}
+              >
+                {cancelLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={gS.cancelBtnText}>Confirmar Cancelamento</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -1392,6 +1469,26 @@ const gS = StyleSheet.create({
   // Loading / empty
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingText:  { marginTop: 10, color: '#888', fontSize: 13 },
+
+  cancelOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  cancelCard: { width: '100%', maxWidth: 460, backgroundColor: '#fff', borderRadius: 14, padding: 16 },
+  cancelTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  cancelSub: { fontSize: 13, color: '#6B7280', marginTop: 6, marginBottom: 10 },
+  cancelInput: {
+    minHeight: 92,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textAlignVertical: 'top',
+    fontSize: 13,
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+  cancelActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  cancelBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10, paddingVertical: 11 },
+  cancelBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // Bottom sheets
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
