@@ -491,13 +491,13 @@ function normalizeBusiness(rawBusiness) {
     phone: base.phone || meta.phone || '',
     website: base.website || meta.website || '',
     promo: base.promo || meta.promo || null,
-    distance: base.distance || meta.distance || 0,
-    distanceText: base.distanceText || meta.distanceText || '—',
+    distance: 0,
+    distanceText: '—',
     isOpen:     hoursState.isOpen ?? base.isOpen ?? meta.isOpen ?? true,
     statusText: hoursState.statusText || base.statusText || meta.statusText || 'Aberto',
     isPublic: true,
-    latitude: rawBusiness.latitude || base.latitude || -8.8388,
-    longitude: rawBusiness.longitude || base.longitude || 13.2344,
+    latitude: Number(rawBusiness.latitude) || Number(base.latitude) || -8.8388,
+    longitude: Number(rawBusiness.longitude) || Number(base.longitude) || 13.2344,
     photos: base.photos?.length ? base.photos : (meta.photos || []),
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
@@ -866,13 +866,29 @@ function AppContent() {
     }).catch(() => {});
   }, [meta.swipeProgress]);
 
-  // Haversine -- distância em km entre dois pontos GPS
+  // Haversine -- distância em linha recta (crow-flies) entre dois pontos GPS
   const haversineKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Ref que rastreia a localição actual (acessível de dentro de closures assíncronas)
+  const userLocationRef = React.useRef(null);
+
+  // Aplica distâncias em linha recta a um array de negócios usando a localização dada
+  const applyDistances = (arr, loc) => {
+    if (!loc) return arr;
+    return arr.map(b => {
+      const lat = Number(b.latitude);
+      const lng = Number(b.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return b;
+      const km = haversineKm(loc.latitude, loc.longitude, lat, lng);
+      const distanceText = km < 1 ? `~${Math.round(km * 1000)}m` : `~${km.toFixed(1)}km`;
+      return { ...b, distance: km, distanceText };
+    });
   };
 
   // Ref para guardar a subscription do watch -- permite parar e reiniciar
@@ -1002,15 +1018,11 @@ function AppContent() {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
   }, []);
 
-  // Recalcular distâncias quando a localização do utilizador muda
+  // Recalcular distâncias sempre que a localização muda; manter ref actualizada
   useEffect(() => {
+    userLocationRef.current = userLocation;
     if (!userLocation) return;
-    setBusinesses(prev => prev.map(b => {
-      if (!Number.isFinite(b.latitude) || !Number.isFinite(b.longitude)) return b;
-      const km = haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude);
-      const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
-      return { ...b, distance: km, distanceText };
-    }));
+    setBusinesses(prev => applyDistances(prev, userLocation));
 
     // Reverse geocode to update the search location label (only if user hasn't typed a custom location)
     Location.reverseGeocodeAsync(userLocation)
@@ -1086,7 +1098,7 @@ function AppContent() {
 
           const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
           const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
-          setBusinesses([...fromFeed, ...fromApi, ...mocksFallback]);
+          setBusinesses(applyDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current));
           return;
         }
 
@@ -1103,7 +1115,7 @@ function AppContent() {
               : biz;
           })
           .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
-        setBusinesses(merged);
+        setBusinesses(applyDistances(merged, userLocationRef.current));
       } catch (error) {
         console.error('[Startup][API_FAIL]', {
           reason: error?.type || 'unknown',
