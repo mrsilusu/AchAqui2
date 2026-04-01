@@ -842,6 +842,8 @@ function SearchTab({
                 {id:'professional',label:'Serviços',icon:'professional',color:'#059669'},
                 {id:'education',label:'Educação',icon:'users',color:'#DC2626'},
                 {id:'active',label:'Fitness',icon:'star',color:'#16A34A'},
+                {id:'bank',label:'Banco',icon:'payment',color:'#1D4ED8'},
+                {id:'atm',label:'ATM',icon:'payment',color:'#047857'},
               ].map(cat=>(
                 <TouchableOpacity key={cat.id}
                   style={{width:'47%',backgroundColor:COLORS.white,borderRadius:14,padding:14,flexDirection:'row',alignItems:'center',gap:10,borderWidth:1,borderColor:COLORS.grayLine}}

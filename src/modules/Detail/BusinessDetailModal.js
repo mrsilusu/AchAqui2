@@ -50,7 +50,15 @@ const BUSINESS_TYPE_BADGES = {
   education:     { icon: '🎓', label: 'Educação',      color: '#DC2626' },
   freelancer:    { icon: '💼', label: 'Freelancer',    color: '#8B5CF6' },
   accommodation: { icon: '🏨', label: 'Alojamento',    color: '#0EA5E9' },
+  finance:       { icon: '💰', label: 'Financeiro',    color: '#1D4ED8' },
 };
+
+function getBusinessBadge(business) {
+  const ids = business.subCategoryIds || [];
+  if (ids.includes('atm'))  return { icon: '🏧', label: 'ATM',   color: '#047857' };
+  if (ids.includes('bank')) return { icon: '🏦', label: 'Banco', color: '#1D4ED8' };
+  return business.businessType ? (BUSINESS_TYPE_BADGES[business.businessType] ?? null) : null;
+}
 
 const OPERATIONAL_MODULES = [
   { id: 'gastronomy',    layer: 'dining',       label: 'Menu & Reservar Mesa',        emoji: '🍽️', color: '#EA580C', bgColor: '#FFF7ED' },
@@ -259,7 +267,7 @@ export function BusinessDetailModal({
   const bookmarked     = bookmarkedIds.includes(business.id);
   const status         = getBusinessStatus(business.statusText, business.isOpen);
   const photos         = business.photos?.length > 0 ? business.photos : null;
-  const badge          = business.businessType ? BUSINESS_TYPE_BADGES[business.businessType] : null;
+  const badge          = getBusinessBadge(business);
   const activeModules  = OPERATIONAL_MODULES.filter(m => business.modules?.[m.id]);
   // dedupe por layer
   const actionButtons  = activeModules.filter((m, i, a) => a.findIndex(x => x.layer === m.layer) === i);
