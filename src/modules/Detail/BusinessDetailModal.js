@@ -135,6 +135,7 @@ export function BusinessDetailModal({
   layer,  // useOperationalLayer() criado externamente (Main) — Nível 2 acima
   authSession = null,  // { accessToken, userId, role }
   onOpenAuth = null,   // () => void — abre modal de login
+  userLocation = null, // { latitude, longitude } — distância real de estrada via OSRM
 }) {
   const insets  = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
@@ -191,6 +192,31 @@ export function BusinessDetailModal({
   const [askSubmitting,     setAskSubmitting]       = useState(false);
 
   const scrollRef      = useRef(null);
+
+  // Distância de estrada via OSRM (OpenStreetMap routing, gratuito).
+  // Substitui a estimativa dos cards assim que o modal abre.
+  const [roadDistanceText, setRoadDistanceText] = useState(null);
+  useEffect(() => {
+    setRoadDistanceText(null);
+    const lat = Number(business?.latitude);
+    const lng = Number(business?.longitude);
+    if (!userLocation || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    let active = true;
+    const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.longitude},${userLocation.latitude};${lng},${lat}?overview=false`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (!active) return;
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          const meters = data.routes[0].distance;
+          const km = meters / 1000;
+          setRoadDistanceText(km < 1 ? `${Math.round(meters)}m` : `${km.toFixed(1)}km`);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [business?.id, userLocation?.latitude, userLocation?.longitude]);
+
 
   // -- Estado social real + reviews + Q&A
   useEffect(() => {
@@ -557,7 +583,7 @@ export function BusinessDetailModal({
           </View>
           <View style={s.infoMeta2}>
             <Icon name="location" size={12} color={COLORS.grayText} strokeWidth={1.5} />
-            <Text style={s.distanceText}>{business.distanceText}</Text>
+            <Text style={s.distanceText}>{roadDistanceText ?? business.distanceText}</Text>
             {business.priceLevel && <Text style={s.priceDot}>·</Text>}
             {business.priceLevel && <Text style={s.priceText}>{'Kz'.repeat(business.priceLevel)}</Text>}
           </View>

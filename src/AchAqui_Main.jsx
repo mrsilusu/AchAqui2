@@ -888,6 +888,22 @@ function AppContent() {
       const km = haversineKm(loc.latitude, loc.longitude, lat, lng);
       const distanceText = km < 1 ? `~${Math.round(km * 1000)}m` : `~${km.toFixed(1)}km`;
       return { ...b, distance: km, distanceText };
+      // Aplica distâncias estimadas de estrada (haversine × 1,35) a um array de negócios.
+      // Factor 1,35: correcção empírica para redes urbanas (Luanda) — elimina a diferença
+      // visual face ao Google Maps sem precisar de chamadas de API adicionais.
+      const applyDistances = (arr, loc) => {
+        if (!loc) return arr;
+        return arr.map(b => {
+          const lat = Number(b.latitude);
+          const lng = Number(b.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return b;
+          const crow = haversineKm(loc.latitude, loc.longitude, lat, lng);
+          // Factor de correcção urbano: linha recta × 1,35 ≈ distância de estrada
+          const km = crow * 1.35;
+          const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
+          return { ...b, distance: km, distanceText };
+        });
+      };
     });
   };
 
@@ -1365,6 +1381,7 @@ function AppContent() {
             onToggleBookmark={toggleBookmark}
             swipeProgress={meta.swipeProgress}
             layer={layer}
+            userLocation={userLocation}
             authSession={{
               accessToken: authSession.accessToken,
               userId: authSession.user?.id,
