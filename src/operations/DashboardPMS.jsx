@@ -166,7 +166,17 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0, guestBookings = [], roomTypes = [] }) {
+export function DashboardPMS({
+  businessId,
+  accessToken,
+  onOpenReception,
+  onClose,
+  reloadTrigger = 0,
+  guestBookings = [],
+  roomTypes = [],
+  noShowAlertBookings = [],
+  onDismissNoShowAlert,
+}) {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -319,6 +329,8 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
 
   const today = new Date();
   const todayStr = fmtDate(today);
+  const currentHour = today.getHours();
+  const showNoShowBanner = currentHour >= 18 && noShowAlertBookings.length > 0;
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -351,6 +363,29 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={COLORS.blue} />
             }
           >
+            {showNoShowBanner && (
+              <View style={{
+                marginHorizontal: 16, marginBottom: 12, padding: 14,
+                backgroundColor: '#FEF2F2', borderRadius: 12,
+                borderWidth: 1, borderColor: '#FECACA',
+                flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+              }}>
+                <Text style={{ fontSize: 18 }}>⚠️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#DC2626' }}>
+                    {noShowAlertBookings.length} reserva{noShowAlertBookings.length !== 1 ? 's' : ''}
+                    {' '}sem check-in — Verificar antes de marcar No-Show
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 3 }}>
+                    Ir à Receção para gerir estas reservas.
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={onDismissNoShowAlert} style={{ padding: 4 }}>
+                  <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '700' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* ── Taxa de ocupação ── */}
             <View style={dS.occupancyCard}>
               <View style={dS.occupancyLeft}>

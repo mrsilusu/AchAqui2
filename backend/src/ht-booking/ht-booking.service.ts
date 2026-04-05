@@ -385,9 +385,42 @@ export class HtBookingService {
           where: { id: booking.roomId },
           data: { status: 'CLEAN', version: { increment: 1 } },
         });
+
+        // Criar tarefa de housekeeping após no-show para inspeção/limpeza rápida do quarto.
+        await tx.htHousekeepingTask.create({
+          data: {
+            roomId: booking.roomId,
+            priority: 'NORMAL',
+            notes: 'No-show marcado na receção',
+          },
+        }).catch(() => null);
       }
       return updatedBooking;
     });
+
+    // Penalização No-Show configurada em HtPmsConfig (não bloqueia no-show em caso de erro).
+    try {
+      const cfg = await this.prisma.htPmsConfig.findUnique({
+        where: { businessId: booking.businessId },
+        select: { noShowPenalty: true },
+      });
+      if (cfg?.noShowPenalty && cfg.noShowPenalty > 0) {
+        await this.prisma.htFolioItem.create({
+          data: {
+            businessId: booking.businessId,
+            bookingId,
+            type: 'OTHER' as any,
+            description: 'Penalização No-Show',
+            quantity: 1,
+            unitPrice: cfg.noShowPenalty,
+            amount: cfg.noShowPenalty,
+            addedById: ownerId,
+          },
+        });
+      }
+    } catch {
+      // Não bloquear fluxo de no-show por erro de folio/config.
+    }
 
     await this.audit({
       businessId:   booking.businessId,
@@ -397,6 +430,52 @@ export class HtBookingService {
       previousData: { status: previousStatus },
       newData:      { status: HtBookingStatus.NO_SHOW, noShowAt: updated.noShowAt },
       ipAddress:    ip,
+    });
+
+    const bookingUserId = (booking as any)?.user?.id || booking.userId;
+    const bookingBusinessName = (booking as any)?.business?.name || null;
+    this.eventsGateway.emitToUser(bookingUserId, 'booking.noShow', {
+      bookingId,
+      businessName: bookingBusinessName,
+      noShowAt: updated.noShowAt,
+    });
+
+    return updated;
+  }
+
+  async postponeBooking(bookingId: string, ownerId: string, ip?: string) {
+    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    if (booking.status !== HtBookingStatus.CONFIRMED && booking.status !== HtBookingStatus.PENDING) {
+      throw new BadRequestException(`Estado inválido para adiar: ${booking.status}`);
+    }
+
+    const previousStart = booking.startDate;
+    const previousEnd = booking.endDate;
+
+    const newStart = new Date(booking.startDate);
+    newStart.setDate(newStart.getDate() + 1);
+
+    const durationMs = booking.endDate.getTime() - booking.startDate.getTime();
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const updated = await this.prisma.htRoomBooking.update({
+      where: { id: bookingId },
+      data: {
+        startDate: newStart,
+        endDate: newEnd,
+        status: HtBookingStatus.CONFIRMED,
+        version: { increment: 1 },
+      },
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_MODIFIED',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { startDate: previousStart, endDate: previousEnd },
+      newData: { startDate: newStart, endDate: newEnd, reason: 'postpone_noshow' },
+      ipAddress: ip,
     });
 
     return updated;

@@ -61,6 +61,16 @@ export class HtBookingController {
     return this.htBookingService.markNoShow(id, req.user.userId, ip);
   }
 
+  @Patch('bookings/:id/postpone')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  postponeBooking(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    return this.htBookingService.postponeBooking(id, req.user.userId, ip);
+  }
+
   @Patch('bookings/:id/cancel')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   cancelBooking(@Param('id') id: string, @Body() dto: CancelBookingDto, @Req() req: any, @Ip() ip: string) {

@@ -1355,6 +1355,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [checkingRooms, setCheckingRooms] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [noShowAlertDismissed, setNoShowAlertDismissed] = useState(false);
   const [showReception, setShowReception] = useState(false);
   const [showHousekeeping, setShowHousekeeping] = useState(false);
   const [dashboardReloadTrigger, setDashboardReloadTrigger] = useState(0);
@@ -1710,6 +1711,22 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
   );
 
+  const noShowAlertBookings = useMemo(() => {
+    return (activeBookings || []).filter((b) => {
+      if (b?.status !== 'CONFIRMED') return false;
+      if (b?.checkedInAt) return false;
+      const now = new Date();
+      const start = b?.startDate ? new Date(b.startDate) : parseDate(b?.checkIn);
+      if (!start || Number.isNaN(start.getTime())) return false;
+      return (
+        start.getFullYear() === now.getFullYear() &&
+        start.getMonth() === now.getMonth() &&
+        start.getDate() === now.getDate() &&
+        now.getHours() >= 18
+      );
+    });
+  }, [activeBookings]);
+
   useEffect(() => {
     if (!business?.id || filteredRooms.length === 0) {
       setCalendarDayAvailMap({});
@@ -1822,7 +1839,13 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         </View>
         {isOwner && (
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <TouchableOpacity style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]} onPress={() => setShowDashboard(true)}>
+            <TouchableOpacity
+              style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]}
+              onPress={() => {
+                setNoShowAlertDismissed(false);
+                setShowDashboard(true);
+              }}
+            >
               <Icon name="analytics" size={16} color={COLORS.white} strokeWidth={2} />
               <Text style={hS.ownerActionBtnText}>Dashboard</Text>
             </TouchableOpacity>
@@ -2031,6 +2054,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           reloadTrigger={dashboardReloadTrigger}
           guestBookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+          noShowAlertBookings={noShowAlertDismissed ? [] : noShowAlertBookings}
+          onDismissNoShowAlert={() => setNoShowAlertDismissed(true)}
         />
       )}
       {isOwner && showReception && (

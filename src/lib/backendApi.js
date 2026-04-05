@@ -379,6 +379,8 @@ export const backendApi = {
     apiRequest(`/ht/bookings/${bookingId}/checkout`, { method: 'PATCH', body: {}, accessToken }),
   htNoShow: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
+  htPostponeBooking: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/postpone`, { method: 'PATCH', body: {}, accessToken }),
   cancelBooking: (bookingId, payload, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/cancel`, { method: 'PATCH', body: payload, accessToken }),
 

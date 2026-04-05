@@ -1263,6 +1263,19 @@ function nights(s, e) {
   return Math.round((new Date(e) - new Date(s)) / 86400000);
 }
 
+function isNoShowRisk(booking) {
+  if (booking?.status !== 'CONFIRMED') return false;
+  if (booking?.checkedInAt) return false;
+  const now = new Date();
+  const start = new Date(booking?.startDate);
+  return (
+    start.getFullYear() === now.getFullYear() &&
+    start.getMonth() === now.getMonth() &&
+    start.getDate() === now.getDate() &&
+    now.getHours() >= 18
+  );
+}
+
 // ─── Card de reserva individual ───────────────────────────────────────────────
 function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const [open, setOpen] = useState(false);
@@ -1371,6 +1384,15 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                         <><Icon name="reservation" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-In</Text></>
                       )}
                     </TouchableOpacity>
+                    {isNoShowRisk(booking) && (
+                      <TouchableOpacity
+                        style={[rS.btn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA' }]}
+                        onPress={() => onAction(booking.id, 'postpone', booking)}
+                        disabled={busy}
+                      >
+                        <Text style={[rS.btnText, { color: '#D97706', fontWeight: '600' }]}>📅 Adiar</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={[rS.btn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]} onPress={() => onAction(booking.id, 'edit', booking)} disabled={busy}>
                       <Text style={[rS.btnText, { color: '#7C3AED', fontWeight: '600' }]}>✏️ Editar</Text>
                     </TouchableOpacity>
@@ -1860,6 +1882,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const [cancelReason, setCancelReason]   = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
+  const [noShowBannerDismissed, setNoShowBannerDismissed] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -1883,6 +1906,8 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
         departures: Array.isArray(d) ? d : [],
         guests:     Array.isArray(g) ? g : [],
       });
+      const atRisk = (Array.isArray(a) ? a : []).filter(isNoShowRisk);
+      if (atRisk.length > 0) setNoShowBannerDismissed(false);
       setPhysicalRooms(Array.isArray(rooms) ? rooms : []);
     } catch (e) {
       if (alive.current) Alert.alert('Erro ao carregar', e?.message || 'Não foi possível carregar os dados da receção.');
@@ -1951,6 +1976,33 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       if (bk) setExtendModal({ ...bk, _editMode: true });
       return;
     }
+
+    if (action === 'postpone') {
+      const bk = bookingObj || [...(data.arrivals || [])].find(b => b.id === bookingId);
+      Alert.alert(
+        '📅 Adiar para Amanhã',
+        `Adiar a chegada de ${bk?.guestName || 'hóspede'} para amanhã?\nA reserva ficará CONFIRMADA com nova data de entrada.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Adiar',
+            onPress: async () => {
+              setActionLoading(bookingId);
+              try {
+                await backendApi.htPostponeBooking(bookingId, accessToken);
+                await load(true);
+              } catch (e) {
+                Alert.alert('Erro', e?.message || 'Não foi possível adiar a reserva.');
+              } finally {
+                if (alive.current) setActionLoading(null);
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
+
     // Prolongar estadia: abrir modal de data
     if (action === 'extend') {
       const bk = bookingObj || [...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
@@ -2265,6 +2317,36 @@ Deseja continuar mesmo assim (quarto em uso)?`,
             contentContainerStyle={rS.listPad}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={COLORS.blue} />}
           >
+            {tab === 'arrivals' && !noShowBannerDismissed && (() => {
+              const atRisk = (data.arrivals || []).filter(isNoShowRisk);
+              if (atRisk.length === 0) return null;
+              return (
+                <View
+                  style={{
+                    margin: 12,
+                    marginBottom: 4,
+                    padding: 12,
+                    backgroundColor: '#FEF2F2',
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 16 }}>⚠️</Text>
+                  <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#DC2626' }}>
+                    {atRisk.length} reserva{atRisk.length !== 1 ? 's' : ''} sem check-in
+                    {' '}— Verificar antes de marcar No-Show
+                  </Text>
+                  <TouchableOpacity onPress={() => setNoShowBannerDismissed(true)}>
+                    <Text style={{ color: '#DC2626', fontSize: 14, fontWeight: '700' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
             {list.length === 0 ? (
               <View style={rS.empty}>
                 <Text style={{ fontSize: 40, marginBottom: 14 }}>

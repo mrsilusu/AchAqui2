@@ -576,6 +576,7 @@ model HtPmsConfig {
   includesBreakfast   Boolean  @default(false)
   petsAllowed         Boolean  @default(false)
   instantConfirm      Boolean  @default(false)
+  noShowPenalty       Float    @default(0)   // penalização em Kz (0 = sem penalização)
   // iCal — canal manager
   icalExportToken     String?  // token secreto para URL de exportação
   icalImportUrl       String?  // URL do Booking.com / Airbnb
