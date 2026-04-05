@@ -1298,6 +1298,22 @@ function isNoShowRisk(booking) {
   return now.getHours() >= 18;
 }
 
+function isLateCheckIn(booking) {
+  if (normalizeBookingStatus(booking?.status) !== 'CONFIRMED') return false;
+  if (booking?.checkedInAt) return false;
+
+  const start = parseBookingDate(booking?.startDate || booking?.checkIn);
+  if (!start) return false;
+
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const bookingStart = new Date(start);
+  bookingStart.setHours(0, 0, 0, 0);
+
+  return bookingStart.getTime() < todayStart.getTime();
+}
+
 // ─── Card de reserva individual ───────────────────────────────────────────────
 function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const [open, setOpen] = useState(false);
@@ -1306,6 +1322,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const room = roomTypes?.find(r => r.id === booking.roomTypeId);
   const nts  = nights(booking.startDate, booking.endDate);
   const busy = actionLoading === booking.id;
+  const showLateAlert = isLateCheckIn(booking);
 
   return (
     <View style={[rS.card, { borderLeftColor: st.color }]}>
@@ -1323,6 +1340,9 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           </Text>
         </View>
         <View style={rS.cardHeadRight}>
+          {showLateAlert ? (
+            <Text style={{ fontSize: 16, marginRight: 6 }} accessibilityLabel="Check-in atrasado">⚠️</Text>
+          ) : null}
           <View style={[rS.badge, { backgroundColor: st.bg }]}>
             <Text style={[rS.badgeText, { color: st.color }]}>{st.label}</Text>
           </View>
@@ -1333,6 +1353,22 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
       {/* ── Detalhes expandidos ── */}
       {open && (
         <View style={rS.cardBody}>
+          {showLateAlert ? (
+            <View style={{
+              marginBottom: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+              borderRadius: 8,
+              backgroundColor: '#FEF3C7',
+              borderWidth: 1,
+              borderColor: '#F59E0B',
+            }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#92400E' }}>
+                ⚠️ Alerta: check-in em atraso. Verificar com o hóspede antes de marcar No-Show.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={rS.row}>
             <Icon name="calendar" size={13} color={COLORS.grayText} strokeWidth={2} />
             <Text style={rS.rowText}>{fmt(booking.startDate)} → {fmt(booking.endDate)}</Text>
