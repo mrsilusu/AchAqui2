@@ -36,7 +36,7 @@ export class HtBookingService {
       where: { id: bookingId, business: { ownerId } },
       include: {
         room:     true,
-        roomType: { select: { name: true } },
+        roomType: { select: { name: true, pricePerNight: true } },
         user:     { select: { id: true, name: true, email: true } },
         business: { select: { id: true, name: true, ownerId: true } },
         guestProfile: {
@@ -312,21 +312,46 @@ export class HtBookingService {
   // CHECK-OUT
   // [ACID] Transação: reserva CHECKED_OUT + quarto DIRTY + HousekeepingTask criada.
   async checkOut(bookingId: string, ownerId: string, ip?: string) {
-    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
 
     if (booking.status !== HtBookingStatus.CHECKED_IN) {
       throw new BadRequestException(`Não é possível fazer check-out. Estado actual: ${booking.status}`);
     }
 
+    const now = new Date();
+    const plannedEnd = new Date(booking.endDate);
+    const isEarly = now < plannedEnd;
     const previousStatus = booking.status;
+
+    const realNights = Math.max(1, Math.ceil(
+      (now.getTime() - new Date(booking.startDate).getTime()) / 86400000,
+    ));
+    const plannedNights = Math.max(1, Math.ceil(
+      (plannedEnd.getTime() - new Date(booking.startDate).getTime()) / 86400000,
+    ));
+
+    let newTotalPrice = booking.totalPrice;
+    let folioAdjusted = false;
+    if (isEarly && booking.paymentStatus !== 'PAID') {
+      const pricePerNight = booking.roomType?.pricePerNight ?? 0;
+      if (pricePerNight > 0) {
+        newTotalPrice = pricePerNight * realNights * (booking.rooms ?? 1);
+        folioAdjusted = true;
+      }
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
-          status:       HtBookingStatus.CHECKED_OUT,
-          checkedOutAt: new Date(),
-          version:      { increment: 1 },
+          status: HtBookingStatus.CHECKED_OUT,
+          checkedOutAt: now,
+          ...(isEarly && {
+            endDate: now,
+            originalEndDate: plannedEnd,
+            totalPrice: newTotalPrice,
+          }),
+          version: { increment: 1 },
         },
         include: {
           room:     { select: { id: true, number: true } },
@@ -341,7 +366,7 @@ export class HtBookingService {
         });
         await tx.htHousekeepingTask.create({
           data: { roomId: updatedBooking.roomId, priority: 'NORMAL' },
-        });
+        }).catch(() => null);
       }
       return updatedBooking;
     });
@@ -351,9 +376,16 @@ export class HtBookingService {
       action:       'HT_BOOKING_CHECKED_OUT',
       actorId:      ownerId,
       resourceId:   bookingId,
-      previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_OUT, checkedOutAt: updated.checkedOutAt },
-      ipAddress:    ip,
+      previousData: { status: previousStatus, endDate: booking.endDate },
+      newData: {
+        status: HtBookingStatus.CHECKED_OUT,
+        checkedOutAt: now,
+        plannedEndDate: plannedEnd,
+        actualNights: realNights,
+        plannedNights,
+        folioAdjusted,
+      },
+      ipAddress: ip,
     });
 
     this.eventsGateway.emitToUser(ownerId, 'room.dirty', {

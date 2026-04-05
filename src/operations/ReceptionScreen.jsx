@@ -2087,23 +2087,23 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       return;
     }
 
-    // Checkout: verificar se o folio está encerrado antes de prosseguir
     if (action === 'checkout') {
       setActionLoading(bookingId);
       let folioBalance = 0;
+      let folio = null;
       try {
-        const folio = await backendApi.getHtFolio(bookingId, accessToken);
+        folio = await backendApi.getHtFolio(bookingId, accessToken);
         folioBalance = folio?.summary?.balance ?? 0;
-        // paymentStatus = 'PAID' significa que o checkout financeiro foi concluído
         if (folio?.booking?.paymentStatus === 'PAID') folioBalance = 0;
-      } catch { /* se API falhar, deixar continuar */ }
+      } catch { /* deixar continuar */ }
       setActionLoading(null);
+
       if (folioBalance > 0) {
         const bkForFolio = bookingObj
           || [...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
         Alert.alert(
           '⚠️ Folio não encerrado',
-          `Existe um saldo em dívida de ${folioBalance.toLocaleString('pt-PT')} Kz.\nEncerrre o folio antes do check-out.`,
+          `Existe um saldo em dívida de ${folioBalance.toLocaleString('pt-PT')} Kz.\nEncerre o folio antes do check-out.`,
           [
             { text: 'Cancelar', style: 'cancel' },
             { text: 'Abrir Folio', onPress: () => { if (bkForFolio) setFolioBooking(bkForFolio); } },
@@ -2111,6 +2111,84 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
         );
         return;
       }
+
+      const bk = bookingObj
+        || [...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
+      const today = new Date();
+      const plannedOut = bk?.endDate ? new Date(bk.endDate) : null;
+      const fmtD = (d) => d
+        ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+        : '—';
+
+      const isEarlyCheckout = plannedOut && today < plannedOut
+        && today.toDateString() !== plannedOut.toDateString();
+
+      if (isEarlyCheckout) {
+        const startDate = bk?.startDate ? new Date(bk.startDate) : null;
+        const realNights = startDate
+          ? Math.max(1, Math.ceil((today - startDate) / 86400000))
+          : null;
+        const planNights = startDate && plannedOut
+          ? Math.max(1, Math.ceil((plannedOut - startDate) / 86400000))
+          : null;
+        const pricePer = folio?.items?.find(i => i.type === 'ACCOMMODATION')?.unitPrice
+          ?? (bk?.totalPrice && planNights ? bk.totalPrice / planNights : null);
+        const newTotal = pricePer && realNights
+          ? (pricePer * realNights * (bk?.rooms ?? 1))
+          : null;
+        const folioIsPaid = folio?.booking?.paymentStatus === 'PAID';
+        const priceMsg = folioIsPaid
+          ? '\n\n⚠️ Folio já pago — valor não será recalculado automaticamente.'
+          : newTotal != null
+            ? `\n\nValor a cobrar: ${newTotal.toLocaleString('pt-PT')} Kz (ajustado)`
+            : '';
+
+        Alert.alert(
+          'Checkout Antecipado',
+          `O hóspede estava previsto sair em ${fmtD(plannedOut)}.\n`
+          + `Confirmas o checkout hoje, ${fmtD(today)}?\n\n`
+          + `Noites previstas:  ${planNights ?? '—'}\n`
+          + `Noites efectuadas: ${realNights ?? '—'}`
+          + priceMsg,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Confirmar Checkout',
+              onPress: async () => {
+                setActionLoading(bookingId);
+                try {
+                  await backendApi.htCheckOut(bookingId, accessToken);
+                  await load(true);
+                } catch (e) {
+                  Alert.alert('Erro', e?.message || 'Operação falhou. Tenta novamente.');
+                } finally {
+                  if (alive.current) setActionLoading(null);
+                }
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      Alert.alert('Check-Out', 'Confirmar checkout? O quarto ficará marcado como sujo.', [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Check-Out',
+          onPress: async () => {
+            setActionLoading(bookingId);
+            try {
+              await backendApi.htCheckOut(bookingId, accessToken);
+              await load(true);
+            } catch (e) {
+              Alert.alert('Erro', e?.message || 'Operação falhou. Tenta novamente.');
+            } finally {
+              if (alive.current) setActionLoading(null);
+            }
+          },
+        },
+      ]);
+      return;
     }
 
     Alert.alert(labels[action], msgs[action], [

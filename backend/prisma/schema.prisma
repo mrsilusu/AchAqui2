@@ -718,6 +718,7 @@ model HtRoomBooking {
   cancelReason    String?
   checkedInAt     DateTime?
   checkedOutAt    DateTime?
+  originalEndDate DateTime?         // data prevista de saída antes de checkout antecipado
   noShowAt        DateTime?
   // [ACID] optimistic locking para alterações concorrentes
   version         Int              @default(0)

@@ -281,11 +281,10 @@ function GanttHeader({ dates, onScroll, scrollRef }) {
 // ─── GanttBar ────────────────────────────────────────────────────────────────
 function GanttBar({ booking, dates, onPress, hasConflict }) {
   const startIdx = dates.findIndex((d) => d >= booking.checkIn);
-  // clip ao início da janela se checkIn está antes
   const clippedStart = booking.checkIn < dates[0] ? 0 : startIdx;
 
-  const endIdx = dates.findIndex((d) => d >= booking.checkOut);
-  // clip ao fim se checkOut passa o fim da janela
+  const displayEnd = booking.checkedOutAt || booking.checkOut;
+  const endIdx = dates.findIndex((d) => d >= displayEnd);
   const clippedEnd = endIdx === -1 ? dates.length : endIdx;
 
   if (clippedStart === -1 || clippedStart >= dates.length || clippedEnd <= clippedStart) {
@@ -293,11 +292,22 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
   }
 
   const isCancelled = booking.status === 'cancelled' || booking.status === 'CANCELLED';
-  const isIcal      = booking.status === 'ical_block';
-  const color       = BOOKING_COLORS[booking.status] || '#9CA3AF';
+  const isIcal = booking.status === 'ical_block';
+  const isEarlyOut = !!(booking.checkedOutAt && booking.originalEndDate
+    && booking.checkedOutAt < booking.originalEndDate);
+  const color = BOOKING_COLORS[booking.status] || '#9CA3AF';
 
   const width = (clippedEnd - clippedStart) * DATE_COL_WIDTH - 4;
-  const left  = clippedStart * DATE_COL_WIDTH + 2;
+  const left = clippedStart * DATE_COL_WIDTH + 2;
+
+  let trailingLeft = 0;
+  let trailingWidth = 0;
+  if (isEarlyOut) {
+    const origEndIdx = dates.findIndex((d) => d >= booking.originalEndDate);
+    const clippedOrig = origEndIdx === -1 ? dates.length : origEndIdx;
+    trailingLeft = clippedEnd * DATE_COL_WIDTH + 2;
+    trailingWidth = Math.max(0, (clippedOrig - clippedEnd) * DATE_COL_WIDTH - 4);
+  }
 
   let label = booking.guestName;
   if (isIcal) {
@@ -306,25 +316,43 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
   }
 
   return (
-    <TouchableOpacity
-      style={[
-        gS.bar,
-        {
-          left,
-          width: Math.max(width, DATE_COL_WIDTH - 4),
-          backgroundColor: isCancelled ? color + '80' : color,
-          borderColor: hasConflict ? '#DC2626' : 'transparent',
-          borderWidth: hasConflict ? 2 : 0,
-        },
-      ]}
-      onPress={() => onPress(booking)}
-      activeOpacity={0.8}
-      accessibilityLabel={`Reserva de ${booking.guestName}, ${booking.nights} noites`}
-    >
-      <Text style={gS.barText} numberOfLines={1}>
-        {width > 60 ? `${label} · ${booking.nights}n` : label}
-      </Text>
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity
+        style={[
+          gS.bar,
+          {
+            left,
+            width: Math.max(width, DATE_COL_WIDTH - 4),
+            backgroundColor: isCancelled ? color + '80' : color,
+            borderColor: hasConflict ? '#DC2626' : 'transparent',
+            borderWidth: hasConflict ? 2 : 0,
+          },
+        ]}
+        onPress={() => onPress(booking)}
+        activeOpacity={0.8}
+        accessibilityLabel={`Reserva de ${booking.guestName}, ${booking.nights} noites`}
+      >
+        <Text style={gS.barText} numberOfLines={1}>
+          {width > 60 ? `${label} · ${booking.nights}n` : label}
+        </Text>
+      </TouchableOpacity>
+
+      {isEarlyOut && trailingWidth > 0 && (
+        <View
+          pointerEvents="none"
+          style={[
+            gS.bar,
+            {
+              left: trailingLeft,
+              width: trailingWidth,
+              backgroundColor: color + '28',
+              borderColor: color + '60',
+              borderWidth: 1,
+            },
+          ]}
+        />
+      )}
+    </>
   );
 }
 
@@ -524,6 +552,34 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
             {booking.cancelReason ? (
               <Text style={[gS.sheetMeta, { color: '#991B1B' }]}>❌ Motivo: {booking.cancelReason}</Text>
             ) : null}
+            {booking.checkedOutAt && booking.originalEndDate
+             && booking.checkedOutAt < booking.originalEndDate && (
+              <View style={{ marginTop: 4, padding: 8, backgroundColor: '#FEF9C3',
+                             borderRadius: 8, borderWidth: 1, borderColor: '#FDE047' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E' }}>
+                  ✂️ Checkout antecipado
+                </Text>
+                <Text style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                  Saída prevista: {fmtFull(booking.originalEndDate)}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#92400E' }}>
+                  Saída real: {fmtFull(booking.checkedOutAt)}
+                </Text>
+                {(() => {
+                  const real = Math.max(1, Math.ceil(
+                    (new Date(booking.checkedOutAt) - new Date(booking.checkIn)) / 86400000,
+                  ));
+                  const planned = Math.max(1, Math.ceil(
+                    (new Date(booking.originalEndDate) - new Date(booking.checkIn)) / 86400000,
+                  ));
+                  return (
+                    <Text style={{ fontSize: 11, color: '#92400E' }}>
+                      Noites efectuadas: {real} de {planned} previstas
+                    </Text>
+                  );
+                })()}
+              </View>
+            )}
           </ScrollView>
 
           {loading ? (
@@ -909,6 +965,8 @@ export function RoomGanttScreen({
             : 1),
           totalPrice: b.totalPrice ?? 0,
           specialRequest: b.specialRequest || b.notes || '',
+          checkedOutAt:    b.checkedOutAt    ? toYMD(new Date(b.checkedOutAt))    : null,
+          originalEndDate: b.originalEndDate ? toYMD(new Date(b.originalEndDate)) : null,
         };
       }).filter((b) => b.checkIn && b.checkOut && b.roomId);
 
