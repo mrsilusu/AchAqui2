@@ -10,6 +10,36 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BookingTypeDto, CreateBookingDto } from './dto/create-booking.dto';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 
+const HT_ROOM_BOOKING_STABLE_SELECT = {
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  startDate: true,
+  endDate: true,
+  status: true,
+  userId: true,
+  businessId: true,
+  roomTypeId: true,
+  roomId: true,
+  guestProfileId: true,
+  guestName: true,
+  guestPhone: true,
+  adults: true,
+  children: true,
+  rooms: true,
+  totalPrice: true,
+  depositPaid: true,
+  paymentStatus: true,
+  paymentMethod: true,
+  notes: true,
+  voucherCode: true,
+  confirmedAt: true,
+  checkedInAt: true,
+  checkedOutAt: true,
+  noShowAt: true,
+  version: true,
+} as const;
+
 @Injectable()
 export class BookingService {
   constructor(
@@ -43,7 +73,8 @@ export class BookingService {
   }
 
   private async findOwnedBooking(bookingId: string, ownerId: string) {
-    const include = {
+    const select = {
+      ...HT_ROOM_BOOKING_STABLE_SELECT,
       business: {
         select: {
           id: true,
@@ -83,7 +114,7 @@ export class BookingService {
           ownerId,
         },
       },
-      include,
+      select,
     });
 
     if (roomBooking) {
@@ -95,7 +126,8 @@ export class BookingService {
 
   async findAllForUser(userId: string, role: UserRole) {
     // DiTableBooking não tem relação user no schema — includes separados por modelo
-    const htInclude = {
+    const htSelect = {
+      ...HT_ROOM_BOOKING_STABLE_SELECT,
       business: { select: { id: true, name: true } },
       user: { select: { id: true, name: true, email: true } },
     };
@@ -112,7 +144,7 @@ export class BookingService {
         }),
         this.prisma.htRoomBooking.findMany({
           where: { business: { ownerId: userId } },
-          include: htInclude,
+          select: htSelect,
           orderBy: { createdAt: 'desc' },
         }),
       ]);
@@ -131,7 +163,10 @@ export class BookingService {
       }),
       this.prisma.htRoomBooking.findMany({
         where: { userId },
-        include: { business: { select: { id: true, name: true } } },
+        select: {
+          ...HT_ROOM_BOOKING_STABLE_SELECT,
+          business: { select: { id: true, name: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
     ]);

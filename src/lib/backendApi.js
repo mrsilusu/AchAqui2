@@ -442,7 +442,19 @@ export const backendApi = {
   getRecommendations: (limit = 20, accessToken) =>
     apiRequest(`/businesses/recommendations/me?limit=${encodeURIComponent(limit)}`, { accessToken }),
 
-  getNotifications: (accessToken) => apiRequest('/notifications', { accessToken }),
+  getNotifications: async (accessToken) => {
+    if (!accessToken) return [];
+    try {
+      return await apiRequest('/notifications', { accessToken });
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.type === 'token') {
+        // Token expirado: evita quebrar o UI e usa cache local quando disponível.
+        const cached = await getCachedJson('/notifications', 60 * 60 * 1000);
+        return Array.isArray(cached) ? cached : [];
+      }
+      throw error;
+    }
+  },
   markNotificationRead: (id, accessToken) =>
     apiRequest(`/notifications/${id}/read`, { method: 'PATCH', accessToken }),
   markAllNotificationsRead: (accessToken) =>
