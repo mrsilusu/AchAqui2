@@ -404,7 +404,7 @@ export class HtBookingService {
 
   // CANCELAMENTO (owner) — requer motivo e apenas antes do CHECKED_IN.
   async cancel(bookingId: string, ownerId: string, dto: CancelBookingDto, ip?: string) {
-    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
     const reason = String(dto?.reason || '').trim();
     if (reason.length < 3) {
       throw new BadRequestException('Motivo do cancelamento é obrigatório (mínimo 3 caracteres).');
