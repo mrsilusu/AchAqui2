@@ -329,8 +329,7 @@ export function DashboardPMS({
 
   const today = new Date();
   const todayStr = fmtDate(today);
-  const currentHour = today.getHours();
-  const showNoShowBanner = currentHour >= 18 && noShowAlertBookings.length > 0;
+  const showNoShowBanner = noShowAlertBookings.length > 0;
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>

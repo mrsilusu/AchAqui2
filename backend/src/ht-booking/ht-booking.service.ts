@@ -537,11 +537,11 @@ export class HtBookingService {
     return updated;
   }
 
-  // CHEGADAS — próximos 7 dias (PENDING ou CONFIRMED). Se não houver hoje, mostra as próximas.
+  // CHEGADAS — janela de 14 dias (7 passados + próximos 7) para incluir atrasos de check-in.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
   async getTodayArrivals(businessId: string, ownerId: string) {
     const now   = new Date();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    const start = new Date(now); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
     const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
     return this.prisma.htRoomBooking.findMany({
       where: {

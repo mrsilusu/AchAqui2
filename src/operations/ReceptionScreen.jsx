@@ -1268,12 +1268,17 @@ function isNoShowRisk(booking) {
   if (booking?.checkedInAt) return false;
   const now = new Date();
   const start = new Date(booking?.startDate);
-  return (
-    start.getFullYear() === now.getFullYear() &&
-    start.getMonth() === now.getMonth() &&
-    start.getDate() === now.getDate() &&
-    now.getHours() >= 18
-  );
+  if (Number.isNaN(start.getTime())) return false;
+
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const bookingStart = new Date(start);
+  bookingStart.setHours(0, 0, 0, 0);
+
+  // Atrasadas (data < hoje) aparecem sempre; as de hoje entram em risco após 18h.
+  if (bookingStart.getTime() < todayStart.getTime()) return true;
+  if (bookingStart.getTime() > todayStart.getTime()) return false;
+  return now.getHours() >= 18;
 }
 
 // ─── Card de reserva individual ───────────────────────────────────────────────

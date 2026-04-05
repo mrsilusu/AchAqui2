@@ -1718,12 +1718,15 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       const now = new Date();
       const start = b?.startDate ? new Date(b.startDate) : parseDate(b?.checkIn);
       if (!start || Number.isNaN(start.getTime())) return false;
-      return (
-        start.getFullYear() === now.getFullYear() &&
-        start.getMonth() === now.getMonth() &&
-        start.getDate() === now.getDate() &&
-        now.getHours() >= 18
-      );
+
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const bookingStart = new Date(start);
+      bookingStart.setHours(0, 0, 0, 0);
+
+      if (bookingStart.getTime() < todayStart.getTime()) return true;
+      if (bookingStart.getTime() > todayStart.getTime()) return false;
+      return now.getHours() >= 18;
     });
   }, [activeBookings]);
 
