@@ -1263,12 +1263,29 @@ function nights(s, e) {
   return Math.round((new Date(e) - new Date(s)) / 86400000);
 }
 
+function normalizeBookingStatus(status) {
+  return String(status || '').trim().toUpperCase();
+}
+
+function parseBookingDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && value.includes('/')) {
+    const [d, m, y] = value.split('/').map(Number);
+    if (!d || !m || !y) return null;
+    return new Date(y, m - 1, d);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function isNoShowRisk(booking) {
-  if (booking?.status !== 'CONFIRMED') return false;
+  if (normalizeBookingStatus(booking?.status) !== 'CONFIRMED') return false;
   if (booking?.checkedInAt) return false;
+
   const now = new Date();
-  const start = new Date(booking?.startDate);
-  if (Number.isNaN(start.getTime())) return false;
+  const start = parseBookingDate(booking?.startDate || booking?.checkIn);
+  if (!start) return false;
 
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
@@ -1284,6 +1301,7 @@ function isNoShowRisk(booking) {
 // ─── Card de reserva individual ───────────────────────────────────────────────
 function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const [open, setOpen] = useState(false);
+  const statusKey = normalizeBookingStatus(booking?.status);
   const st   = STATUS[booking.status] || STATUS.PENDING;
   const room = roomTypes?.find(r => r.id === booking.roomTypeId);
   const nts  = nights(booking.startDate, booking.endDate);
@@ -1372,7 +1390,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           <View style={rS.actions}>
             {tab === 'arrivals' && (
               <>
-                {booking.status === 'PENDING' && (
+                {statusKey === 'PENDING' && (
                   <>
                     <TouchableOpacity style={[rS.btn, rS.btnBlue]} onPress={() => onAction(booking.id, 'confirm')} disabled={busy}>
                       {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={rS.btnWhite}>Confirmar</Text>}
@@ -1382,7 +1400,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                     </TouchableOpacity>
                   </>
                 )}
-                {(booking.status === 'CONFIRMED') && (
+                {statusKey === 'CONFIRMED' && (
                   <>
                     <TouchableOpacity style={[rS.btn, rS.btnGreen]} onPress={() => onAction(booking.id, 'checkin')} disabled={busy}>
                       {busy ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -1411,7 +1429,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
                 )}
               </>
             )}
-            {booking.status === 'CHECKED_IN' && (
+            {statusKey === 'CHECKED_IN' && (
               <>
                 <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio', booking)} disabled={busy}>
                   <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />

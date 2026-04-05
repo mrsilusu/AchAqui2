@@ -1713,10 +1713,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
   const noShowAlertBookings = useMemo(() => {
     return (activeBookings || []).filter((b) => {
-      if (b?.status !== 'CONFIRMED') return false;
+      if (!isConfirmedStatus(b?.status)) return false;
       if (b?.checkedInAt) return false;
       const now = new Date();
-      const start = b?.startDate ? new Date(b.startDate) : parseDate(b?.checkIn);
+      const start = parseDate(b?.startDate || b?.checkIn);
       if (!start || Number.isNaN(start.getTime())) return false;
 
       const todayStart = new Date(now);
