@@ -283,7 +283,9 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
   const startIdx = dates.findIndex((d) => d >= booking.checkIn);
   const clippedStart = booking.checkIn < dates[0] ? 0 : startIdx;
 
-  const displayEnd = booking.checkedOutAt || booking.checkOut;
+  const isEarlyOut = !!(booking.checkedOutAt && booking.originalEndDate
+    && booking.checkedOutAt < booking.originalEndDate);
+  const displayEnd = isEarlyOut ? booking.checkedOutAt : booking.checkOut;
   const endIdx = dates.findIndex((d) => d >= displayEnd);
   const clippedEnd = endIdx === -1 ? dates.length : endIdx;
 
@@ -293,8 +295,6 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
 
   const isCancelled = booking.status === 'cancelled' || booking.status === 'CANCELLED';
   const isIcal = booking.status === 'ical_block';
-  const isEarlyOut = !!(booking.checkedOutAt && booking.originalEndDate
-    && booking.checkedOutAt < booking.originalEndDate);
   const color = BOOKING_COLORS[booking.status] || '#9CA3AF';
 
   const width = (clippedEnd - clippedStart) * DATE_COL_WIDTH - 4;
