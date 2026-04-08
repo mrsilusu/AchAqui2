@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Modal, Alert, ActivityIndicator, RefreshControl,
+  ScrollView, Modal, Alert, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
@@ -284,9 +284,11 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
             <Text style={hkS.headerTitle}>Housekeeping</Text>
             <Text style={hkS.headerSub}>{rooms.length} quartos · {dirtyCount} para limpar · {maintCount} manutenção</Text>
           </View>
-          <TouchableOpacity style={hkS.iconBtn} onPress={() => load(true)}>
-            <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity style={hkS.iconBtn} onPress={() => load(true)}>
+              <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Filtros */}

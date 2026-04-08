@@ -43,6 +43,13 @@ import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
 import { HousekeepingScreen } from './HousekeepingScreen';
 import { backendApi } from '../lib/backendApi';
+import StaffManagementModal from './StaffManagementModal';
+import StaffProfileSheet from './StaffProfileSheet';
+import StaffActivityLog from './StaffActivityLog';
+import StaffPinLoginScreen from './StaffPinLoginScreen';
+import {
+  decodeStaffToken, getStaffRole, canSeeSection, isStaffTokenValid,
+} from '../lib/staffPermissions';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -1312,7 +1319,7 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -1334,6 +1341,34 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
   // ── RBAC Zero Trust ──────────────────────────────────────────────────────
   const isOwner = ownerMode === true;
+
+  // ── Staff token (8h JWT de /auth/staff-pin-login) ────────────────────────
+  const [staffToken, setStaffToken]         = useState(null);
+  const [showPinLogin, setShowPinLogin]     = useState(false);
+  const [showStaffMgmt, setShowStaffMgmt]   = useState(false);
+  const [selectedStaff, setSelectedStaff]   = useState(null);
+  const [showStaffProfile, setShowStaffProfile] = useState(false);
+  const [showStaffActivity, setShowStaffActivity] = useState(false);
+
+  // Permissões de secção derivadas do token de staff (null quando modo owner)
+  const staffRole       = staffToken ? getStaffRole(staffToken) : null;
+  const isStaff         = !isOwner && isStaffTokenValid(staffToken ?? '');
+  const canDashboard    = isOwner || canSeeSection(staffToken ?? '', 'dashboard');
+  const canReception    = isOwner || canSeeSection(staffToken ?? '', 'reception');
+  const canHousekeeping = isOwner || canSeeSection(staffToken ?? '', 'housekeeping');
+  const canBookingsMgr  = isOwner || canSeeSection(staffToken ?? '', 'bookingsManager');
+  const canStaffMgr     = isOwner;
+
+  const handleStaffPinSuccess = useCallback(({ accessToken: token }) => {
+    setStaffToken(token);
+    setShowPinLogin(false);
+  }, []);
+
+  useEffect(() => {
+    if (!openStaffOnMount || !canStaffMgr) return;
+    setShowStaffMgmt(true);
+    if (typeof onOpenStaffConsumed === 'function') onOpenStaffConsumed();
+  }, [openStaffOnMount, canStaffMgr, onOpenStaffConsumed]);
 
   // ── Dados privados (apenas quando isOwner) ───────────────────────────────
   const ownerRooms = useMemo(() => {
@@ -1840,24 +1875,6 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
             </View>
           )}
         </View>
-        {isOwner && (
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <TouchableOpacity
-              style={[hS.ownerActionBtn, { backgroundColor: '#1565C0' }]}
-              onPress={() => {
-                setNoShowAlertDismissed(false);
-                setShowDashboard(true);
-              }}
-            >
-              <Icon name="analytics" size={16} color={COLORS.white} strokeWidth={2} />
-              <Text style={hS.ownerActionBtnText}>Dashboard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={hS.ownerActionBtn} onPress={() => setShowBookingsManager(true)}>
-              <Icon name="calendar" size={16} color={COLORS.white} strokeWidth={2} />
-              <Text style={hS.ownerActionBtnText}>Quartos</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
       <ScrollView
@@ -2048,11 +2065,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         />
       )}
 
-      {isOwner && showDashboard && (
+      {(isOwner || canDashboard) && showDashboard && (
         <DashboardPMS
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
           onOpenReception={() => {}}
+          onOpenStaff={canStaffMgr ? () => {
+            setShowStaffMgmt(true);
+          } : undefined}
           onClose={() => setShowDashboard(false)}
           reloadTrigger={dashboardReloadTrigger}
           guestBookings={activeBookings}
@@ -2061,7 +2081,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           onDismissNoShowAlert={() => setNoShowAlertDismissed(true)}
         />
       )}
-      {isOwner && showReception && (
+      {(isOwner || canReception) && showReception && (
         <ReceptionScreen
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
@@ -2073,14 +2093,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           }}
         />
       )}
-      {isOwner && showHousekeeping && (
+      {(isOwner || canHousekeeping) && showHousekeeping && (
         <HousekeepingScreen
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
           onClose={() => setShowHousekeeping(false)}
         />
       )}
-      {isOwner && showBookingsManager && (
+      {(isOwner || canBookingsMgr) && showBookingsManager && (
         <BookingsManager
           bookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
@@ -2090,6 +2110,44 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           onClose={() => setShowBookingsManager(false)}
         />
       )}
+
+      {/* ── STAFF COMPONENTS ──────────────────────────────────────────── */}
+      <StaffPinLoginScreen
+        visible={showPinLogin}
+        businessId={ownerBusinessPrivate?.id || business?.id}
+        onSuccess={handleStaffPinSuccess}
+        onClose={() => setShowPinLogin(false)}
+      />
+      <StaffManagementModal
+        visible={showStaffMgmt}
+        businessId={ownerBusinessPrivate?.id || business?.id}
+        accessToken={ctx?.accessToken}
+        onClose={() => setShowStaffMgmt(false)}
+        onOpenProfile={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffProfile(true);
+        }}
+      />
+      <StaffProfileSheet
+        visible={showStaffProfile}
+        staff={selectedStaff}
+        businessId={ownerBusinessPrivate?.id || business?.id}
+        accessToken={ctx?.accessToken}
+        onClose={() => setShowStaffProfile(false)}
+        onRefresh={() => {}}
+        onOpenActivity={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffProfile(false);
+          setShowStaffActivity(true);
+        }}
+      />
+      <StaffActivityLog
+        visible={showStaffActivity}
+        staff={selectedStaff}
+        businessId={ownerBusinessPrivate?.id || business?.id}
+        accessToken={ctx?.accessToken}
+        onClose={() => setShowStaffActivity(false)}
+      />
     </View>
   );
 }
