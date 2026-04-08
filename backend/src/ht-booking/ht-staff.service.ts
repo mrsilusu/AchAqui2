@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { AppModule, HtStaffDepartment, HtShift, StaffRole, UserRole } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -76,6 +77,18 @@ export class HtStaffService {
         message.toLowerCase().includes('enum') ||
         message.toLowerCase().includes('is not a valid')
       )
+    );
+  }
+
+  private isUserSuspensionColumnMissing(error: unknown): boolean {
+    if (!(error instanceof PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2022') return false;
+    const model = String((error.meta as any)?.modelName || '');
+    const column = String((error.meta as any)?.column || '');
+    const message = String((error.meta as any)?.message || '');
+    return (
+      model.toLowerCase() === 'user' &&
+      (column.includes('isSuspended') || message.includes('isSuspended'))
     );
   }
 
@@ -172,7 +185,7 @@ export class HtStaffService {
     email: string,
     fullName: string,
     plainPassword?: string,
-  ) {
+  ): Promise<{ id: string; email: string; name: string | null; role: UserRole } | null> {
     const normalizedEmail = this.normalizeEmail(email);
     let user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -193,6 +206,9 @@ export class HtStaffService {
             select: { id: true, email: true, name: true, role: true },
           });
         } catch (error) {
+          if (this.isUserSuspensionColumnMissing(error)) {
+            return user;
+          }
           if (!this.isUserRoleStaffUnsupported(error)) throw error;
           // Fallback para DB legado sem enum STAFF: mantém utilizador funcional.
           const legacyUpdates: Record<string, any> = {};
@@ -223,6 +239,10 @@ export class HtStaffService {
         select: { id: true, email: true, name: true, role: true },
       });
     } catch (error) {
+      if (this.isUserSuspensionColumnMissing(error)) {
+        // DB legado sem coluna User.isSuspended: conta app não pode ser criada.
+        return null;
+      }
       if (!this.isUserRoleStaffUnsupported(error)) throw error;
       // Fallback para DB legado sem enum STAFF.
       user = await this.prisma.user.create({
@@ -392,7 +412,10 @@ export class HtStaffService {
       return staff;
     });
 
-    return this.sanitizeStaff(created);
+    return {
+      ...this.sanitizeStaff(created),
+      appAccountCreated: !!user?.id,
+    };
   }
 
   async updateStaff(id: string, businessId: string, ownerId: string, dto: UpdateStaffDto) {
@@ -566,7 +589,12 @@ export class HtStaffService {
     }
 
     const normalizedEmail = this.normalizeEmail(staff.email);
-    let user = await this.ensureUserForStaff(normalizedEmail, staff.fullName, password);
+    const user = await this.ensureUserForStaff(normalizedEmail, staff.fullName, password);
+    if (!user?.id) {
+      throw new ServiceUnavailableException(
+        'Conta App indisponível neste ambiente: falta a coluna User.isSuspended na base de dados.',
+      );
+    }
 
     let isNew = false;
     if (!staff.userId) isNew = true;
