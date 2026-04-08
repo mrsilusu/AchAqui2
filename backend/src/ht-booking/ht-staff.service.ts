@@ -62,6 +62,23 @@ export class HtStaffService {
     return HtStaffDepartment.HOUSEKEEPING;
   }
 
+  private isUserRoleStaffUnsupported(error: unknown): boolean {
+    const message = String(
+      (error instanceof PrismaClientKnownRequestError
+        ? (error.meta as any)?.message
+        : (error as any)?.message) || '',
+    );
+    return (
+      message.includes('UserRole') &&
+      message.includes('STAFF') &&
+      (
+        message.toLowerCase().includes('invalid input value for enum') ||
+        message.toLowerCase().includes('enum') ||
+        message.toLowerCase().includes('is not a valid')
+      )
+    );
+  }
+
   private async getLegacyStaff(businessId: string, includeInactive = true) {
     const rows = await this.prisma.coreBusinessStaff.findMany({
       where: {
@@ -169,11 +186,23 @@ export class HtStaffService {
         updates.password = await bcrypt.hash(String(plainPassword).trim(), 10);
       }
       if (Object.keys(updates).length) {
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: updates,
-          select: { id: true, email: true, name: true, role: true },
-        });
+        try {
+          user = await this.prisma.user.update({
+            where: { id: user.id },
+            data: updates,
+            select: { id: true, email: true, name: true, role: true },
+          });
+        } catch (error) {
+          if (!this.isUserRoleStaffUnsupported(error)) throw error;
+          // Fallback para DB legado sem enum STAFF: mantém utilizador funcional.
+          const legacyUpdates: Record<string, any> = {};
+          if (updates.password) legacyUpdates.password = updates.password;
+          user = await this.prisma.user.update({
+            where: { id: user.id },
+            data: legacyUpdates,
+            select: { id: true, email: true, name: true, role: true },
+          });
+        }
       }
       return user;
     }
@@ -183,15 +212,29 @@ export class HtStaffService {
       ? passwordRaw
       : `${normalizedEmail}:${Date.now()}`;
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
-    user = await this.prisma.user.create({
-      data: {
-        email: normalizedEmail,
-        name: fullName,
-        password: hashedPassword,
-        role: UserRole.STAFF,
-      },
-      select: { id: true, email: true, name: true, role: true },
-    });
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          name: fullName,
+          password: hashedPassword,
+          role: UserRole.STAFF,
+        },
+        select: { id: true, email: true, name: true, role: true },
+      });
+    } catch (error) {
+      if (!this.isUserRoleStaffUnsupported(error)) throw error;
+      // Fallback para DB legado sem enum STAFF.
+      user = await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          name: fullName,
+          password: hashedPassword,
+          role: UserRole.CLIENT,
+        },
+        select: { id: true, email: true, name: true, role: true },
+      });
+    }
 
     return user;
   }

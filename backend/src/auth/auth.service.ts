@@ -129,9 +129,7 @@ export class AuthService {
 
   private async createAccessToken(user: User) {
     const staffRoles = await this.getActiveStaffRoles(user.id);
-    const primaryHtContext = user.role === UserRole.STAFF
-      ? await this.getPrimaryHtStaffContext(user.id)
-      : null;
+    const primaryHtContext = await this.getPrimaryHtStaffContext(user.id);
     return this.jwtService.signAsync(
       {
         sub: user.id,

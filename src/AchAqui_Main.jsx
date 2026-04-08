@@ -818,10 +818,12 @@ function AppContent() {
   const handleAuthSuccess = useCallback(async (session) => {
     setShowAuthModal(false);
     await authSession.saveSession(session);
+    const hasHtStaffAssignment = Array.isArray(session?.user?.staffRoles)
+      && session.user.staffRoles.some((r) => r?.module === 'HT' || String(r?.role || '').startsWith('HT_'));
     if (session?.user?.role === 'OWNER') {
       setIsBusinessMode(true);
       setActiveBusinessTab('dashboard');
-    } else if (session?.user?.role === 'STAFF') {
+    } else if (session?.user?.role === 'STAFF' || hasHtStaffAssignment) {
       setIsStaffMode(true);
     }
   }, [authSession]);
