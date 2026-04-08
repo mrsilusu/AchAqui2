@@ -5,6 +5,7 @@
 //   businessId   — ID do negócio
 //   accessToken  — JWT do owner
 //   onOpenReception — callback para abrir o ReceptionScreen
+//   onOpenStaff  — callback para abrir gestão de Staff
 //   onOpenFolio   — callback para abrir o FolioScreen (reserva seleccionada)
 //   onClose       — fechar o modal
 // =============================================================================
@@ -12,13 +13,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, Modal, ActivityIndicator, RefreshControl,
+  ScrollView, Modal, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { HousekeepingScreen } from './HousekeepingScreen';
 import { ReceptionScreen } from './ReceptionScreen';
 import { ReservationMapModal } from './ReservationMapModal';
+import { GuestsScreen } from './GuestsScreen';
+import { RoomGanttScreen } from './RoomGanttScreen';
+import StaffManagementModal from './StaffManagementModal';
+import StaffProfileSheet from './StaffProfileSheet';
+import StaffActivityLog from './StaffActivityLog';
+import { canSeeSection } from '../lib/staffPermissions';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -117,8 +125,8 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
   const dirtyCount    = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING').length;
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={dS.root}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={dS.root} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={dS.header}>
           <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
@@ -158,21 +166,55 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
           )}
           <View style={{ height: 40 }} />
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose, reloadTrigger = 0 }) {
+export function DashboardPMS({
+  businessId,
+  accessToken,
+  staffToken = null,
+  onLogout,
+  onOpenReception,
+  onClose,
+  reloadTrigger = 0,
+  guestBookings = [],
+  roomTypes = [],
+  noShowAlertBookings = [],
+  onDismissNoShowAlert,
+}) {
+  const insets = useSafeAreaInsets();
+  const isStaffMode = !!staffToken;
+  const effectiveAccessToken = accessToken || staffToken || null;
+  const canAccessReception = !isStaffMode || canSeeSection(staffToken, 'reception');
+  const canAccessHousekeeping = !isStaffMode || canSeeSection(staffToken, 'housekeeping');
+  const canAccessBookingsMgr = !isStaffMode || canSeeSection(staffToken, 'bookingsManager');
+  const canAccessStaff = !isStaffMode || canSeeSection(staffToken, 'staffManager');
+
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [sellablePercentInput, setSellablePercentInput] = useState('100');
+  const [policySaving, setPolicySaving] = useState(false);
+  const [businessMetadata, setBusinessMetadata] = useState({});
   const [showHousekeeping, setShowHousekeeping] = useState(false);
   const [showRooms, setShowRooms]               = useState(false);
   const [showReception, setShowReception]       = useState(false);
+  const [showGuests, setShowGuests]             = useState(false);
+  const [showGantt, setShowGantt]               = useState(false);
+  const [pendingReceptionAction, setPendingReceptionAction] = useState(null);
   const [showMap, setShowMap]                   = useState(false);
+  const [cancelBookingFromMap, setCancelBookingFromMap] = useState(null);
+  const [cancelReasonFromMap, setCancelReasonFromMap] = useState('');
+  const [cancelMapLoading, setCancelMapLoading] = useState(false);
+  // ── Staff state (self-contained inside this modal) ───────────────────────
+  const [showStaffMgmt, setShowStaffMgmt]       = useState(false);
+  const [selectedStaff, setSelectedStaff]       = useState(null);
+  const [showStaffProfile, setShowStaffProfile] = useState(false);
+  const [showStaffActivity, setShowStaffActivity] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -181,10 +223,10 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
   }, []);
 
   const load = useCallback(async (isRefresh = false) => {
-    if (!businessId || !accessToken) return;
+    if (!businessId || !effectiveAccessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const result = await backendApi.getHtDashboard(businessId, accessToken);
+      const result = await backendApi.getHtDashboard(businessId, effectiveAccessToken);
       if (!alive.current) return;
       setData(result);
     } catch (e) {
@@ -194,24 +236,97 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [businessId, accessToken]);
+  }, [businessId, effectiveAccessToken]);
 
   // Recarregar quando reloadTrigger muda (ex: depois de acções na Receção)
   useEffect(() => { load(); }, [load, reloadTrigger]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBusinessPolicy = async () => {
+      if (!businessId) return;
+      try {
+        const biz = await backendApi.getBusiness(businessId, effectiveAccessToken);
+        if (cancelled) return;
+        const metadata = (biz?.metadata && typeof biz.metadata === 'object') ? biz.metadata : {};
+        const raw = Number(metadata?.pms?.sellablePercent ?? 100);
+        const safe = Number.isFinite(raw) ? Math.max(50, Math.min(150, Math.round(raw))) : 100;
+        setBusinessMetadata(metadata);
+        setSellablePercentInput(String(safe));
+      } catch {
+        if (cancelled) return;
+        setBusinessMetadata({});
+        setSellablePercentInput('100');
+      }
+    };
+    loadBusinessPolicy();
+    return () => { cancelled = true; };
+  }, [businessId, effectiveAccessToken]);
+
+  const submitCancelFromMap = useCallback(async () => {
+    if (!cancelBookingFromMap) return;
+    const reason = String(cancelReasonFromMap || '').trim();
+    if (reason.length < 3) {
+      Alert.alert('Motivo obrigatório', 'Descreva o motivo do cancelamento (mínimo 3 caracteres).');
+      return;
+    }
+    setCancelMapLoading(true);
+    try {
+      await backendApi.cancelBooking(cancelBookingFromMap.id, { reason }, effectiveAccessToken);
+      setCancelBookingFromMap(null);
+      setCancelReasonFromMap('');
+      load(true);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Operação falhou.');
+    } finally {
+      if (alive.current) setCancelMapLoading(false);
+    }
+  }, [cancelBookingFromMap, cancelReasonFromMap, effectiveAccessToken, load]);
+
+  const handleSaveSellablePercent = useCallback(async () => {
+    const raw = Number(sellablePercentInput);
+    if (!Number.isFinite(raw)) {
+      Alert.alert('Valor inválido', 'Insira um número entre 50 e 150.');
+      return;
+    }
+    const safe = Math.max(50, Math.min(150, Math.round(raw)));
+    const currentPms = (businessMetadata?.pms && typeof businessMetadata.pms === 'object')
+      ? businessMetadata.pms
+      : {};
+    const metadata = {
+      ...(businessMetadata || {}),
+      pms: { ...currentPms, sellablePercent: safe },
+    };
+
+    try {
+      setPolicySaving(true);
+      await backendApi.htUpdatePmsConfig(businessId, { overbookingBuffer: safe }, effectiveAccessToken);
+      if (!alive.current) return;
+      setBusinessMetadata(metadata);
+      setSellablePercentInput(String(safe));
+      Alert.alert('Política guardada', `Capacidade vendável definida para ${safe}%.`);
+      await load(true);
+    } catch (e) {
+      if (!alive.current) return;
+      Alert.alert('Erro', e?.message || 'Não foi possível guardar a política de capacidade.');
+    } finally {
+      if (alive.current) setPolicySaving(false);
+    }
+  }, [sellablePercentInput, businessMetadata, businessId, effectiveAccessToken, load]);
 
   // ─── Housekeeping: marcar quarto como limpo ou em manutenção ─────────────
   const handleMarkClean = useCallback(async (roomId, taskId) => {
     setActionLoading(roomId);
     try {
-      if (taskId) await backendApi.completeHousekeepingTask(taskId, accessToken);
-      await backendApi.updateHtRoom(roomId, { status: 'CLEAN' }, accessToken);
+      if (taskId) await backendApi.completeHousekeepingTask(taskId, effectiveAccessToken);
+      else await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, effectiveAccessToken);
       await load(true);
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível marcar o quarto como limpo.');
     } finally {
       if (alive.current) setActionLoading(null);
     }
-  }, [accessToken, load]);
+  }, [effectiveAccessToken, load]);
 
   const handleMarkMaintenance = useCallback(async (roomId) => {
     Alert.alert('Manutenção', 'Marcar quarto como em manutenção?', [
@@ -221,7 +336,7 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         onPress: async () => {
           setActionLoading(roomId);
           try {
-            await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, accessToken);
+            await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, effectiveAccessToken);
             await load(true);
           } catch (e) {
             Alert.alert('Erro', e?.message || 'Operação falhou.');
@@ -231,17 +346,18 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
         },
       },
     ]);
-  }, [accessToken, load]);
+  }, [effectiveAccessToken, load]);
 
   const today = new Date();
   const todayStr = fmtDate(today);
+  const showNoShowBanner = noShowAlertBookings.length > 0;
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={dS.root}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={dS.root} edges={['left', 'right']}>
 
         {/* ── Header ── */}
-        <View style={dS.header}>
+        <View style={[dS.header, { paddingTop: Math.max(14, insets.top + 8) }]}>
           <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
             <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -249,9 +365,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
             <Text style={dS.headerTitle}>Dashboard</Text>
             <Text style={dS.headerSub}>{todayStr}</Text>
           </View>
-          <TouchableOpacity style={dS.iconBtn} onPress={() => load(true)}>
-            <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
-          </TouchableOpacity>
+          {isStaffMode && typeof onLogout === 'function' ? (
+            <TouchableOpacity style={[dS.iconBtn, dS.logoutBtn]} onPress={onLogout}>
+              <Text style={dS.logoutBtnText}>Logout</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={dS.iconBtn} onPress={() => load(true)}>
+              <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {loading ? (
@@ -267,6 +389,29 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={COLORS.blue} />
             }
           >
+            {showNoShowBanner && (
+              <View style={{
+                marginHorizontal: 16, marginBottom: 12, padding: 14,
+                backgroundColor: '#FEF2F2', borderRadius: 12,
+                borderWidth: 1, borderColor: '#FECACA',
+                flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+              }}>
+                <Text style={{ fontSize: 18 }}>⚠️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#DC2626' }}>
+                    {noShowAlertBookings.length} reserva{noShowAlertBookings.length !== 1 ? 's' : ''}
+                    {' '}sem check-in — Verificar antes de marcar No-Show
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 3 }}>
+                    Ir à Receção para gerir estas reservas.
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={onDismissNoShowAlert} style={{ padding: 4 }}>
+                  <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '700' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* ── Taxa de ocupação ── */}
             <View style={dS.occupancyCard}>
               <View style={dS.occupancyLeft}>
@@ -322,6 +467,18 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 sub="tarefas"
               />
             </View>
+              <View style={dS.metricsRow}>
+                <MetricCard
+                  icon="analytics"  label="ADR"
+                  value={`${(data?.kpis?.adr ?? 0).toLocaleString()} Kz`}
+                  color="#0891B2"
+                />
+                <MetricCard
+                  icon="analytics"  label="RevPAR"
+                  value={`${(data?.kpis?.revpar ?? 0).toLocaleString()} Kz`}
+                  color="#7C3AED"
+                />
+              </View>
 
             {/* ── Receita do dia ── */}
             <View style={dS.revenueCard}>
@@ -333,13 +490,38 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
               <Text style={dS.revenueSub}>checkouts pagos</Text>
             </View>
 
+            {/* ── Overbooking Buffer / Stop-Sell ── */}
+            <View style={dS.policyCard}>
+              <Text style={dS.policyTitle}>Overbooking Buffer / Stop-Sell</Text>
+              <Text style={dS.policyText}>
+                Define a capacidade vendável por tipo de quarto. 100% = capacidade real; 90% = buffer operacional; 105% = overbooking controlado.
+              </Text>
+              <View style={dS.policyRow}>
+                <TextInput
+                  style={dS.policyInput}
+                  value={sellablePercentInput}
+                  onChangeText={setSellablePercentInput}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  editable={!policySaving}
+                />
+                <Text style={dS.policySuffix}>%</Text>
+                <TouchableOpacity style={[dS.policyBtn, policySaving && { opacity: 0.7 }]} onPress={handleSaveSellablePercent} disabled={policySaving}>
+                  <Text style={dS.policyBtnText}>{policySaving ? 'A guardar...' : 'Guardar'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
+              {canAccessReception && (
               <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
                 <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessHousekeeping && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
                 onPress={() => setShowHousekeeping(true)}
@@ -349,13 +531,15 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                   Housekeeping
                   {(() => {
                     const n = (data?.rooms || []).filter(r =>
-                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'MAINTENANCE'
+                      r.status === 'DIRTY' || r.status === 'CLEANING' || r.status === 'INSPECTING' || r.status === 'MAINTENANCE'
                     ).length;
                     return n > 0 ? ` · ${n} pendente${n !== 1 ? 's' : ''}` : '';
                   })()}
                 </Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessHousekeeping && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#1565C0' }]}
                 onPress={() => setShowRooms(true)}
@@ -366,6 +550,8 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 </Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D32323' }]}
                 onPress={() => setShowMap(true)}
@@ -374,6 +560,38 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
                 <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#0891B2' }]}
+                onPress={() => setShowGantt(true)}
+                activeOpacity={0.8}
+              >
+                <Icon name="calendar" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Mapa · Gantt · Quartos</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
+                onPress={() => setShowGuests(true)}
+              >
+                <Icon name="user" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Hóspedes · Perfis / Histórico</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              )}
+              {canAccessStaff && (
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#D97706' }]}
+                onPress={() => setShowStaffMgmt(true)}
+              >
+                <Icon name="users" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Staff</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              )}
             </View>
 
             {/* ── Room Calendar (vista semanal) ── */}
@@ -438,27 +656,96 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
-      </View>
+      </SafeAreaView>
       {showReception && (
         <ReceptionScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           roomTypes={[]}
+          pendingAction={pendingReceptionAction}
+          onPendingActionConsumed={() => setPendingReceptionAction(null)}
           onClose={() => { setShowReception(false); load(true); }}
         />
       )}
       {showHousekeeping && (
         <HousekeepingScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
+          onTaskCompleted={() => load(true)}
           onClose={() => { setShowHousekeeping(false); load(true); }}
         />
       )}
       {showMap && (
         <ReservationMapModal
           businessId={businessId}
-          accessToken={accessToken}
-          onClose={() => setShowMap(false)}
+          accessToken={effectiveAccessToken}
+          onClose={() => { setShowMap(false); load(true); }}
+          onBookingAction={async (bookingId, action, bk) => {
+            setShowMap(false);
+            const token = effectiveAccessToken;
+            try {
+              // Regra: check-in requer CONFIRMED
+              if (action === 'checkin') {
+                if (bk?.status === 'PENDING') {
+                  Alert.alert(
+                    '⚠️ Reserva não confirmada',
+                    'Não é possível fazer check-in numa reserva pendente.\nConfirme primeiro a reserva.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Confirmar Reserva', onPress: async () => {
+                          try { await backendApi.confirmBooking(bookingId, { businessId }, token); load(true); }
+                          catch (e) { Alert.alert('Erro', e?.message || 'Não foi possível confirmar.'); }
+                      }},
+                    ]
+                  );
+                  return;
+                }
+                setPendingReceptionAction({ bookingId, action: 'checkin', bk });
+                setShowReception(true);
+                return;
+              }
+              // Regra: checkout requer folio encerrado
+              if (action === 'checkout') {
+                let balance = 0;
+                try {
+                  const folio = await backendApi.getHtFolio(bookingId, token);
+                  balance = folio?.summary?.balance ?? 0;
+                  // paymentStatus = 'PAID' significa que o checkout financeiro foi concluído
+                  if (folio?.booking?.paymentStatus === 'PAID') balance = 0;
+                } catch { /* best effort */ }
+                if (balance > 0) {
+                  Alert.alert(
+                    '⚠️ Folio não encerrado',
+                    `Existe um saldo em dívida de ${balance.toLocaleString('pt-PT')} Kz.\nEncerre o folio antes do check-out.`,
+                    [{ text: 'OK', style: 'cancel' }]
+                  );
+                  return;
+                }
+                await backendApi.htCheckOut(bookingId, token);
+                load(true);
+                return;
+              }
+              if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, token);
+              if (action === 'noshow')   await backendApi.htNoShow(bookingId, token);
+              if (action === 'cancel')   {
+                if (!(bk?.status === 'PENDING' || bk?.status === 'CONFIRMED')) {
+                  Alert.alert('Cancelamento indisponível', 'Só é possível cancelar reservas pendentes ou confirmadas.');
+                  return;
+                }
+                setCancelReasonFromMap('');
+                setCancelBookingFromMap({ id: bookingId, guestName: bk?.guestName || 'Hóspede' });
+                return;
+              }
+              if (action === 'edit')     {
+                setPendingReceptionAction({ bookingId, action: 'edit', bk });
+                setShowReception(true);
+                return;
+              }
+              load(true);
+            } catch (e) {
+              Alert.alert('Erro', e?.message || 'Operação falhou.');
+            }
+          }}
         />
       )}
       {showRooms && (
@@ -470,6 +757,97 @@ export function DashboardPMS({ businessId, accessToken, onOpenReception, onClose
           onClose={() => setShowRooms(false)}
         />
       )}
+      {showGuests && (
+        <GuestsScreen
+          businessId={businessId}
+          accessToken={effectiveAccessToken}
+          onClose={() => setShowGuests(false)}
+        />
+      )}
+      {showGantt && (
+        <RoomGanttScreen
+          businessId={businessId}
+          accessToken={effectiveAccessToken}
+          bookings={guestBookings}
+          overbookingBuffer={Number(businessMetadata?.pms?.sellablePercent ?? 100)}
+          onClose={() => setShowGantt(false)}
+        />
+      )}
+
+      <Modal visible={!!cancelBookingFromMap} transparent animationType="fade" onRequestClose={() => !cancelMapLoading && setCancelBookingFromMap(null)}>
+        <View style={dS.cancelOverlay}>
+          <View style={dS.cancelCard}>
+            <Text style={dS.cancelTitle}>Cancelar Reserva</Text>
+            <Text style={dS.cancelSub}>
+              Indique o motivo do cancelamento para {cancelBookingFromMap?.guestName || 'o hóspede'}.
+            </Text>
+            <TextInput
+              style={dS.cancelInput}
+              placeholder="Ex.: cliente pediu cancelamento"
+              value={cancelReasonFromMap}
+              onChangeText={setCancelReasonFromMap}
+              multiline
+              editable={!cancelMapLoading}
+              maxLength={500}
+            />
+            <View style={dS.cancelActions}>
+              <TouchableOpacity
+                style={[dS.cancelBtn, { backgroundColor: '#F3F4F6' }]}
+                onPress={() => {
+                  if (cancelMapLoading) return;
+                  setCancelBookingFromMap(null);
+                  setCancelReasonFromMap('');
+                }}
+                disabled={cancelMapLoading}
+              >
+                <Text style={[dS.cancelBtnText, { color: '#374151' }]}>Fechar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.cancelBtn, { backgroundColor: '#DC2626', opacity: cancelMapLoading ? 0.7 : 1 }]}
+                onPress={submitCancelFromMap}
+                disabled={cancelMapLoading}
+              >
+                {cancelMapLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={dS.cancelBtnText}>Confirmar Cancelamento</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── STAFF MODALS (rendered inside DashboardPMS modal tree for iOS) ─ */}
+      <StaffManagementModal
+        visible={showStaffMgmt}
+        businessId={businessId}
+        accessToken={effectiveAccessToken}
+        onClose={() => setShowStaffMgmt(false)}
+        onOpenProfile={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffMgmt(false);
+          setShowStaffProfile(true);
+        }}
+      />
+      <StaffProfileSheet
+        visible={showStaffProfile}
+        staff={selectedStaff}
+        businessId={businessId}
+        accessToken={effectiveAccessToken}
+        onClose={() => { setShowStaffProfile(false); setShowStaffMgmt(true); }}
+        onRefresh={() => {}}
+        onOpenActivity={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffProfile(false);
+          setShowStaffActivity(true);
+        }}
+      />
+      <StaffActivityLog
+        visible={showStaffActivity}
+        staff={selectedStaff}
+        businessId={businessId}
+        accessToken={effectiveAccessToken}
+        onClose={() => { setShowStaffActivity(false); setShowStaffProfile(true); }}
+      />
     </Modal>
   );
 }
@@ -479,6 +857,8 @@ const dS = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#F7F6F2' },
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
   iconBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  logoutBtn:    { minWidth: 72, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#D32323' },
+  logoutBtnText:{ color: '#fff', fontSize: 12, fontWeight: '700' },
   headerTitle:  { fontSize: 16, fontWeight: '700', color: '#111' },
   headerSub:    { fontSize: 12, color: '#888', marginTop: 1 },
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
@@ -512,6 +892,16 @@ const dS = StyleSheet.create({
   revenueLabel: { fontSize: 12, color: '#166534', fontWeight: '600' },
   revenueValue: { fontSize: 20, fontWeight: '800', color: '#166534', letterSpacing: -0.5, marginTop: 2 },
   revenueSub:   { fontSize: 11, color: '#16a34a' },
+
+  // Overbooking policy
+  policyCard:   { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E5E7EB' },
+  policyTitle:  { fontSize: 13, fontWeight: '800', color: '#111827' },
+  policyText:   { marginTop: 6, fontSize: 12, lineHeight: 18, color: '#4B5563' },
+  policyRow:    { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  policyInput:  { minWidth: 68, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, backgroundColor: '#fff', textAlign: 'center', fontWeight: '700', color: '#111827' },
+  policySuffix: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  policyBtn:    { marginLeft: 'auto', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#111827' },
+  policyBtnText:{ fontSize: 12, fontWeight: '700', color: '#fff' },
 
 
 
@@ -572,6 +962,39 @@ const dS = StyleSheet.create({
   calCellDirty:    { backgroundColor: '#FEF9C3' },
   calCellMaint:    { backgroundColor: '#FEE2E2' },
   calCellText:     { fontSize: 8, color: '#1D4ED8', fontWeight: '600', paddingHorizontal: 2, textAlign: 'center' },
+
+  // Cancel modal (from map actions)
+  cancelOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  cancelCard: {
+    width: '100%',
+    maxWidth: 460,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+  },
+  cancelTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  cancelSub: { fontSize: 13, color: '#6B7280', marginTop: 6, marginBottom: 10 },
+  cancelInput: {
+    minHeight: 92,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textAlignVertical: 'top',
+    fontSize: 13,
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+  cancelActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  cancelBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10, paddingVertical: 11 },
+  cancelBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // Empty
   empty:        { alignItems: 'center', padding: 24 },

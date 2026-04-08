@@ -21,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ClaimModule } from './claim/claim.module';
 import { AdminModule } from './admin/admin.module';
 import { HtBookingModule } from './ht-booking/ht-booking.module';
+import { SocialModule } from './social/social.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { HtBookingModule } from './ht-booking/ht-booking.module';
     ClaimModule,
     AdminModule,
     HtBookingModule,
+    SocialModule,
   ],
   controllers: [AppController],
   providers: [

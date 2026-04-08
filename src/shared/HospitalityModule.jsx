@@ -237,7 +237,7 @@ function parseIcalText(text) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CALENDAR PICKER — componente independente com estado próprio
 // ─────────────────────────────────────────────────────────────────────────────
-export function CalendarPicker({ value, onChange, label, minDate }) {
+export function CalendarPicker({ value, onChange, label, minDate, dayAvailabilityResolver, showAvailabilityLegend = false, onVisibleMonthChange }) {
   const [open, setOpen]   = useState(false);
   const [month, setMonth] = useState(() => {
     const base = value ? parseDate(value) : minDate ? parseDate(minDate) : new Date();
@@ -246,6 +246,12 @@ export function CalendarPicker({ value, onChange, label, minDate }) {
   const { year, month: m, weeks } = buildCalendar(month);
   const today       = new Date();
   const minDateObj  = minDate ? parseDate(minDate) : null;
+
+  useEffect(() => {
+    if (typeof onVisibleMonthChange === 'function') {
+      onVisibleMonthChange({ year, month: m });
+    }
+  }, [year, m, onVisibleMonthChange]);
 
   return (
     <View style={hS.calWrap}>
@@ -281,19 +287,45 @@ export function CalendarPicker({ value, onChange, label, minDate }) {
                 const isBeforeMin = minDateObj ? thisDate <= minDateObj : false;
                 const isDisabled = isPast || isBeforeMin;
                 const isSelected = value === dateStr;
+                const dayMeta = !isDisabled && typeof dayAvailabilityResolver === 'function'
+                  ? dayAvailabilityResolver(dateStr)
+                  : null;
+                const isFullDay = dayMeta?.state === 'full';
+                const isPartialDay = dayMeta?.state === 'partial';
                 return (
                   <TouchableOpacity key={di}
-                    style={[hS.calDay, isSelected && hS.calDaySelected, isDisabled && hS.calDayPast]}
+                    style={[
+                      hS.calDay,
+                      isSelected && hS.calDaySelected,
+                      isDisabled && hS.calDayPast,
+                      !isSelected && isFullDay && hS.calDayFull,
+                      !isSelected && isPartialDay && hS.calDayPartial,
+                    ]}
                     disabled={isDisabled}
                     onPress={() => { onChange(dateStr); setOpen(false); }}>
                     <Text style={[hS.calDayText, isSelected && hS.calDayTextSelected, isDisabled && hS.calDayTextPast]}>
                       {day}
                     </Text>
+                    {!isSelected && !isDisabled && (isFullDay || isPartialDay) && (
+                      <View style={[hS.calAvailDot, isFullDay ? hS.calAvailDotFull : hS.calAvailDotPartial]} />
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </View>
           ))}
+          {showAvailabilityLegend && (
+            <View style={hS.calLegendRow}>
+              <View style={hS.calLegendItem}>
+                <View style={[hS.calAvailDot, hS.calAvailDotPartial]} />
+                <Text style={hS.calLegendText}>Parcialmente ocupado</Text>
+              </View>
+              <View style={hS.calLegendItem}>
+                <View style={[hS.calAvailDot, hS.calAvailDotFull]} />
+                <Text style={hS.calLegendText}>Lotado</Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -340,6 +372,22 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
   const nextDate = (isUnavailable && room && ownerRoom)
     ? findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings)
     : null;
+
+  const resolveRoomDayAvailability = useCallback((dateStr) => {
+    if (!room) return null;
+    const d = parseDate(dateStr);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    const next = new Date(d.getTime() + 86400000);
+    const from = fmtDate(d);
+    const to = fmtDate(next);
+    const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings);
+    const safeTotal = Math.max(0, Number(total) || 0);
+    const safeAvail = Math.max(0, Number(available) || 0);
+    if (safeTotal <= 0) return null;
+    if (safeAvail <= 0) return { state: 'full', available: 0, total: safeTotal };
+    if (safeAvail < safeTotal) return { state: 'partial', available: safeAvail, total: safeTotal };
+    return { state: 'available', available: safeAvail, total: safeTotal };
+  }, [room, ownerRoom, activeBookings]);
 
   // Reset ao fechar
   useEffect(() => {
@@ -420,8 +468,11 @@ function BookingModal({ visible, room, ownerRoom, business, activeBookings, onCl
               <Text style={hS.stepTitle}>Quando vai ficar?</Text>
               <View style={{ gap: 12, marginBottom: 16 }}>
                 <CalendarPicker label="Check-in" value={checkIn}
+                  dayAvailabilityResolver={resolveRoomDayAvailability}
+                  showAvailabilityLegend
                   onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
                 <CalendarPicker label="Check-out" value={checkOut}
+                  dayAvailabilityResolver={resolveRoomDayAvailability}
                   onChange={setCheckOut} minDate={checkIn} />
               </View>
 
@@ -817,6 +868,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBookingsManager, setShowBookingsManager] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [sellablePercentInput, setSellablePercentInput] = useState('100');
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [calendarDayAvailMap, setCalendarDayAvailMap] = useState({});
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
   // Limpos automaticamente quando o Realtime confirma o novo status
@@ -926,6 +983,16 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [icalLink, setIcalLink]   = useState(ownerBusinessPrivate?.icalLink || '');
   const [icalStatus, setIcalStatus] = useState({ loaded: false, ranges: [], error: null, lastSync: null });
 
+  useEffect(() => {
+    const p = Number(
+      ownerBusinessPrivate?.pms?.sellablePercent
+      ?? ownerBusinessPrivate?.metadata?.pms?.sellablePercent
+      ?? 100,
+    );
+    const safe = Number.isFinite(p) ? Math.max(50, Math.min(150, Math.round(p))) : 100;
+    setSellablePercentInput(String(safe));
+  }, [ownerBusinessPrivate?.pms?.sellablePercent, ownerBusinessPrivate?.metadata?.pms?.sellablePercent]);
+
   // ── Cleanup em mudança de negócio ────────────────────────────────────────
   useEffect(() => {
     return () => { setCheckIn(''); setCheckOut(''); setGuestCount(1); };
@@ -988,6 +1055,33 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setIcalLink(val);
     updateOwnerBiz({ icalLink: val });
   }, [updateOwnerBiz]);
+
+  const handleSaveSellablePercent = useCallback(async () => {
+    const raw = Number(sellablePercentInput);
+    if (!Number.isFinite(raw)) {
+      Alert.alert('Valor inválido', 'Insira um número entre 50 e 150.');
+      return;
+    }
+    const safe = Math.max(50, Math.min(150, Math.round(raw)));
+    const currentPms = ownerBusinessPrivate?.pms
+      ?? ownerBusinessPrivate?.metadata?.pms
+      ?? {};
+    const metadata = {
+      ...(ownerBusinessPrivate?.metadata || {}),
+      pms: { ...currentPms, sellablePercent: safe },
+    };
+
+    try {
+      if (ownerBusinessPrivate?.id && ctx?.accessToken) {
+        await backendApi.updateBusiness(ownerBusinessPrivate.id, { metadata }, ctx.accessToken);
+      }
+      updateOwnerBiz({ pms: { ...currentPms, sellablePercent: safe }, metadata });
+      setSellablePercentInput(String(safe));
+      Alert.alert('Política guardada', `Capacidade vendável definida para ${safe}%.`);
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível guardar a política de capacidade.');
+    }
+  }, [sellablePercentInput, ownerBusinessPrivate?.id, ownerBusinessPrivate?.pms, ownerBusinessPrivate?.metadata, ctx?.accessToken, updateOwnerBiz]);
 
   // ── Abertura de booking modal ─────────────────────────────────────────────
   const handleBook = useCallback((room) => {
@@ -1094,6 +1188,77 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     rb.businessId === business?.id &&
     (rb.bookingType === 'ROOM' || rb.bookingType === 'room' || !rb.bookingType)
   );
+
+  useEffect(() => {
+    if (!business?.id || filteredRooms.length === 0) {
+      setCalendarDayAvailMap({});
+      return;
+    }
+
+    let cancelled = false;
+    const { year, month } = calendarMonth;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const toIso = (d) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0)).toISOString();
+
+    const calls = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const start = new Date(year, month, day);
+      const end = new Date(year, month, day + 1);
+      const key = fmtDate(start);
+      filteredRooms.forEach((room) => {
+        calls.push(
+          backendApi.getAvailability(business.id, room.id, toIso(start), toIso(end))
+            .then((data) => ({ key, data }))
+            .catch(() => ({ key, data: null })),
+        );
+      });
+    }
+
+    Promise.all(calls).then((rows) => {
+      if (cancelled) return;
+      const agg = {};
+      rows.forEach(({ key, data }) => {
+        if (!agg[key]) agg[key] = { available: 0, total: 0 };
+        const cap = Number(data?.sellableCapacity ?? data?.physicalRooms ?? 0);
+        const avail = Number(data?.available ?? 0);
+        agg[key].total += Math.max(0, cap);
+        agg[key].available += Math.max(0, avail);
+      });
+      setCalendarDayAvailMap(agg);
+    });
+
+    return () => { cancelled = true; };
+  }, [business?.id, filteredRooms, calendarMonth]);
+
+  const resolveDayAvailabilityGlobal = useCallback((dateStr) => {
+    const backendDay = calendarDayAvailMap[dateStr];
+    if (backendDay && Number(backendDay.total) > 0) {
+      const total = Number(backendDay.total);
+      const available = Number(backendDay.available);
+      if (available <= 0) return { state: 'full', available: 0, total };
+      if (available < total) return { state: 'partial', available, total };
+      return { state: 'available', available, total };
+    }
+
+    if (!filteredRooms?.length) return null;
+    const d = parseDate(dateStr);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    const next = new Date(d.getTime() + 86400000);
+    const from = fmtDate(d);
+    const to = fmtDate(next);
+    let totalCap = 0;
+    let totalAvail = 0;
+    filteredRooms.forEach((room) => {
+      const ownerRoom = ownerRooms[room.id] || null;
+      const { total, available } = getRealAvailability(room, ownerRoom, from, to, activeBookings);
+      totalCap += Math.max(0, Number(total) || 0);
+      totalAvail += Math.max(0, Number(available) || 0);
+    });
+    if (totalCap <= 0) return null;
+    if (totalAvail <= 0) return { state: 'full', available: 0, total: totalCap };
+    if (totalAvail < totalCap) return { state: 'partial', available: totalAvail, total: totalCap };
+    return { state: 'available', available: totalAvail, total: totalCap };
+  }, [calendarDayAvailMap, filteredRooms, ownerRooms, activeBookings]);
   const pendingCount = activeBookings.filter(rb => rb.status === 'pending').length;
 
   if (rooms.length === 0) return (
@@ -1135,6 +1300,28 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         )}
       </View>
 
+      {isOwner && (
+        <View style={hS.policyCard}>
+          <Text style={hS.policyTitle}>Overbooking Buffer / Stop-Sell</Text>
+          <Text style={hS.policyText}>
+            Define a capacidade vendável por tipo de quarto. 100% = capacidade real; 90% = buffer operacional; 105% = overbooking controlado.
+          </Text>
+          <View style={hS.policyRow}>
+            <TextInput
+              style={hS.policyInput}
+              value={sellablePercentInput}
+              onChangeText={setSellablePercentInput}
+              keyboardType="number-pad"
+              maxLength={3}
+            />
+            <Text style={hS.policySuffix}>%</Text>
+            <TouchableOpacity style={hS.policyBtn} onPress={handleSaveSellablePercent}>
+              <Text style={hS.policyBtnText}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 32 }}
@@ -1147,13 +1334,16 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <View style={hS.dateRow}>
           <View style={{ flex: 1 }}>
             <CalendarPicker label="Check-in" value={checkIn}
+              onVisibleMonthChange={setCalendarMonth}
+              dayAvailabilityResolver={resolveDayAvailabilityGlobal}
+              showAvailabilityLegend
               onChange={v => { setCheckIn(v); if (checkOut && countNights(v, checkOut) <= 0) setCheckOut(''); }} />
           </View>
           <View style={hS.dateSep}>
             <Icon name="chevronRight" size={16} color={COLORS.grayText} strokeWidth={2} />
           </View>
           <View style={{ flex: 1 }}>
-            <CalendarPicker label="Check-out" value={checkOut} onChange={setCheckOut} minDate={checkIn} />
+            <CalendarPicker label="Check-out" value={checkOut} onVisibleMonthChange={setCalendarMonth} dayAvailabilityResolver={resolveDayAvailabilityGlobal} onChange={setCheckOut} minDate={checkIn} />
           </View>
         </View>
         <View style={hS.guestRow}>
@@ -1189,6 +1379,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
             ? getRealAvailability(room, ownerRoom, checkIn, checkOut, activeBookings)
             : null;
           const isUnavailable = avail ? avail.available < 1 : false;
+          const occupancyPct  = avail?.total ? Math.round(((avail.total - avail.available) / avail.total) * 100) : 0;
+          const isNearFull    = !isUnavailable && occupancyPct >= 85;
           return (
             <View key={room.id} style={[hS.roomCard, isUnavailable && hS.roomCardUnavailable]}>
               <View style={hS.roomHeader}>
@@ -1223,10 +1415,17 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                 )}
                 {avail && (
                   <View style={[hS.roomMetaItem, { marginLeft: 'auto' }]}>
-                    <View style={[hS.availDot, { backgroundColor: isUnavailable ? '#EF4444' : COLORS.green }]} />
-                    <Text style={[hS.roomMetaText, { color: isUnavailable ? '#EF4444' : COLORS.green, fontWeight: '700' }]}>
-                      {isUnavailable ? 'Esgotado' : `${avail.available} disp.`}
+                    <View style={[hS.availDot, { backgroundColor: isUnavailable ? '#EF4444' : (isNearFull ? '#F59E0B' : COLORS.green) }]} />
+                    <Text style={[hS.roomMetaText, { color: isUnavailable ? '#EF4444' : (isNearFull ? '#B45309' : COLORS.green), fontWeight: '700' }]}>
+                      {isUnavailable
+                        ? 'Esgotado'
+                        : avail.total
+                          ? `${avail.available}/${avail.total} disp.`
+                          : `${avail.available} disp.`}
                     </Text>
+                    {isNearFull && (
+                      <Text style={[hS.roomMetaText, { marginLeft: 6, color: '#B45309', fontWeight: '700' }]}>Quase cheio</Text>
+                    )}
                   </View>
                 )}
               </View>
@@ -1311,6 +1510,18 @@ const hS = StyleSheet.create({
                       paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#1565C0',
                       borderRadius: 20 },
   ownerActionBtnText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  policyCard:       { marginHorizontal: 16, marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 10,
+                      padding: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  policyTitle:      { fontSize: 12, fontWeight: '800', color: '#111' },
+  policyText:       { fontSize: 11, color: '#6B7280', marginTop: 4 },
+  policyRow:        { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  policyInput:      { width: 62, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8,
+                      backgroundColor: '#FAFAFA', paddingVertical: 7, paddingHorizontal: 10,
+                      fontSize: 13, color: '#111', fontWeight: '700', textAlign: 'center' },
+  policySuffix:     { fontSize: 13, fontWeight: '700', color: '#444' },
+  policyBtn:        { marginLeft: 'auto', backgroundColor: '#1565C0', borderRadius: 8,
+                      paddingHorizontal: 12, paddingVertical: 8 },
+  policyBtnText:    { color: '#fff', fontSize: 12, fontWeight: '700' },
   pendingBadge:     { position: 'absolute', top: -4, right: -4, width: 16, height: 16,
                       borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
   pendingBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF' },
@@ -1365,10 +1576,18 @@ const hS = StyleSheet.create({
   calDayEmpty:      { width: 32, height: 32 },
   calDay:           { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   calDaySelected:   { backgroundColor: '#D32323' },
+  calDayFull:       { backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' },
+  calDayPartial:    { backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D' },
   calDayPast:       { opacity: 0.3 },
   calDayText:       { fontSize: 13, color: '#111111', fontWeight: '500' },
   calDayTextSelected: { color: '#FFFFFF', fontWeight: '700' },
   calDayTextPast:   { color: '#8A8A8A' },
+  calAvailDot:      { width: 5, height: 5, borderRadius: 3, position: 'absolute', bottom: 4 },
+  calAvailDotFull:  { backgroundColor: '#DC2626' },
+  calAvailDotPartial: { backgroundColor: '#D97706' },
+  calLegendRow:     { flexDirection: 'row', gap: 14, alignItems: 'center', marginTop: 8, paddingHorizontal: 2, flexWrap: 'wrap' },
+  calLegendItem:    { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  calLegendText:    { fontSize: 11, color: '#666' },
 
   // Rooms section
   roomsSection:     { paddingHorizontal: 16, paddingBottom: 24 },

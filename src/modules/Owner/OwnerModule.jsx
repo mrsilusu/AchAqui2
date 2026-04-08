@@ -37,6 +37,7 @@ import {
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { ReceptionScreen }    from '../../operations/ReceptionScreen';
 import { DashboardPMS }       from '../../operations/DashboardPMS';
+import StaffManagementModal   from '../../operations/StaffManagementModal';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
@@ -431,6 +432,8 @@ export function OwnerModule({
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [showStaffMgmtFromDashboard, setShowStaffMgmtFromDashboard] = useState(false);
+  const [openStaffOnHospitalityEntry, setOpenStaffOnHospitalityEntry] = useState(false);
   const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
@@ -1515,9 +1518,9 @@ export function OwnerModule({
                         <View style={{flex:1}}><Text style={bizS.actionTitle}>Reservas de Quartos</Text><Text style={bizS.actionDesc}>{roomBookings.filter(rb=>rb.status==='pending').length} pendentes · {roomBookings.filter(rb=>rb.status==='confirmed').length} confirmadas</Text></View>
                         <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                       </TouchableOpacity>
-                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => { setShowRoomsEditor(true); loadHtRooms(); }}>
+                      <TouchableOpacity style={bizS.actionCard} activeOpacity={0.8} onPress={() => setShowAvailabilityEditor(true)}>
                         <View style={bizS.actionIcon}><Icon name="settings" size={22} color={COLORS.red} strokeWidth={2} /></View>
-                        <View style={{flex:1}}><Text style={bizS.actionTitle}>Políticas & Quartos</Text><Text style={bizS.actionDesc}>{(roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text></View>
+                        <View style={{flex:1}}><Text style={bizS.actionTitle}>Disponibilidade & Quartos</Text><Text style={bizS.actionDesc}>{(roomTypes||[]).reduce((s,r)=>s+(r.totalRooms||0),0)} quartos no total</Text></View>
                         <Icon name="arrowRight" size={18} color={COLORS.grayText} strokeWidth={2} />
                       </TouchableOpacity>
                       <TouchableOpacity style={[bizS.actionCard, {borderColor: COLORS.grayLine, borderWidth: 1}]} activeOpacity={0.8} onPress={() => setShowICalModal(true)}>
@@ -2011,14 +2014,21 @@ export function OwnerModule({
               <Icon name="close" size={18} color={COLORS.darkText} strokeWidth={2}/>
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{paddingBottom:40}}>
+          <View style={{flex:1}}>
             <HospitalityModule
               business={ownerBiz}
               ownerMode={true}
               tenantId={ownerBusinessId}
+              openStaffOnMount={openStaffOnHospitalityEntry}
+              onOpenStaffConsumed={() => setOpenStaffOnHospitalityEntry(false)}
+              ownerBusinessPrivate={ownerBiz}
+              updateOwnerBiz={updateOwnerBiz}
+              liveBookings={liveBookings}
+              ownerRoomBookings={roomBookings}
+              onOwnerRoomBookingsChange={setRoomBookings}
               onBookingDone={()=>closeAppLayer()}
             />
-          </ScrollView>
+          </View>
         </SafeAreaView>
           </Animated.View>
         </View>

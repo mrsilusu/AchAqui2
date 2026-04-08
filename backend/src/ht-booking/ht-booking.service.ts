@@ -1,13 +1,16 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { HtBookingStatus } from '@prisma/client';
+import { HtBookingStatus, HtRoomStatus, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 import { CheckInDto } from './dto/check-in.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
+import { CreateHtBookingDto } from './dto/create-booking.dto';
 
 // [TENANT] Todas as queries incluem businessId extraído do JWT.
 // [ACID]   check-in e check-out usam transação Prisma ($transaction).
@@ -20,20 +23,73 @@ export class HtBookingService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  // [TENANT] Valida que a reserva pertence ao negócio do owner autenticado.
-  // Previne IDOR: Owner A não acede a reservas de Owner B.
+  private normalizeDocumentNumber(value?: string | null): string | null {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    return raw.replace(/\s+/g, '').toUpperCase();
+  }
+
+  private async hasBusinessAccess(businessId: string, userId: string, allowedRoles?: StaffRole[]) {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, ownerId: true },
+    });
+    if (!business) return false;
+    if (business.ownerId === userId) return true;
+
+    const roleFilter = allowedRoles?.length
+      ? { in: allowedRoles }
+      : { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] };
+
+    const staff = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        businessId,
+        userId,
+        revokedAt: null,
+        OR: [
+          { role: StaffRole.GENERAL_MANAGER },
+          {
+            role: roleFilter as any,
+            OR: [{ module: 'HT' }, { module: null }],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return !!staff;
+  }
+
+  // [TENANT] Valida que a reserva pertence ao negócio do utilizador autenticado.
+  // Previne IDOR: utilizador sem vínculo ao negócio não pode operar reservas.
   private async findBookingForOwner(bookingId: string, ownerId: string) {
-    // [IDOR FIX] Filtra por business.ownerId — impede Owner A de operar reservas de Owner B
     const booking = await this.prisma.htRoomBooking.findFirst({
-      where: { id: bookingId, business: { ownerId } },
+      where: { id: bookingId },
       include: {
         room:     true,
-        roomType: { select: { name: true } },
+        roomType: { select: { name: true, pricePerNight: true } },
         user:     { select: { id: true, name: true, email: true } },
         business: { select: { id: true, name: true, ownerId: true } },
+        guestProfile: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+            documentType: true,
+            documentNumber: true,
+            companyName: true,
+            nif: true,
+            nationality: true,
+            dateOfBirth: true,
+          },
+        },
       },
-    });
-    if (!booking) throw new NotFoundException('Reserva não encontrada ou sem permissão.');
+    } as any);
+    if (!booking) throw new NotFoundException('Reserva não encontrada.');
+
+    const allowed = await this.hasBusinessAccess(booking.businessId, ownerId);
+    if (!allowed) throw new ForbiddenException('Sem permissão para esta reserva.');
+
     return booking;
   }
 
@@ -59,13 +115,123 @@ export class HtBookingService {
     });
   }
 
+  // [LEGAL AO] Check-in requer identificação válida do hóspede.
+  // Garante perfil persistente ligado à reserva para histórico e conformidade.
+  private async ensureGuestProfileForCheckIn(
+    booking: any,
+    dto: CheckInDto,
+  ): Promise<string> {
+    const fullName = (dto.guestName?.trim() || booking.guestName?.trim() || booking.user?.name || '').trim();
+    if (!fullName) {
+      throw new BadRequestException('Nome do hóspede é obrigatório para check-in.');
+    }
+
+    const phone = dto.guestPhone?.trim() || booking.guestPhone?.trim() || null;
+    const documentType = dto.documentType?.trim() || booking.guestProfile?.documentType || 'BI';
+    const documentNumber = this.normalizeDocumentNumber(dto.documentNumber || booking.guestProfile?.documentNumber || null);
+    if (!documentNumber) {
+      throw new BadRequestException('Documento de identificação é obrigatório para check-in (BI/Passaporte).');
+    }
+
+    const nationality = dto.nationality?.trim() || booking.guestProfile?.nationality || null;
+    const companyName = dto.companyName?.trim() || booking.guestProfile?.companyName || null;
+    const nif = dto.nif?.trim() || booking.guestProfile?.nif || null;
+    const dateOfBirth = dto.dateOfBirth?.trim()
+      ? new Date(dto.dateOfBirth)
+      : (booking.guestProfile?.dateOfBirth ?? null);
+    if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) {
+      throw new BadRequestException('Data de nascimento inválida.');
+    }
+
+    const existingByDocument = await this.prisma.htGuestProfile.findFirst({
+      where: {
+        businessId: booking.businessId,
+        documentNumber,
+      },
+      select: { id: true },
+    });
+
+    if (booking.guestProfileId) {
+      if (existingByDocument && existingByDocument.id !== booking.guestProfileId) {
+        throw new BadRequestException('Número de documento já registado para outro hóspede neste estabelecimento.');
+      }
+      const updated = await this.prisma.htGuestProfile.update({
+        where: { id: booking.guestProfileId },
+        data: {
+          fullName,
+          phone,
+          documentType,
+          documentNumber,
+          companyName,
+          nif,
+          nationality,
+          dateOfBirth,
+        } as any,
+        select: { id: true },
+      });
+      return updated.id;
+    }
+
+    if (existingByDocument) {
+      throw new BadRequestException(
+        'Número de documento já registado para outro hóspede neste estabelecimento. ' +
+        'Use um perfil existente em vez de criar um novo no check-in.'
+      );
+    }
+
+    const created = await this.prisma.htGuestProfile.create({
+      data: {
+        businessId: booking.businessId,
+        fullName,
+        phone,
+        email: booking.user?.email ?? null,
+        documentType,
+        documentNumber,
+        companyName,
+        nif,
+        nationality,
+        dateOfBirth,
+      } as any,
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   // CHECK-IN
   // [ACID] Transação atómica: atualiza reserva + atribui quarto.
   async checkIn(bookingId: string, ownerId: string, dto: CheckInDto, ip?: string) {
-    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
 
     if (booking.status !== HtBookingStatus.CONFIRMED && booking.status !== HtBookingStatus.PENDING) {
       throw new BadRequestException(`Não é possível fazer check-in. Estado actual: ${booking.status}`);
+    }
+
+    // [PMS] Validação de early check-in
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const checkInDate   = new Date(booking.startDate); checkInDate.setHours(0,0,0,0);
+    const daysEarly     = Math.round((checkInDate.getTime() - todayMidnight.getTime()) / 86400000);
+
+    let earlyCheckInFee = 0;
+    if (daysEarly > 0) {
+      // Check-in antecipado: calcular taxa proporcional
+      const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+        where:  { businessId: booking.businessId },
+        select: { earlyCheckinFee: true, lateCheckoutFee: true },
+      }).catch(() => null);
+
+      // Se o hotel tem earlyCheckinFee configurada, usar esse valor
+      // Caso contrário: cobrar 1 diária completa por cada dia antecipado
+      if (pmsConfig?.earlyCheckinFee && pmsConfig.earlyCheckinFee > 0) {
+        earlyCheckInFee = pmsConfig.earlyCheckinFee * daysEarly;
+      } else if (booking.roomTypeId) {
+        const rt = await this.prisma.htRoomType.findFirst({
+          where: { id: booking.roomTypeId }, select: { pricePerNight: true },
+        });
+        if (rt) earlyCheckInFee = rt.pricePerNight * daysEarly;
+      }
+
+      // Guardar info do early check-in para o caller usar (não lança erro — o owner decide)
+      // O caller (controller) devolve earlyCheckInInfo na resposta
     }
 
     if (dto.roomId) {
@@ -79,6 +245,7 @@ export class HtBookingService {
     }
 
     const previousStatus = booking.status;
+    const guestProfileId = await this.ensureGuestProfileForCheckIn(booking, dto);
 
     // Se não veio roomId explícito, atribuir automaticamente um quarto CLEAN do tipo correcto.
     // Sem esta atribuição, o HtRoom nunca fica marcado como ocupado no dashboard.
@@ -95,15 +262,44 @@ export class HtBookingService {
       if (autoRoom) resolvedRoomId = autoRoom.id;
     }
 
+    const realArrival = new Date();
+
+      if (!resolvedRoomId) {
+        throw new BadRequestException(
+          'Não é possível fazer check-in sem quarto atribuído. Seleccione um quarto disponível.',
+        );
+      }
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedBooking = await tx.htRoomBooking.update({
+      // [Fix 2] Verificar colisão: outro hóspede CHECKED_IN no mesmo quarto
+      if (resolvedRoomId) {
+        const collision = await tx.htRoomBooking.findFirst({
+          where: {
+            id:      { not: bookingId },
+            roomId:  resolvedRoomId,
+            status:  HtBookingStatus.CHECKED_IN,
+          },
+          select: { guestName: true },
+        });
+        if (collision) {
+          throw new BadRequestException(
+            `Quarto já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+            `Escolha outro quarto ou faça o checkout do hóspede actual.`
+          );
+        }
+      }
+
+      return tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
           status:      HtBookingStatus.CHECKED_IN,
-          checkedInAt: new Date(),
+          checkedInAt: realArrival,
           roomId:      resolvedRoomId,
+          guestProfileId,
           guestName:   dto.guestName  ?? booking.guestName,
           guestPhone:  dto.guestPhone ?? booking.guestPhone,
+          // [Fix 1] Early check-in: startDate passa a ser o dia real de entrada
+          ...(daysEarly > 0 && { startDate: realArrival }),
           version:     { increment: 1 },
         },
         include: {
@@ -113,13 +309,22 @@ export class HtBookingService {
           business: { select: { id: true, name: true } },
         },
       });
-      // Marcar o quarto físico como OCCUPIED (via CLEAN com booking activo)
-      // O status mantém-se CLEAN -- a ocupação é inferida pelas reservas CHECKED_IN no dashboard.
-      // Nada a fazer aqui para o status do room -- o dashboard já faz:
-      // occupied = rooms.filter(r => r.status === 'CLEAN' && r.bookings.length > 0)
-      // O que importa é que resolvedRoomId esteja na reserva para o join funcionar.
-      return updatedBooking;
     });
+
+    // Se houve early check-in, adicionar taxa ao folio
+    if (earlyCheckInFee > 0) {
+      await this.prisma.htFolioItem.create({
+        data: {
+          businessId:  booking.businessId,
+          bookingId,
+          type:        'SERVICE' as any,
+          description: `Check-in antecipado (${daysEarly} dia${daysEarly !== 1 ? 's' : ''} antes da data prevista)`,
+          quantity:    daysEarly,
+          unitPrice:   earlyCheckInFee / daysEarly,
+          amount:      earlyCheckInFee,
+        },
+      }).catch(() => null); // não bloquear o check-in se o folio falhar
+    }
 
     await this.audit({
       businessId:   booking.businessId,
@@ -127,7 +332,7 @@ export class HtBookingService {
       actorId:      ownerId,
       resourceId:   bookingId,
       previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt },
+      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt, earlyCheckInFee },
       ipAddress:    ip,
     });
 
@@ -136,29 +341,58 @@ export class HtBookingService {
       businessName: booking.business.name,
       roomNumber:   updated.room?.number,
       checkedInAt:  updated.checkedInAt,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
     });
 
-    return updated;
+    return {
+      ...updated,
+      earlyCheckIn: daysEarly > 0 ? { daysEarly, fee: earlyCheckInFee } : null,
+    };
   }
 
   // CHECK-OUT
   // [ACID] Transação: reserva CHECKED_OUT + quarto DIRTY + HousekeepingTask criada.
   async checkOut(bookingId: string, ownerId: string, ip?: string) {
-    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
 
     if (booking.status !== HtBookingStatus.CHECKED_IN) {
       throw new BadRequestException(`Não é possível fazer check-out. Estado actual: ${booking.status}`);
     }
 
+    const now = new Date();
+    const plannedEnd = new Date(booking.endDate);
+    const isEarly = now < plannedEnd;
     const previousStatus = booking.status;
+
+    const realNights = Math.max(1, Math.ceil(
+      (now.getTime() - new Date(booking.startDate).getTime()) / 86400000,
+    ));
+    const plannedNights = Math.max(1, Math.ceil(
+      (plannedEnd.getTime() - new Date(booking.startDate).getTime()) / 86400000,
+    ));
+
+    let newTotalPrice = booking.totalPrice;
+    let folioAdjusted = false;
+    if (isEarly && booking.paymentStatus !== 'PAID') {
+      const pricePerNight = booking.roomType?.pricePerNight ?? 0;
+      if (pricePerNight > 0) {
+        newTotalPrice = pricePerNight * realNights * (booking.rooms ?? 1);
+        folioAdjusted = true;
+      }
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data: {
-          status:       HtBookingStatus.CHECKED_OUT,
-          checkedOutAt: new Date(),
-          version:      { increment: 1 },
+          status: HtBookingStatus.CHECKED_OUT,
+          checkedOutAt: now,
+          ...(isEarly && {
+            endDate: now,
+            originalEndDate: plannedEnd,
+            totalPrice: newTotalPrice,
+          }),
+          version: { increment: 1 },
         },
         include: {
           room:     { select: { id: true, number: true } },
@@ -173,7 +407,7 @@ export class HtBookingService {
         });
         await tx.htHousekeepingTask.create({
           data: { roomId: updatedBooking.roomId, priority: 'NORMAL' },
-        });
+        }).catch(() => null);
       }
       return updatedBooking;
     });
@@ -183,16 +417,25 @@ export class HtBookingService {
       action:       'HT_BOOKING_CHECKED_OUT',
       actorId:      ownerId,
       resourceId:   bookingId,
-      previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_OUT, checkedOutAt: updated.checkedOutAt },
-      ipAddress:    ip,
+      previousData: { status: previousStatus, endDate: booking.endDate },
+      newData: {
+        status: HtBookingStatus.CHECKED_OUT,
+        checkedOutAt: now,
+        plannedEndDate: plannedEnd,
+        actualNights: realNights,
+        plannedNights,
+        folioAdjusted,
+      },
+      ipAddress: ip,
     });
 
-    this.eventsGateway.emitToUser(ownerId, 'room.dirty', {
+    if (booking.business?.ownerId) {
+      this.eventsGateway.emitToUser(booking.business.ownerId, 'room.dirty', {
       bookingId,
       roomId:     updated.room?.id,
       roomNumber: updated.room?.number,
-    });
+      });
+    }
 
     return updated;
   }
@@ -217,9 +460,42 @@ export class HtBookingService {
           where: { id: booking.roomId },
           data: { status: 'CLEAN', version: { increment: 1 } },
         });
+
+        // Criar tarefa de housekeeping após no-show para inspeção/limpeza rápida do quarto.
+        await tx.htHousekeepingTask.create({
+          data: {
+            roomId: booking.roomId,
+            priority: 'NORMAL',
+            notes: 'No-show marcado na receção',
+          },
+        }).catch(() => null);
       }
       return updatedBooking;
     });
+
+    // Penalização No-Show configurada em HtPmsConfig (não bloqueia no-show em caso de erro).
+    try {
+      const cfg = await this.prisma.htPmsConfig.findUnique({
+        where: { businessId: booking.businessId },
+        select: { noShowPenalty: true },
+      });
+      if (cfg?.noShowPenalty && cfg.noShowPenalty > 0) {
+        await this.prisma.htFolioItem.create({
+          data: {
+            businessId: booking.businessId,
+            bookingId,
+            type: 'OTHER' as any,
+            description: 'Penalização No-Show',
+            quantity: 1,
+            unitPrice: cfg.noShowPenalty,
+            amount: cfg.noShowPenalty,
+            addedById: ownerId,
+          },
+        });
+      }
+    } catch {
+      // Não bloquear fluxo de no-show por erro de folio/config.
+    }
 
     await this.audit({
       businessId:   booking.businessId,
@@ -231,40 +507,253 @@ export class HtBookingService {
       ipAddress:    ip,
     });
 
+    const bookingUserId = (booking as any)?.user?.id || booking.userId;
+    const bookingBusinessName = (booking as any)?.business?.name || null;
+    this.eventsGateway.emitToUser(bookingUserId, 'booking.noShow', {
+      bookingId,
+      businessName: bookingBusinessName,
+      noShowAt: updated.noShowAt,
+    });
+
     return updated;
   }
 
-  // CHEGADAS — próximos 7 dias (PENDING ou CONFIRMED). Se não houver hoje, mostra as próximas.
+  async postponeBooking(bookingId: string, ownerId: string, ip?: string) {
+    const booking = await this.findBookingForOwner(bookingId, ownerId);
+    if (booking.status !== HtBookingStatus.CONFIRMED && booking.status !== HtBookingStatus.PENDING) {
+      throw new BadRequestException(`Estado inválido para adiar: ${booking.status}`);
+    }
+
+    const previousStart = booking.startDate;
+    const previousEnd = booking.endDate;
+
+    const newStart = new Date(booking.startDate);
+    newStart.setDate(newStart.getDate() + 1);
+
+    const durationMs = booking.endDate.getTime() - booking.startDate.getTime();
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const updated = await this.prisma.htRoomBooking.update({
+      where: { id: bookingId },
+      data: {
+        startDate: newStart,
+        endDate: newEnd,
+        status: HtBookingStatus.CONFIRMED,
+        version: { increment: 1 },
+      },
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_MODIFIED',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { startDate: previousStart, endDate: previousEnd },
+      newData: { startDate: newStart, endDate: newEnd, reason: 'postpone_noshow' },
+      ipAddress: ip,
+    });
+
+    return updated;
+  }
+
+  // REVERTER NO-SHOW — dois fluxos conforme exista penalidade
+  async revertNoShow(bookingId: string, applyPenalty: boolean, ownerId: string, ip?: string) {
+    const booking = await this.findBookingForOwner(bookingId, ownerId);
+
+    if (booking.status !== HtBookingStatus.NO_SHOW) {
+      throw new BadRequestException('Booking não está em No-Show');
+    }
+
+    // Verificar se folio já está pago (bloqueia reversão)
+    if (booking.paymentStatus === 'PAID') {
+      throw new BadRequestException('Folio já encerrado — reversão bloqueada');
+    }
+
+    const now = new Date();
+
+    // Buscar pricePerNight do roomType usando roomTypeId
+    let pricePerNight = 0;
+    if (booking.roomTypeId) {
+      const roomType = await this.prisma.htRoomType.findUnique({
+        where: { id: booking.roomTypeId },
+        select: { pricePerNight: true },
+      });
+      pricePerNight = roomType?.pricePerNight ?? 0;
+    }
+
+    // Ler config para obter noShowPenalty
+    const config = await this.prisma.htPmsConfig.findFirst({
+      where: { businessId: booking.businessId },
+      select: { noShowPenalty: true },
+    });
+    const penaltyAmount = config?.noShowPenalty && config.noShowPenalty > 0
+      ? config.noShowPenalty
+      : (applyPenalty ? pricePerNight : 0);
+
+    // Calcular noites restantes a partir de agora
+    const remainingMs = booking.endDate.getTime() - now.getTime();
+    const remainingNights = Math.max(1, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)));
+    const newTotalPrice = remainingNights * pricePerNight;
+
+    // Efectuar transacção
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: HtBookingStatus.CHECKED_IN,
+          checkedInAt: now,
+          // Fluxo 4a: startDate imutável; 4b: startDate = now
+          ...(applyPenalty ? {} : { startDate: now }),
+          totalPrice: newTotalPrice,
+          version: { increment: 1 },
+        },
+      });
+
+      // Só criar folio item de penalidade se fluxo 4a com penalidade
+      if (applyPenalty && penaltyAmount > 0) {
+        await tx.htFolioItem.create({
+          data: {
+            businessId: booking.businessId,
+            bookingId,
+            type: 'OTHER' as any,
+            description: 'Penalidade No-Show',
+            quantity: 1,
+            unitPrice: penaltyAmount,
+            amount: penaltyAmount,
+            addedById: ownerId,
+          },
+        });
+      }
+
+      // Quarto volta a DIRTY (em uso por hóspede CHECKED_IN)
+      if (booking.roomId) {
+        await tx.htRoom.update({
+          where: { id: booking.roomId },
+          data: { status: 'DIRTY', version: { increment: 1 } },
+        });
+      }
+
+      return updatedBooking;
+    });
+
+    // Audit log
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_REVERT_NO_SHOW',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { status: HtBookingStatus.NO_SHOW },
+      newData: { status: HtBookingStatus.CHECKED_IN, applyPenalty, penaltyAmount, newTotalPrice },
+      note: `applyPenalty=${applyPenalty} | penalty=${penaltyAmount}`,
+      ipAddress: ip,
+    });
+
+    return { success: true, applyPenalty, penaltyAmount, newTotalPrice };
+  }
+
+  // CANCELAMENTO (owner) — requer motivo e apenas antes do CHECKED_IN.
+  async cancel(bookingId: string, ownerId: string, dto: CancelBookingDto, ip?: string) {
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
+    const reason = String(dto?.reason || '').trim();
+    if (reason.length < 3) {
+      throw new BadRequestException('Motivo do cancelamento é obrigatório (mínimo 3 caracteres).');
+    }
+
+    if (booking.status !== HtBookingStatus.PENDING && booking.status !== HtBookingStatus.CONFIRMED) {
+      throw new BadRequestException(`Só é possível cancelar reservas PENDING/CONFIRMED. Estado actual: ${booking.status}`);
+    }
+
+    const previousStatus = booking.status;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: HtBookingStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancelReason: reason,
+          version: { increment: 1 },
+        },
+      });
+
+      if (booking.roomId) {
+        await tx.htRoom.update({
+          where: { id: booking.roomId },
+          data: { status: 'CLEAN', version: { increment: 1 } },
+        }).catch(() => null);
+      }
+
+      return updatedBooking;
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_CANCELLED',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { status: previousStatus },
+      newData: { status: HtBookingStatus.CANCELLED, cancelledAt: updated.cancelledAt, cancelReason: reason },
+      note: reason,
+      ipAddress: ip,
+    });
+
+    this.eventsGateway.emitToUser(booking.user.id, 'booking.cancelled', {
+      bookingId,
+      businessName: booking.business.name,
+      cancelledAt: updated.cancelledAt,
+      reason,
+    });
+
+    return updated;
+  }
+
+  // CHEGADAS — janela de 14 dias (7 passados + próximos 7) para incluir atrasos de check-in.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
   async getTodayArrivals(businessId: string, ownerId: string) {
     const now   = new Date();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    const start = new Date(now); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
     const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
     return this.prisma.htRoomBooking.findMany({
       where: {
         businessId,
         startDate: { gte: start, lte: end7 },
-        status: { in: [HtBookingStatus.PENDING, HtBookingStatus.CONFIRMED] },
+        status: { in: [HtBookingStatus.PENDING, HtBookingStatus.CONFIRMED, HtBookingStatus.NO_SHOW] },
       },
       select: BOOKING_SELECT,
       orderBy: { startDate: 'asc' },
     });
   }
 
-  // SAÍDAS — próximos 7 dias com status CHECKED_IN.
+  // SAÍDAS — duas listas combinadas:
+  //   1. Checkouts pendentes: CHECKED_IN com endDate hoje ou nos próx. 7 dias
+  //   2. Checkouts recentes:  CHECKED_OUT nos últimos 7 dias
   async getTodayDepartures(businessId: string, ownerId: string) {
     const now   = new Date();
-    const start = new Date(now); start.setHours(0, 0, 0, 0);
-    const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
-    return this.prisma.htRoomBooking.findMany({
-      where: {
-        businessId,
-        endDate: { gte: start, lte: end7 },
-        status: HtBookingStatus.CHECKED_IN,
-      },
-      select: BOOKING_SELECT,
-      orderBy: { endDate: 'asc' },
-    });
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const next7 = new Date(now); next7.setDate(next7.getDate() + 7); next7.setHours(23, 59, 59, 999);
+    const past7 = new Date(now); past7.setDate(past7.getDate() - 7); past7.setHours(0, 0, 0, 0);
+
+    const [pending, recent] = await Promise.all([
+      // Hóspedes ainda dentro que devem sair nos próximos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_IN,
+                 endDate: { gte: today, lte: next7 } },
+        select: BOOKING_SELECT,
+        orderBy: { endDate: 'asc' },
+      }),
+      // Checkouts já efectuados nos últimos 7 dias
+      this.prisma.htRoomBooking.findMany({
+        where: { businessId, status: HtBookingStatus.CHECKED_OUT,
+                 checkedOutAt: { gte: past7 } },
+        select: BOOKING_SELECT,
+        orderBy: { checkedOutAt: 'desc' },
+      }),
+    ]);
+
+    return [
+      ...pending,
+      ...recent.map(b => ({ ...b, _recentCheckout: true })),
+    ];
   }
 
   // HÓSPEDES ACTUAIS — todos com status CHECKED_IN.
@@ -276,10 +765,266 @@ export class HtBookingService {
     });
   }
 
+  // ESTADIAS EXPIRADAS — hóspedes CHECKED_IN com endDate anterior a hoje.
+  async getExpiredStays(businessId: string, ownerId: string) {
+    await this.assertOwnership(businessId, ownerId);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.prisma.htRoomBooking.findMany({
+      where: {
+        businessId,
+        status: HtBookingStatus.CHECKED_IN,
+        endDate: { lt: today },
+      },
+      select: {
+        ...BOOKING_SELECT,
+        room: { select: { id: true, number: true, floor: true, roomType: { select: { id: true, name: true, pricePerNight: true } } } },
+      } as any,
+      orderBy: { endDate: 'asc' },
+    });
+  }
+
+  // PROLONGAR ESTADIA EXPIRADA — sem tocar no item ACCOMMODATION (virtual no folio).
+  async extendExpiredStay(bookingId: string, ownerId: string, newEndDate: string, ip?: string) {
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
+
+    if (booking.status !== HtBookingStatus.CHECKED_IN) {
+      throw new BadRequestException('Reserva não está em CHECKED_IN.');
+    }
+    if (booking.paymentStatus === 'PAID') {
+      throw new BadRequestException('Folio já encerrado — não é possível alterar valores. Contacte o administrador.');
+    }
+
+    const eDate = new Date(newEndDate);
+    if (Number.isNaN(eDate.getTime())) throw new BadRequestException('Data inválida.');
+    if (eDate <= booking.endDate) {
+      throw new BadRequestException('Nova data deve ser posterior à data actual de saída.');
+    }
+
+    const pricePerNight = booking.roomType?.pricePerNight ?? 0;
+    if (pricePerNight <= 0) {
+      throw new BadRequestException('Não foi possível calcular o valor por noite para esta reserva.');
+    }
+
+    const extraDays = Math.max(0, Math.ceil((eDate.getTime() - booking.endDate.getTime()) / 86400000));
+    if (extraDays <= 0) {
+      throw new BadRequestException('Extensão inválida.');
+    }
+
+    const totalNights = Math.max(1, Math.ceil((eDate.getTime() - booking.startDate.getTime()) / 86400000));
+    const newTotalPrice = pricePerNight * totalNights * (booking.rooms ?? 1);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          endDate: eDate,
+          totalPrice: newTotalPrice,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.htFolioItem.create({
+        data: {
+          businessId: booking.businessId,
+          bookingId,
+          type: 'OTHER' as any,
+          description: `Extensão de estadia — ${extraDays} noite(s) extra`,
+          quantity: extraDays,
+          unitPrice: pricePerNight,
+          amount: extraDays * pricePerNight,
+          addedById: ownerId,
+        },
+      }).catch(() => null);
+
+      return updatedBooking;
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_MODIFIED',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { endDate: booking.endDate, totalPrice: booking.totalPrice },
+      newData: {
+        endDate: eDate,
+        totalPrice: newTotalPrice,
+        extraDays,
+        extraCharge: extraDays * pricePerNight,
+      },
+      note: 'extend_expired_stay',
+      ipAddress: ip,
+    });
+
+    return {
+      success: true,
+      booking: updated,
+      extraDays,
+      extraCharge: extraDays * pricePerNight,
+    };
+  }
+
+  // CHECKOUT PARA ESTADIAS EXPIRADAS — retroactivo/forçado/não confirmado.
+  async expiredCheckOut(
+    bookingId: string,
+    ownerId: string,
+    options: { mode: 'retroactive' | 'forced' | 'unconfirmed'; realCheckoutDate?: string },
+    ip?: string,
+  ) {
+    const booking: any = await this.findBookingForOwner(bookingId, ownerId);
+
+    if (booking.status !== HtBookingStatus.CHECKED_IN) {
+      throw new BadRequestException('Reserva não está em CHECKED_IN.');
+    }
+    if (booking.paymentStatus === 'PAID' && options.mode !== 'unconfirmed') {
+      throw new BadRequestException('Folio já encerrado — não é possível alterar valores. Contacte o administrador.');
+    }
+
+    const now = new Date();
+    const todayMidnight = new Date(now); todayMidnight.setHours(0, 0, 0, 0);
+
+    let effectiveCheckoutDate: Date;
+    if (options.mode === 'retroactive') {
+      if (!options.realCheckoutDate) {
+        throw new BadRequestException('realCheckoutDate é obrigatório para checkout retroactivo.');
+      }
+      effectiveCheckoutDate = new Date(options.realCheckoutDate);
+      if (Number.isNaN(effectiveCheckoutDate.getTime())) {
+        throw new BadRequestException('Data de checkout retroactivo inválida.');
+      }
+      const checkInAt = booking.checkedInAt ? new Date(booking.checkedInAt) : new Date(booking.startDate);
+      if (effectiveCheckoutDate < checkInAt) {
+        throw new BadRequestException('A data de checkout não pode ser anterior ao check-in.');
+      }
+      if (effectiveCheckoutDate > now) {
+        throw new BadRequestException('A data de checkout retroactivo não pode ser no futuro.');
+      }
+    } else if (options.mode === 'forced') {
+      effectiveCheckoutDate = now;
+    } else {
+      // unconfirmed — assume saída na data prevista
+      effectiveCheckoutDate = new Date(booking.endDate);
+    }
+
+    const checkInRef = booking.checkedInAt ? new Date(booking.checkedInAt) : new Date(booking.startDate);
+    const pricePerNight = booking.roomType?.pricePerNight ?? 0;
+    if (pricePerNight <= 0) {
+      throw new BadRequestException('Não foi possível calcular o valor por noite para esta reserva.');
+    }
+
+    const realNights = Math.max(1, Math.ceil((effectiveCheckoutDate.getTime() - checkInRef.getTime()) / 86400000));
+    const plannedNights = Math.max(1, Math.ceil((new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000));
+    const extraNights = Math.max(0, realNights - plannedNights);
+    const recalculatedTotalPrice = pricePerNight * realNights * (booking.rooms ?? 1);
+    const shouldAdjustFinancials = !(booking.paymentStatus === 'PAID' && options.mode === 'unconfirmed');
+    const persistedTotalPrice = shouldAdjustFinancials
+      ? recalculatedTotalPrice
+      : (booking.totalPrice ?? recalculatedTotalPrice);
+
+    const supportsInspecting = Object.values(HtRoomStatus).includes('INSPECTING' as HtRoomStatus);
+    const roomStatusAfterCheckout: HtRoomStatus = options.mode === 'unconfirmed'
+      ? (supportsInspecting ? ('INSPECTING' as HtRoomStatus) : ('DIRTY' as HtRoomStatus))
+      : ('CLEAN' as HtRoomStatus);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: HtBookingStatus.CHECKED_OUT,
+          checkedOutAt: effectiveCheckoutDate,
+          endDate: effectiveCheckoutDate,
+          originalEndDate: booking.endDate,
+          totalPrice: persistedTotalPrice,
+          version: { increment: 1 },
+        },
+        include: {
+          room: { select: { id: true, number: true } },
+        },
+      });
+
+      if (extraNights > 0 && shouldAdjustFinancials) {
+        await tx.htFolioItem.create({
+          data: {
+            businessId: booking.businessId,
+            bookingId,
+            type: 'OTHER' as any,
+            description: `Noites extra — ${extraNights} noite(s) além do previsto`,
+            amount: extraNights * pricePerNight,
+            quantity: extraNights,
+            unitPrice: pricePerNight,
+            addedById: ownerId,
+          },
+        }).catch(() => null);
+      }
+
+      if (booking.roomId) {
+        await tx.htRoom.update({
+          where: { id: booking.roomId },
+          data: { status: roomStatusAfterCheckout, version: { increment: 1 } },
+        });
+
+        await tx.htHousekeepingTask.create({
+          data: {
+            roomId: booking.roomId,
+            priority: options.mode === 'unconfirmed' ? 'URGENT' : 'NORMAL',
+            notes: options.mode === 'unconfirmed'
+              ? 'Inspecção necessária — saída não confirmada pelo hóspede'
+              : 'Quarto para limpeza após checkout',
+          },
+        }).catch(() => null);
+      }
+
+      if (options.mode === 'unconfirmed' && booking.guestProfileId) {
+        const profile = await tx.htGuestProfile.findUnique({
+          where: { id: booking.guestProfileId },
+          select: { notes: true },
+        });
+        const noteLine = `Saída não confirmada registada em ${effectiveCheckoutDate.toISOString()}.`;
+        const currentNotes = String(profile?.notes || '').trim();
+        const mergedNotes = currentNotes ? `${currentNotes}\n${noteLine}` : noteLine;
+        await tx.htGuestProfile.update({
+          where: { id: booking.guestProfileId },
+          data: { notes: mergedNotes },
+        }).catch(() => null);
+      }
+
+      return updatedBooking;
+    });
+
+    await this.audit({
+      businessId: booking.businessId,
+      action: 'HT_BOOKING_CHECKED_OUT',
+      actorId: ownerId,
+      resourceId: bookingId,
+      previousData: { status: HtBookingStatus.CHECKED_IN, endDate: booking.endDate },
+      newData: {
+        status: HtBookingStatus.CHECKED_OUT,
+        mode: options.mode,
+        effectiveCheckoutDate,
+        originalEndDate: booking.endDate,
+        realNights,
+        extraNights,
+        totalPrice: persistedTotalPrice,
+      },
+      note: 'expired_checkout',
+      ipAddress: ip,
+    });
+
+    return {
+      success: true,
+      mode: options.mode,
+      effectiveCheckoutDate,
+      realNights,
+      extraNights,
+      booking: updated,
+    };
+  }
+
   // [TENANT] Verifica que o owner é dono do negócio sem carregar reservas.
   private async assertOwnership(businessId: string, ownerId: string) {
-    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
-    if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    const allowed = await this.hasBusinessAccess(businessId, ownerId);
+    if (!allowed) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
   // PROLONGAR ESTADIA — move o endDate para uma data posterior
@@ -368,6 +1113,18 @@ export class HtBookingService {
     }
     const previousRoomId = booking.roomId;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Verificar colisão DENTRO da transação -- outro CHECKED_IN no quarto destino
+      const collision = await tx.htRoomBooking.findFirst({
+        where: { id: { not: bookingId }, roomId: newRoomId,
+                 status: HtBookingStatus.CHECKED_IN },
+        select: { guestName: true },
+      });
+      if (collision) {
+        throw new ConflictException(
+          `Quarto Nº ${newRoom.number} já está ocupado por ${collision.guestName || 'outro hóspede'}. ` +
+          `Faça o checkout desse hóspede primeiro ou escolha outro quarto.`
+        );
+      }
       const updatedBooking = await tx.htRoomBooking.update({
         where: { id: bookingId },
         data:  { roomId: newRoomId, version: { increment: 1 } },
@@ -393,8 +1150,98 @@ export class HtBookingService {
     });
     return updated;
   }
-}
 
+    // CONFIRMAR RESERVA (owner confirma PENDING → CONFIRMED)
+    async confirmBooking(bookingId: string, ownerId: string, ip?: string) {
+      const booking: any = await this.findBookingForOwner(bookingId, ownerId);
+      if (booking.status !== HtBookingStatus.PENDING) {
+        throw new BadRequestException(`Estado inválido para confirmação: ${booking.status}`);
+      }
+      const updated = await this.prisma.htRoomBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: HtBookingStatus.CONFIRMED,
+          confirmedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
+      await this.audit({
+        businessId:   booking.businessId,
+        action:       'HT_BOOKING_CONFIRMED',
+        actorId:      ownerId,
+        resourceId:   bookingId,
+        previousData: { status: booking.status },
+        newData:      { status: HtBookingStatus.CONFIRMED, confirmedAt: updated.confirmedAt },
+        ipAddress:    ip,
+      });
+      return updated;
+    }
+
+    // CRIAR RESERVA (owner cria directamente no PMS)
+    async createBooking(dto: CreateHtBookingDto, ownerId: string) {
+      await this.assertOwnership(dto.businessId, ownerId);
+
+      const roomType = await this.prisma.htRoomType.findFirst({
+        where: { id: dto.roomTypeId, businessId: dto.businessId },
+      });
+      if (!roomType) throw new BadRequestException('Tipo de quarto não encontrado.');
+
+      const startDate = new Date(dto.startDate);
+      const endDate   = new Date(dto.endDate);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        throw new BadRequestException('Datas inválidas.');
+      }
+      if (endDate <= startDate) throw new BadRequestException('Data de saída deve ser posterior à entrada.');
+
+      const nights = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000));
+      const totalPrice = nights * roomType.pricePerNight;
+
+      const owner = await this.prisma.business.findUnique({
+        where: { id: dto.businessId },
+        select: { ownerId: true },
+      });
+      if (!owner?.ownerId) throw new BadRequestException('Negócio sem owner atribuído.');
+
+      const booking = await this.prisma.htRoomBooking.create({
+        data: {
+          businessId:  dto.businessId,
+          roomTypeId:  dto.roomTypeId,
+          userId:      owner.ownerId,
+          startDate,
+          endDate,
+          guestName:   dto.guestName  ?? null,
+          guestPhone:  dto.guestPhone ?? null,
+          adults:      dto.adults     ?? 1,
+          children:    dto.children   ?? 0,
+          notes:       dto.notes      ?? null,
+          totalPrice,
+          status:      HtBookingStatus.CONFIRMED,
+          confirmedAt: new Date(),
+        },
+      });
+
+      await this.audit({
+        businessId: dto.businessId,
+        action:     'HT_BOOKING_CREATED',
+        actorId:    ownerId,
+        resourceId: booking.id,
+        newData:    { status: HtBookingStatus.CONFIRMED, totalPrice },
+      });
+
+      return booking;
+    }
+
+    // ACTUALIZAR CONFIGURAÇÃO PMS (overbookingBuffer e outros campos tipados)
+    async updatePmsConfig(businessId: string, ownerId: string, data: { overbookingBuffer?: number }) {
+      await this.assertOwnership(businessId, ownerId);
+      return this.prisma.htPmsConfig.upsert({
+        where:  { businessId },
+        update: data,
+        create: { businessId, ...data },
+      });
+    }
+
+}
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function todayRange() {
   const now   = new Date();
@@ -408,7 +1255,19 @@ const BOOKING_SELECT = {
   adults: true, children: true, rooms: true,
   startDate: true, endDate: true, status: true,
   notes: true, checkedInAt: true, checkedOutAt: true,
+  cancelledAt: true, cancelReason: true,
   totalPrice: true, paymentStatus: true, roomTypeId: true,
+  guestProfile: {
+    select: {
+      id: true,
+      documentType: true,
+      documentNumber: true,
+      companyName: true,
+      nif: true,
+      nationality: true,
+      dateOfBirth: true,
+    },
+  },
   roomType: { select: { name: true, pricePerNight: true } },
   room:     { select: { number: true, floor: true } },
   user:     { select: { id: true, name: true } },

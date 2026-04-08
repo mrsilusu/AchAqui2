@@ -50,12 +50,23 @@ export function useAuthSession() {
     [session?.accessToken],
   );
 
+  const jwtPayload = useMemo(
+    () => parseJwtPayload(session?.accessToken),
+    [session?.accessToken],
+  );
+
   const user = session?.user
     ? {
         ...session.user,
         role: session.user.role || roleFromToken || 'CLIENT',
       }
     : null;
+
+  const effectiveRole = user?.role || roleFromToken;
+  const primaryStaffRole = Array.isArray(user?.staffRoles)
+    ? (user.staffRoles.find((r) => r?.module === 'HT' || r?.role?.startsWith?.('HT_')) || user.staffRoles[0])
+    : null;
+  const hasStaffContext = !!(jwtPayload?.staffId || jwtPayload?.businessId || primaryStaffRole?.businessId);
 
   const saveSession = useCallback(async (nextSession) => {
     setSession(nextSession);
@@ -73,9 +84,13 @@ export function useAuthSession() {
     user,
     accessToken: session?.accessToken || null,
     refreshToken: session?.refreshToken || null,
-    isOwner: user?.role === 'OWNER',
-    isAdmin: user?.role === 'ADMIN',
-    isClient: user?.role === 'CLIENT',
+    isOwner: effectiveRole === 'OWNER',
+    isAdmin: effectiveRole === 'ADMIN',
+    isClient: effectiveRole === 'CLIENT',
+    isStaff: effectiveRole === 'STAFF' || hasStaffContext,
+    staffRole: jwtPayload?.staffRole || primaryStaffRole?.role || null,
+    staffBusinessId: jwtPayload?.businessId || primaryStaffRole?.businessId || null,
+    staffId: jwtPayload?.staffId || null,
     loading,
     saveSession,
     reloadSession: loadSession,

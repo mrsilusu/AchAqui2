@@ -1,0 +1,48 @@
+                                      Table "public.ht_staff"
+      Column       |              Type              | Collation | Nullable |        Default        
+-------------------+--------------------------------+-----------+----------+-----------------------
+ id                | text                           |           | not null | 
+ businessId        | text                           |           | not null | 
+ userId            | text                           |           |          | 
+ coreStaffId       | text                           |           |          | 
+ fullName          | text                           |           | not null | 
+ phone             | text                           |           |          | 
+ email             | text                           |           |          | 
+ position          | text                           |           |          | 
+ department        | "HtStaffDepartment"            |           | not null | 
+ photoUrl          | text                           |           |          | 
+ documentType      | text                           |           |          | 
+ documentNumber    | text                           |           |          | 
+ shift             | "HtShift"                      |           | not null | 'ROTATING'::"HtShift"
+ workDays          | integer[]                      |           |          | ARRAY[1, 2, 3, 4, 5]
+ startTime         | text                           |           |          | 
+ endTime           | text                           |           |          | 
+ assignedFloors    | integer[]                      |           |          | ARRAY[]::integer[]
+ maxRoomsPerDay    | integer                        |           |          | 
+ pinHash           | text                           |           |          | 
+ canCancelBookings | boolean                        |           | not null | false
+ canApplyDiscounts | boolean                        |           | not null | false
+ canViewFinancials | boolean                        |           | not null | false
+ employmentStart   | timestamp(3) without time zone |           |          | 
+ employmentEnd     | timestamp(3) without time zone |           |          | 
+ isActive          | boolean                        |           | not null | true
+ emergencyName     | text                           |           |          | 
+ emergencyPhone    | text                           |           |          | 
+ notes             | text                           |           |          | 
+ addedById         | text                           |           |          | 
+ updatedById       | text                           |           |          | 
+ createdAt         | timestamp(3) without time zone |           | not null | CURRENT_TIMESTAMP
+ updatedAt         | timestamp(3) without time zone |           | not null | 
+Indexes:
+    "ht_staff_pkey" PRIMARY KEY, btree (id)
+    "ht_staff_businessId_department_idx" btree ("businessId", department)
+    "ht_staff_businessId_documentNumber_key" UNIQUE, btree ("businessId", "documentNumber")
+    "ht_staff_businessId_isActive_idx" btree ("businessId", "isActive")
+    "ht_staff_coreStaffId_key" UNIQUE, btree ("coreStaffId")
+Foreign-key constraints:
+    "ht_staff_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    "ht_staff_coreStaffId_fkey" FOREIGN KEY ("coreStaffId") REFERENCES core_business_staff(id) ON UPDATE CASCADE ON DELETE SET NULL
+    "ht_staff_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE SET NULL
+Referenced by:
+    TABLE "ht_housekeeping_tasks" CONSTRAINT "ht_housekeeping_tasks_assignedToId_fkey" FOREIGN KEY ("assignedToId") REFERENCES ht_staff(id) ON UPDATE CASCADE ON DELETE SET NULL
+

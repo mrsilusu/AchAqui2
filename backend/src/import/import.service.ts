@@ -58,6 +58,238 @@ export interface ImportResult {
 export class ImportService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly dayKeyByLabel: Record<string, string> = {
+    monday: 'monday',
+    mon: 'monday',
+    segunda: 'monday',
+    'segunda-feira': 'monday',
+    tuesday: 'tuesday',
+    tue: 'tuesday',
+    tues: 'tuesday',
+    terca: 'tuesday',
+    'terça': 'tuesday',
+    'terça-feira': 'tuesday',
+    wednesday: 'wednesday',
+    wed: 'wednesday',
+    quarta: 'wednesday',
+    'quarta-feira': 'wednesday',
+    thursday: 'thursday',
+    thu: 'thursday',
+    thurs: 'thursday',
+    quinta: 'thursday',
+    'quinta-feira': 'thursday',
+    friday: 'friday',
+    fri: 'friday',
+    sexta: 'friday',
+    'sexta-feira': 'friday',
+    saturday: 'saturday',
+    sat: 'saturday',
+    sabado: 'saturday',
+    'sábado': 'saturday',
+    sunday: 'sunday',
+    sun: 'sunday',
+    domingo: 'sunday',
+  };
+
+  private readonly orderedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+  private normalizeDayLabel(label: string): string | null {
+    const normalized = label
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    return this.dayKeyByLabel[normalized] ?? null;
+  }
+
+  private parseTimeToken(raw: string): string | null {
+    const token = raw.trim().toLowerCase();
+    if (!token) return null;
+
+    const twelveHour = token.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+    if (twelveHour) {
+      let hours = parseInt(twelveHour[1], 10);
+      const minutes = parseInt(twelveHour[2] ?? '0', 10);
+      const meridiem = twelveHour[3].toLowerCase();
+      if (hours === 12) hours = 0;
+      if (meridiem === 'pm') hours += 12;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+
+    const twentyFourHour = token.match(/^(\d{1,2})(?::(\d{2}))?$/);
+    if (twentyFourHour) {
+      const hours = parseInt(twentyFourHour[1], 10);
+      const minutes = parseInt(twentyFourHour[2] ?? '0', 10);
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+    }
+
+    const hFormat = token.match(/^(\d{1,2})h(?:(\d{2}))?$/);
+    if (hFormat) {
+      const hours = parseInt(hFormat[1], 10);
+      const minutes = parseInt(hFormat[2] ?? '0', 10);
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+    }
+
+    return null;
+  }
+
+  private parseHoursString(raw: string): { open: string; close: string; is24h?: boolean } | null {
+    const value = raw.trim();
+    if (!value) return null;
+
+    const lowered = value.toLowerCase();
+    if (['closed', 'fechado', 'encerrado', 'fechado temporariamente'].some((w) => lowered.includes(w))) {
+      return null;
+    }
+
+    if (['24 hours', '24h', '24 horas', 'open 24'].some((w) => lowered.includes(w))) {
+      return { open: '00:00', close: '23:59', is24h: true };
+    }
+
+    const parts = value.split(/\s*[\-–]\s*/);
+    if (parts.length < 2) return null;
+
+    const open = this.parseTimeToken(parts[0]);
+    const close = this.parseTimeToken(parts[1]);
+    if (!open || !close) return null;
+
+    return { open, close };
+  }
+
+  private extractHoursText(raw: unknown): string | null {
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        const value = this.extractHoursText(item);
+        if (value) return value;
+      }
+      return null;
+    }
+
+    if (typeof raw === 'string') {
+      const value = raw.trim();
+      return value || null;
+    }
+
+    if (typeof raw === 'number' || typeof raw === 'boolean') {
+      return String(raw);
+    }
+
+    return null;
+  }
+
+  private parseWorkingHours(raw: unknown): Record<string, { open: string; close: string; is24h?: boolean }> {
+    const schedule: Record<string, { open: string; close: string; is24h?: boolean }> = {};
+    if (!raw) return schedule;
+
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [label, value] of Object.entries(raw as Record<string, unknown>)) {
+        const day = this.normalizeDayLabel(label);
+        if (!day) continue;
+        const text = this.extractHoursText(value);
+        if (!text) continue;
+        const parsed = this.parseHoursString(text);
+        if (parsed) schedule[day] = parsed;
+      }
+
+      if (Object.keys(schedule).length > 0) return schedule;
+    }
+
+    const text = String(raw).trim();
+    if (!text) return schedule;
+
+    const dictRegex = /'([^']+)'\s*:\s*'([^']*)'/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = dictRegex.exec(text)) !== null) {
+      const day = this.normalizeDayLabel(match[1]);
+      if (!day) continue;
+      const parsed = this.parseHoursString(match[2]);
+      if (parsed) schedule[day] = parsed;
+    }
+
+    if (Object.keys(schedule).length > 0) return schedule;
+
+    const chunks = text.split(';').map((c) => c.trim()).filter(Boolean);
+    for (const chunk of chunks) {
+      const idx = chunk.indexOf(':');
+      if (idx <= 0) continue;
+      const day = this.normalizeDayLabel(chunk.slice(0, idx));
+      if (!day) continue;
+      const parsed = this.parseHoursString(chunk.slice(idx + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+
+    return schedule;
+  }
+
+  private toMinutes(hhmm: string): number {
+    const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
+    return h * 60 + m;
+  }
+
+  private computeIsOpen(
+    schedule: Record<string, { open: string; close: string; is24h?: boolean }>,
+    isTemporarilyClosed: boolean,
+  ): { isOpen: boolean; statusText: string } {
+    if (isTemporarilyClosed) {
+      return { isOpen: false, statusText: 'Fechado temporariamente' };
+    }
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const dayIndex = (now.getDay() + 6) % 7;
+    const today = this.orderedDays[dayIndex];
+    const todayHours = schedule[today];
+
+    if (todayHours) {
+      const openMinutes = this.toMinutes(todayHours.open);
+      let closeMinutes = this.toMinutes(todayHours.close);
+      const wrapsPastMidnight = closeMinutes <= openMinutes;
+      if (wrapsPastMidnight) closeMinutes += 24 * 60;
+      const comparableCurrentMinutes = wrapsPastMidnight && currentMinutes < openMinutes
+        ? currentMinutes + 24 * 60
+        : currentMinutes;
+      const isOpenNow = comparableCurrentMinutes >= openMinutes && comparableCurrentMinutes < closeMinutes;
+      if (isOpenNow) {
+        const remaining = closeMinutes - comparableCurrentMinutes;
+        if (remaining <= 30) {
+          return { isOpen: true, statusText: `Fecha em ${remaining} min` };
+        }
+        return { isOpen: true, statusText: `Aberto ate ${todayHours.close}` };
+      }
+
+      if (comparableCurrentMinutes < openMinutes) {
+        return { isOpen: false, statusText: `Abre as ${todayHours.open}` };
+      }
+    }
+
+    const dayLabel: Record<string, string> = {
+      monday: 'Seg',
+      tuesday: 'Ter',
+      wednesday: 'Qua',
+      thursday: 'Qui',
+      friday: 'Sex',
+      saturday: 'Sab',
+      sunday: 'Dom',
+    };
+
+    for (let offset = 1; offset <= 7; offset++) {
+      const idx = (dayIndex + offset) % 7;
+      const day = this.orderedDays[idx];
+      const hours = schedule[day];
+      if (!hours) continue;
+      if (offset === 1) {
+        return { isOpen: false, statusText: `Abre amanha as ${hours.open}` };
+      }
+      return { isOpen: false, statusText: `Abre ${dayLabel[day]} as ${hours.open}` };
+    }
+
+    return { isOpen: false, statusText: 'Fechado' };
+  }
+
   // ── Parser CSV simples (sem dependências externas) ───────────────────────────
   parseCSV(csvText: string): OutscraperRow[] {
     const lines = csvText.split('\n').filter((l) => l.trim());
@@ -105,6 +337,85 @@ export class ImportService {
   }
 
   // ── Mapear linha Outscraper → dados do negócio ───────────────────────────────
+  private resolveCategory(category: string, subtypes?: string): {
+    primaryCategoryId: string; businessType: string; subCategoryIds: string[];
+  } {
+    const all = [category, ...(subtypes ? subtypes.split(',') : [])].map(s => s.trim().toLowerCase());
+    const has = (...terms: string[]) => terms.some(t => all.some(a => a.includes(t)));
+
+    // Hotéis & Alojamento
+    if (has('lodging','hotel','hostel','resort','pousada','motel','guest_house','extended_stay','boutique_hotel'))
+      return { primaryCategoryId:'hotelsTravel', businessType:'accommodation', subCategoryIds:['hotelsTravel','restaurants','food'] };
+
+    // Restaurantes
+    if (has('restaurant','meal_takeaway','meal_delivery','fast_food','pizza','seafood','steak_house','restaurante'))
+      return { primaryCategoryId:'restaurants', businessType:'food', subCategoryIds:['restaurants','food','delivery'] };
+
+    // Cafés & Pastelarias (antes de 'bar' para evitar conflito)
+    if (has('cafe','coffee_shop','tea_house','bakery','donut','dessert','ice_cream','pastelaria','padaria','cafetaria'))
+      return { primaryCategoryId:'coffee', businessType:'food', subCategoryIds:['coffee','food','restaurants'] };
+
+    // Bares & Nightlife
+    if (has('bar','night_club','cocktail_bar','pub','wine_bar','sports_bar','discoteca'))
+      return { primaryCategoryId:'bars', businessType:'food', subCategoryIds:['bars','nightlife','food'] };
+
+    // Spas & Massagens (antes de beautysalons)
+    if (has('spa','massage','wellness_center','day_spa'))
+      return { primaryCategoryId:'spas', businessType:'beauty', subCategoryIds:['spas','beautysalons','beauty','health'] };
+
+    // Salões de Beleza & Cabeleireiros
+    if (has('beauty_salon','hair_salon','hair_care','nail_salon','eyebrow','eyelash','barbearia','barber','cabeleireiro','salão de beleza'))
+      return { primaryCategoryId:'beautysalons', businessType:'beauty', subCategoryIds:['beautysalons','beauty','health'] };
+
+    // Saúde: Clínicas, Hospitais, Farmácias
+    if (has('pharmacy','drugstore','farmácia','farmacia'))
+      return { primaryCategoryId:'health', businessType:'health', subCategoryIds:['health','shopping'] };
+    if (has('hospital','doctor','clinic','dentist','physiotherapist','medical_lab','optician','policlínica','clínica'))
+      return { primaryCategoryId:'health', businessType:'health', subCategoryIds:['health'] };
+
+    // Fitness & Desporto
+    if (has('gym','fitness_center','sports_club','swimming','yoga','pilates','martial_arts','boxing','academia','ginásio','sala de fitness'))
+      return { primaryCategoryId:'active', businessType:'sports', subCategoryIds:['active','health'] };
+
+    // Educação
+    if (has('school','primary_school','secondary_school','university','language_school','tutoring','driving_school','escola','colégio','instituto','universidade'))
+      return { primaryCategoryId:'education', businessType:'education', subCategoryIds:['education'] };
+
+    // Compras & Supermercados
+    if (has('supermarket','grocery','convenience_store','shopping_mall','clothing','electronics','furniture','book_store','supermercado','mercado'))
+      return { primaryCategoryId:'shopping', businessType:'retail', subCategoryIds:['shopping','delivery'] };
+
+    // Serviços Financeiros
+    if (has('bank','atm','insurance','accounting','financial','money_transfer','banco','seguro','contabilidade'))
+      return { primaryCategoryId:'financial', businessType:'finance', subCategoryIds:['financial','professional'] };
+
+    // Automóveis
+    if (has('car_repair','car_dealer','car_wash','gas_station','tire','auto_parts','oil_change','oficina','mecânico','posto de gasolina'))
+      return { primaryCategoryId:'automotive', businessType:'automotive', subCategoryIds:['automotive'] };
+
+    // Serviços Domésticos
+    if (has('electrician','plumber','painter','carpenter','locksmith','pest_control','moving','laundry','dry_cleaning','eletricista','lavandaria'))
+      return { primaryCategoryId:'homeservices', businessType:'service', subCategoryIds:['homeservices','localservices'] };
+
+    // Eventos & Entretenimento
+    if (has('event_venue','wedding','catering','party_planner','photo_studio','espaço de eventos'))
+      return { primaryCategoryId:'eventplanning', businessType:'service', subCategoryIds:['eventplanning','arts'] };
+
+    // Animais
+    if (has('veterinary','pet_store','pet_grooming','dog_trainer','veterinário'))
+      return { primaryCategoryId:'pets', businessType:'service', subCategoryIds:['pets','health'] };
+
+    // Serviços Profissionais
+    if (has('lawyer','legal','notary','architect','engineer','photographer','marketing','advertising','consultant','it_company'))
+      return { primaryCategoryId:'professional', businessType:'professional', subCategoryIds:['professional','localservices'] };
+
+    // Delivery
+    if (has('delivery','courier','logistics','transport'))
+      return { primaryCategoryId:'delivery', businessType:'logistics', subCategoryIds:['delivery'] };
+
+    return { primaryCategoryId:'services', businessType:'professional', subCategoryIds:['services'] };
+  }
+
   private mapRow(row: OutscraperRow) {
     const lat = parseFloat(String(row.latitude ?? ''));
     const lng = parseFloat(String(row.longitude ?? ''));
@@ -116,9 +427,12 @@ export class ImportService {
     if (status === 'CLOSED_PERMANENTLY') return null;
 
     // Categoria — usa subtypes (mais específico) ou category
-    const category = row.subtypes
+    const rawCategory = row.subtypes
       ? String(row.subtypes).split(',')[0].trim()
       : String(row.category ?? 'other').trim();
+    const category = rawCategory;
+    const { primaryCategoryId, businessType, subCategoryIds } =
+      this.resolveCategory(rawCategory, row.subtypes ? String(row.subtypes) : undefined);
 
     const description = String(row.description || row.about || row.full_address || row.name).slice(0, 500);
 
@@ -135,14 +449,20 @@ export class ImportService {
       ? String(row.email)
       : null;
 
-    // Horários — preserva formato raw do Outscraper para parsing posterior
-    const workingHours = row.working_hours || row.working_hours_old_format || null;
+    // Horários — parse para estrutura semanal com status operacional derivado
+    const workingHoursRaw = row.working_hours ?? row.working_hours_old_format ?? null;
+    const hours = this.parseWorkingHours(workingHoursRaw);
+    const isTemporarilyClosed = status === 'CLOSED_TEMPORARILY';
+    const computedStatus = this.computeIsOpen(hours, isTemporarilyClosed);
 
     // Rating e reviews
     const rating       = row.rating  ? parseFloat(String(row.rating))  : null;
     const reviewsCount = row.reviews ? parseInt(String(row.reviews))   : null;
 
     const metadata: Record<string, unknown> = {
+      primaryCategoryId,
+      businessType,
+      subCategoryIds,
       address:      row.full_address  || null,
       street:       row.street        || null,
       city:         row.city          || null,
@@ -154,7 +474,10 @@ export class ImportService {
       rating,
       reviewsCount,
       photos,                              // array com photo + logo
-      workingHours,                        // formato raw Outscraper
+      workingHours: workingHoursRaw,       // formato raw Outscraper
+      hours,
+      isOpen: computedStatus.isOpen,
+      statusText: computedStatus.statusText,
       status,                              // OPERATIONAL | CLOSED_TEMPORARILY | etc.
       verified:     row.verified === 'TRUE' || row.verified === true,
       placeTypes:   row.type          || null,
@@ -168,7 +491,8 @@ export class ImportService {
       latitude:     lat,
       longitude:    lng,
       municipality,
-      isActive:     status !== 'CLOSED_TEMPORARILY',
+      // CLOSED_TEMPORARILY continua visível; só removemos CLOSED_PERMANENTLY acima.
+      isActive:     true,
       googlePlaceId: row.place_id ? String(row.place_id) : null,
       metadata,
     };
