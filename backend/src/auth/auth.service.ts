@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
-import { User, UserRole } from '@prisma/client';
+import { AppModule, StaffRole, User, UserRole } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -88,16 +88,49 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  private async getActiveStaffRoles(userId: string): Promise<Array<{ businessId: string; module: AppModule | null; role: StaffRole }>> {
+    const rows = await this.prisma.coreBusinessStaff.findMany({
+      where: { userId, revokedAt: null },
+      select: { businessId: true, module: true, role: true },
+    });
+    return rows.map((row) => ({ businessId: row.businessId, module: row.module, role: row.role }));
+  }
+
   private async createAccessToken(user: User) {
+    const staffRoles = await this.getActiveStaffRoles(user.id);
     return this.jwtService.signAsync(
       {
         sub: user.id,
         email: user.email,
         role: user.role,
+        staffRoles,
       },
       {
         secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
         expiresIn: '1d',
+      },
+    );
+  }
+
+  private async createStaffAccessToken(params: {
+    userId: string;
+    email: string;
+    staffRole: StaffRole;
+    businessId: string;
+    staffId: string;
+  }) {
+    return this.jwtService.signAsync(
+      {
+        sub: params.userId,
+        email: params.email,
+        role: UserRole.STAFF,
+        staffRole: params.staffRole,
+        businessId: params.businessId,
+        staffId: params.staffId,
+      },
+      {
+        secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
+        expiresIn: '8h',
       },
     );
   }
@@ -135,6 +168,7 @@ export class AuthService {
   private async buildAuthResponse(user: User) {
     const accessToken = await this.createAccessToken(user);
     const refreshToken = await this.createRefreshToken(user);
+    const staffRoles = await this.getActiveStaffRoles(user.id);
 
     return {
       accessToken,
@@ -144,6 +178,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        staffRoles,
       },
     };
   }
@@ -189,6 +224,77 @@ export class AuthService {
     }
 
     return this.buildAuthResponse(user);
+  }
+
+  async staffPinLogin(body: { businessId: string; pin: string }) {
+    const businessId = String(body?.businessId || '').trim();
+    const pin = String(body?.pin || '').trim();
+
+    if (!businessId) throw new UnauthorizedException('Negócio inválido.');
+    if (!/^\d{4,8}$/.test(pin)) throw new UnauthorizedException('PIN inválido.');
+
+    const staffList = await this.prisma.htStaff.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        pinHash: { not: null },
+      },
+      select: {
+        id: true,
+        userId: true,
+        email: true,
+        fullName: true,
+        department: true,
+        pinHash: true,
+      },
+    });
+
+    let matchedStaff: typeof staffList[number] | null = null;
+    for (const staff of staffList) {
+      if (!staff.pinHash) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await bcrypt.compare(pin, staff.pinHash);
+      if (ok) {
+        matchedStaff = staff;
+        break;
+      }
+    }
+
+    if (!matchedStaff || !matchedStaff.userId) {
+      throw new UnauthorizedException('PIN inválido');
+    }
+
+    const staffRoleRow = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        userId: matchedStaff.userId,
+        businessId,
+        module: AppModule.HT,
+        revokedAt: null,
+      },
+      select: { role: true },
+    });
+
+    const staffRole = staffRoleRow?.role ?? StaffRole.HT_HOUSEKEEPER;
+    const accessToken = await this.createStaffAccessToken({
+      userId: matchedStaff.userId,
+      email: matchedStaff.email,
+      staffRole,
+      businessId,
+      staffId: matchedStaff.id,
+    });
+
+    return {
+      accessToken,
+      staff: {
+        id: matchedStaff.id,
+        userId: matchedStaff.userId,
+        email: matchedStaff.email,
+        fullName: matchedStaff.fullName,
+        department: matchedStaff.department,
+        staffRole,
+        businessId,
+      },
+    };
   }
 
   async refresh(refreshTokenDto: RefreshTokenDto) {
@@ -319,6 +425,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      staffRoles: await this.getActiveStaffRoles(user.id),
       createdAt: user.createdAt,
       stats: {
         bookings: user._count.htBookings,

@@ -50,12 +50,19 @@ export function useAuthSession() {
     [session?.accessToken],
   );
 
+  const jwtPayload = useMemo(
+    () => parseJwtPayload(session?.accessToken),
+    [session?.accessToken],
+  );
+
   const user = session?.user
     ? {
         ...session.user,
         role: session.user.role || roleFromToken || 'CLIENT',
       }
     : null;
+
+  const effectiveRole = user?.role || roleFromToken;
 
   const saveSession = useCallback(async (nextSession) => {
     setSession(nextSession);
@@ -73,9 +80,13 @@ export function useAuthSession() {
     user,
     accessToken: session?.accessToken || null,
     refreshToken: session?.refreshToken || null,
-    isOwner: user?.role === 'OWNER',
-    isAdmin: user?.role === 'ADMIN',
-    isClient: user?.role === 'CLIENT',
+    isOwner: effectiveRole === 'OWNER',
+    isAdmin: effectiveRole === 'ADMIN',
+    isClient: effectiveRole === 'CLIENT',
+    isStaff: effectiveRole === 'STAFF',
+    staffRole: jwtPayload?.staffRole || null,
+    staffBusinessId: jwtPayload?.businessId || null,
+    staffId: jwtPayload?.staffId || null,
     loading,
     saveSession,
     reloadSession: loadSession,

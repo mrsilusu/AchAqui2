@@ -36,6 +36,7 @@ import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
+import HospitalityModule        from '../HospitalityModule';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { AuthModal } from './modules/Auth/AuthModal';
@@ -754,6 +755,7 @@ function AppContent() {
   const locationPermissionRequestedRef = React.useRef(false);
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
+  const [isStaffMode, setIsStaffMode]         = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
   const [activeBusinessTab, setActiveBusinessTab] = useState('dashboard');
   const [adminSessionBackup, setAdminSessionBackup] = useState(null);
@@ -819,6 +821,8 @@ function AppContent() {
     if (session?.user?.role === 'OWNER') {
       setIsBusinessMode(true);
       setActiveBusinessTab('dashboard');
+    } else if (session?.user?.role === 'STAFF') {
+      setIsStaffMode(true);
     }
   }, [authSession]);
 
@@ -1248,7 +1252,10 @@ function AppContent() {
       setIsBusinessMode(false);
       setActiveNavTab('home');
     }
-  }, [authSession.loading, authSession.isOwner, isBusinessMode]);
+    if (!authSession.isStaff && isStaffMode) {
+      setIsStaffMode(false);
+    }
+  }, [authSession.loading, authSession.isOwner, authSession.isStaff, isBusinessMode, isStaffMode]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1268,8 +1275,23 @@ function AppContent() {
             />
           )}
 
+          {/* Staff */}
+          {isStaffMode && authSession.isStaff && (
+            <HospitalityModule
+              businessId={authSession.staffBusinessId}
+              accessToken={authSession.accessToken}
+              isOwner={false}
+              staffRole={authSession.staffRole}
+              staffId={authSession.staffId}
+              onClose={() => {
+                setIsStaffMode(false);
+                authSession.saveSession(null);
+              }}
+            />
+          )}
+
           {/* Cliente: todas as tabs via HomeModuleFull */}
-          {!isBusinessMode && !authSession.isAdmin && (
+          {!isBusinessMode && !isStaffMode && !authSession.isAdmin && (
             <HomeModuleFull
               {...filters}
               activeNavTab={activeNavTab}
@@ -1327,7 +1349,7 @@ function AppContent() {
             />
           )}
 
-          {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
+          {!authSession.isAdmin && !isStaffMode && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
 

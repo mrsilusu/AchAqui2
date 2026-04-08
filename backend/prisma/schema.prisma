@@ -38,6 +38,7 @@ enum UserRole {
   ADMIN
   OWNER
   CLIENT
+  STAFF
 }
 
 // [TENANT] Roles de staff por módulo numa única enum.

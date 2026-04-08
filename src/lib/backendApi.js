@@ -1,4 +1,6 @@
 import { BACKEND_URL } from './runtimeConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AUTH_SESSION_KEY } from './runtimeConfig';
 import {
   drainOfflineQueue,
   enqueueOfflineMutation,
@@ -52,6 +54,43 @@ function shouldQueueMutation(pathname) {
 export async function apiRequest(path, { method = 'GET', body, accessToken, skipOfflineQueue = false } = {}) {
   const url = `${BACKEND_URL}${path}`;
   const pathname = path.split('?')[0];
+
+  const isAuthPath =
+    pathname.startsWith('/auth/signin') ||
+    pathname.startsWith('/auth/signup') ||
+    pathname.startsWith('/auth/refresh') ||
+    pathname.startsWith('/auth/staff-pin-login');
+
+  const tryRefreshSession = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(AUTH_SESSION_KEY);
+      if (!raw) return null;
+      const current = JSON.parse(raw);
+      const currentRefreshToken = current?.refreshToken;
+      if (!currentRefreshToken) return null;
+
+      const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: currentRefreshToken }),
+      });
+      if (!refreshRes.ok) return null;
+
+      const refreshed = await refreshRes.json();
+      if (!refreshed?.accessToken) return null;
+
+      const nextSession = {
+        ...(current || {}),
+        ...refreshed,
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken || currentRefreshToken,
+      };
+      await AsyncStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(nextSession));
+      return nextSession.accessToken;
+    } catch {
+      return null;
+    }
+  };
 
   if (!/^https?:\/\//i.test(BACKEND_URL)) {
     const error = new ApiRequestError('URL do backend inválida.', {
@@ -109,6 +148,25 @@ export async function apiRequest(path, { method = 'GET', body, accessToken, skip
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !isAuthPath) {
+      const refreshedAccessToken = await tryRefreshSession();
+      if (refreshedAccessToken) {
+        const retryResponse = await fetch(url, {
+          method,
+          headers: buildHeaders(refreshedAccessToken),
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (retryResponse.ok) {
+          if (retryResponse.status === 204) return null;
+          const retryData = await retryResponse.json();
+          if (method === 'GET' && shouldCacheGet(pathname)) {
+            await setCachedJson(path, retryData);
+          }
+          return retryData;
+        }
+      }
+    }
+
     const rawError = await response.text();
     const type = response.status === 401 || response.status === 403
       ? 'token'
@@ -182,6 +240,8 @@ export const backendApi = {
     return apiRequest(`/businesses/home-feed?${qs.toString()}`);
   },
   signIn: (payload) => apiRequest('/auth/signin', { method: 'POST', body: payload }),
+  htStaffPinLogin: (businessId, pin) =>
+    apiRequest('/auth/staff-pin-login', { method: 'POST', body: { businessId, pin } }),
   signUp: (payload) => apiRequest('/auth/signup', { method: 'POST', body: payload }),
   forgotPassword: (email) => apiRequest('/auth/forgot-password', { method: 'POST', body: { email } }),
   refresh: (payload) => apiRequest('/auth/refresh', { method: 'POST', body: payload }),
@@ -323,8 +383,8 @@ export const backendApi = {
   // ─── HT — Mapa de Reservas
   getHtMap: (businessId, from, to, accessToken) => {
     const params = new URLSearchParams({ businessId });
-    if (from) params.append('from', from);
-    if (to)   params.append('to', to);
+    if (from) params.append('from', from instanceof Date ? from.toISOString() : String(from));
+    if (to)   params.append('to', to instanceof Date ? to.toISOString() : String(to));
     return apiRequest(`/ht/map?${params}`, { accessToken });
   },
 
@@ -335,12 +395,28 @@ export const backendApi = {
   // ─── HT — Staff / Funcionários
   getHtStaff: (businessId, accessToken) =>
     apiRequest(`/ht/staff?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  htCreateStaff: (payload, accessToken) =>
+    apiRequest('/ht/staff', { method: 'POST', body: payload, accessToken }),
   addHtStaff: (payload, accessToken) =>
     apiRequest('/ht/staff', { method: 'POST', body: payload, accessToken }),
+  htUpdateStaff: (staffId, businessId, payload, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: payload, accessToken }),
+  htSuspendStaff: (staffId, businessId, reason, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/suspend?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: { reason }, accessToken }),
+  htReactivateStaff: (staffId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/reactivate?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: {}, accessToken }),
+  htGetStaffActivity: (staffId, businessId, from, to, accessToken) => {
+    const params = new URLSearchParams({ businessId });
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    return apiRequest(`/ht/staff/${staffId}/activity?${params.toString()}`, { accessToken });
+  },
   removeHtStaff: (staffId, businessId, accessToken) =>
-    apiRequest(`/ht/staff/${staffId}?businessId=${encodeURIComponent(businessId)}`, { method: 'DELETE', accessToken }),
-  assignHtTask: (taskId, userId, businessId, accessToken) =>
-    apiRequest(`/ht/staff/tasks/${taskId}/assign`, { method: 'PATCH', body: { userId, businessId }, accessToken }),
+    apiRequest(`/ht/staff/${staffId}/suspend?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: { reason: 'Suspenso pelo owner' }, accessToken }),
+  assignHtTask: (taskId, staffId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/tasks/${taskId}/assign`, { method: 'PATCH', body: { staffId, businessId }, accessToken }),
+  htCreateStaffAccount: (staffId, businessId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/create-account?businessId=${encodeURIComponent(businessId)}`, { method: 'POST', body: {}, accessToken }),
 
   // ─── HT — Perfil de Hóspede (Sprint 4)
   getHtGuests: (businessId, accessToken, search = '') =>
@@ -357,6 +433,16 @@ export const backendApi = {
   // ─── HT — Prolongar estadia / Alterar quarto (Sprint 6)
   htExtendStay: (bookingId, newEndDate, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/extend`, { method: 'PATCH', body: { newEndDate }, accessToken }),
+  htExtendExpiredStay: (bookingId, payload, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/extend-expired`, { method: 'PATCH', body: payload, accessToken }),
+  htGetExpiredStays: (businessId, accessToken) =>
+    apiRequest(`/ht/bookings/expired?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+  htRetroactiveCheckout: (bookingId, payload, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/retroactive-checkout`, { method: 'PATCH', body: payload, accessToken }),
+  htForceCheckout: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/force-checkout`, { method: 'PATCH', body: {}, accessToken }),
+  htUnconfirmedCheckout: (bookingId, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/unconfirmed-checkout`, { method: 'PATCH', body: {}, accessToken }),
   htChangeRoom: (bookingId, newRoomId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/change-room`, { method: 'PATCH', body: { newRoomId }, accessToken }),
 
@@ -381,8 +467,17 @@ export const backendApi = {
     apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
   htPostponeBooking: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/postpone`, { method: 'PATCH', body: {}, accessToken }),
+  htRevertNoShow: (bookingId, body, accessToken) =>
+    apiRequest(`/ht/bookings/${bookingId}/revert-noshow`, { method: 'POST', body, accessToken }),
   cancelBooking: (bookingId, payload, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/cancel`, { method: 'PATCH', body: payload, accessToken }),
+
+    htConfirmBooking: (bookingId, accessToken) =>
+      apiRequest(`/ht/bookings/${bookingId}/confirm`, { method: 'PATCH', body: {}, accessToken }),
+    htCreateBooking: (payload, accessToken) =>
+      apiRequest('/ht/bookings', { method: 'POST', body: payload, accessToken }),
+    htUpdatePmsConfig: (businessId, payload, accessToken) =>
+      apiRequest(`/ht/config?businessId=${businessId}`, { method: 'PATCH', body: payload, accessToken }),
 
   // ─── SPRINT A — Interacções sociais ─────────────────────────────────────
   getSocialState: (businessId, accessToken) =>
