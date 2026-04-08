@@ -250,12 +250,12 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
           ) : (
             <View style={s.createForm}>
               <Text style={s.createTitle}>Novo Funcionário</Text>
-              <TextInput style={s.input} placeholder="Nome completo *" value={form.fullName}
+              <TextInput style={s.input} placeholder="Nome completo *" placeholderTextColor={COLORS.muted} value={form.fullName}
                 onChangeText={(v) => setForm((f) => ({ ...f, fullName: v }))} />
-              <TextInput style={s.input} placeholder="Email *" value={form.email}
+              <TextInput style={s.input} placeholder="Email *" placeholderTextColor={COLORS.muted} value={form.email}
                 keyboardType="email-address" autoCapitalize="none"
                 onChangeText={(v) => setForm((f) => ({ ...f, email: v }))} />
-              <TextInput style={s.input} placeholder="Telemóvel" value={form.phone}
+              <TextInput style={s.input} placeholder="Telemóvel" placeholderTextColor={COLORS.muted} value={form.phone}
                 keyboardType="phone-pad"
                 onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} />
 
@@ -274,17 +274,17 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
                 ))}
               </ScrollView>
 
-              <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" value={form.pin}
+              <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" placeholderTextColor={COLORS.muted} value={form.pin}
                 keyboardType="numeric" secureTextEntry maxLength={8}
                 onChangeText={(v) => setForm((f) => ({ ...f, pin: v.replace(/\D/g, '') }))} />
-              <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" value={form.documentType}
+              <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" placeholderTextColor={COLORS.muted} value={form.documentType}
                 onChangeText={(v) => setForm((f) => ({ ...f, documentType: v }))} />
-              <TextInput style={s.input} placeholder="Nº documento" value={form.documentNumber}
+              <TextInput style={s.input} placeholder="Nº documento" placeholderTextColor={COLORS.muted} value={form.documentNumber}
                 onChangeText={(v) => setForm((f) => ({ ...f, documentNumber: v }))} />
-              <TextInput style={s.input} placeholder="Início de emprego (AAAA-MM-DD)" value={form.employmentStart}
+              <TextInput style={s.input} placeholder="Início de emprego (AAAA-MM-DD)" placeholderTextColor={COLORS.muted} value={form.employmentStart}
                 onChangeText={(v) => setForm((f) => ({ ...f, employmentStart: v }))} />
               <TextInput style={[s.input, { height: 72, textAlignVertical: 'top' }]}
-                placeholder="Notas" multiline value={form.notes}
+                placeholder="Notas" placeholderTextColor={COLORS.muted} multiline value={form.notes}
                 onChangeText={(v) => setForm((f) => ({ ...f, notes: v }))} />
 
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
