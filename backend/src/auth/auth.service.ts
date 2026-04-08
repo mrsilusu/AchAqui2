@@ -96,14 +96,53 @@ export class AuthService {
     return rows.map((row) => ({ businessId: row.businessId, module: row.module, role: row.role }));
   }
 
+  private async getPrimaryHtStaffContext(userId: string): Promise<{
+    businessId: string;
+    staffRole: StaffRole;
+    staffId: string;
+  } | null> {
+    const assignment = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        userId,
+        revokedAt: null,
+        OR: [{ module: AppModule.HT }, { role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { businessId: true, role: true },
+    });
+
+    if (!assignment) return null;
+
+    const htStaff = await this.prisma.htStaff.findFirst({
+      where: { userId, businessId: assignment.businessId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!htStaff?.id) return null;
+
+    return {
+      businessId: assignment.businessId,
+      staffRole: assignment.role,
+      staffId: htStaff.id,
+    };
+  }
+
   private async createAccessToken(user: User) {
     const staffRoles = await this.getActiveStaffRoles(user.id);
+    const primaryHtContext = user.role === UserRole.STAFF
+      ? await this.getPrimaryHtStaffContext(user.id)
+      : null;
     return this.jwtService.signAsync(
       {
         sub: user.id,
         email: user.email,
         role: user.role,
         staffRoles,
+        ...(primaryHtContext && {
+          staffRole: primaryHtContext.staffRole,
+          businessId: primaryHtContext.businessId,
+          staffId: primaryHtContext.staffId,
+        }),
       },
       {
         secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',

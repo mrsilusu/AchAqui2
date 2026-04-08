@@ -82,8 +82,9 @@ export class HtStaffController {
   createAccount(
     @Param('id') id: string,
     @Query('businessId') businessId: string,
+    @Body() body: { password?: string },
     @Req() req: any,
   ) {
-    return this.s.createStaffAccount(id, businessId, req.user.userId);
+    return this.s.createStaffAccount(id, businessId, req.user.userId, body);
   }
 }

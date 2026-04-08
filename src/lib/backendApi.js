@@ -415,8 +415,8 @@ export const backendApi = {
     apiRequest(`/ht/staff/${staffId}/suspend?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: { reason: 'Suspenso pelo owner' }, accessToken }),
   assignHtTask: (taskId, staffId, businessId, accessToken) =>
     apiRequest(`/ht/staff/tasks/${taskId}/assign`, { method: 'PATCH', body: { staffId, businessId }, accessToken }),
-  htCreateStaffAccount: (staffId, businessId, accessToken) =>
-    apiRequest(`/ht/staff/${staffId}/create-account?businessId=${encodeURIComponent(businessId)}`, { method: 'POST', body: {}, accessToken }),
+  htCreateStaffAccount: (staffId, businessId, payload, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/create-account?businessId=${encodeURIComponent(businessId)}`, { method: 'POST', body: payload || {}, accessToken }),
 
   // ─── HT — Perfil de Hóspede (Sprint 4)
   getHtGuests: (businessId, accessToken, search = '') =>

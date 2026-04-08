@@ -14,7 +14,7 @@ import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import backendApi from '../lib/backendApi';
+import { backendApi } from '../lib/backendApi';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 const DEPARTMENTS = [
@@ -53,12 +53,15 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
   const [deptFilter, setDeptFilter]       = useState('');
   const [showCreate, setShowCreate]       = useState(false);
   const [creatingAccountId, setCreatingAccountId] = useState(null);
+  const [showCreateAccountModal, setShowCreateAccountModal] = useState(false);
+  const [accountTargetStaff, setAccountTargetStaff] = useState(null);
+  const [accountPassword, setAccountPassword] = useState('');
 
   // Form state
   const [form, setForm] = useState({
     fullName: '', email: '', phone: '', department: 'RECEPTION',
     pin: '', documentType: '', documentNumber: '', employmentStart: '',
-    notes: '',
+    notes: '', createAppAccount: true, accountPassword: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -89,22 +92,35 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
 
   const deptLabel = (key) => DEPARTMENTS.find((d) => d.key === key)?.label ?? key;
 
-  const handleCreateAccount = useCallback(async (staff) => {
-    if (creatingAccountId) return;
-    setCreatingAccountId(staff.id);
+  const handleCreateAccount = useCallback(async () => {
+    if (!accountTargetStaff?.id || creatingAccountId) return;
+    const pass = String(accountPassword || '').trim();
+    if (pass.length < 6) {
+      Alert.alert('Password inválida', 'A password deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    setCreatingAccountId(accountTargetStaff.id);
     try {
-      const res = await backendApi.htCreateStaffAccount(staff.id, businessId, accessToken);
+      const res = await backendApi.htCreateStaffAccount(
+        accountTargetStaff.id,
+        businessId,
+        { password: pass },
+        accessToken,
+      );
       Alert.alert(
         res.isNew ? 'Conta criada' : 'Conta actualizada',
         `${res.fullName} pode agora entrar na app com o email:\n${res.email}`,
       );
+      setShowCreateAccountModal(false);
+      setAccountTargetStaff(null);
+      setAccountPassword('');
       await loadStaff();
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível criar a conta.');
     } finally {
       setCreatingAccountId(null);
     }
-  }, [creatingAccountId, businessId, accessToken, loadStaff]);
+  }, [accountTargetStaff, accountPassword, creatingAccountId, businessId, accessToken, loadStaff]);
 
   const handleCreate = async () => {
     const fullName = form.fullName.trim();
@@ -113,6 +129,10 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
     if (!email.includes('@'))  { Alert.alert('Erro', 'Email inválido.'); return; }
     if (form.pin && !/^\d{4,8}$/.test(form.pin)) {
       Alert.alert('Erro', 'PIN deve ter 4–8 dígitos.');
+      return;
+    }
+    if (form.createAppAccount && String(form.accountPassword || '').trim().length < 6) {
+      Alert.alert('Erro', 'A password da conta App deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -129,10 +149,13 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
         documentNumber: form.documentNumber.trim() || undefined,
         employmentStart: form.employmentStart.trim() || undefined,
         notes:          form.notes.trim() || undefined,
+        createAppAccount: !!form.createAppAccount,
+        accountPassword: form.createAppAccount ? String(form.accountPassword || '').trim() : undefined,
       }, accessToken);
 
       setForm({ fullName: '', email: '', phone: '', department: 'RECEPTION',
-                pin: '', documentType: '', documentNumber: '', employmentStart: '', notes: '' });
+          pin: '', documentType: '', documentNumber: '', employmentStart: '', notes: '',
+          createAppAccount: true, accountPassword: '' });
       setShowCreate(false);
       await loadStaff();
     } catch (e) {
@@ -222,7 +245,12 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
                       {!staff.userId && staff.isActive && (
                         <TouchableOpacity
                           style={s.createAccountBtn}
-                          onPress={(e) => { e.stopPropagation?.(); handleCreateAccount(staff); }}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            setAccountTargetStaff(staff);
+                            setAccountPassword('');
+                            setShowCreateAccountModal(true);
+                          }}
                           disabled={creatingAccountId === staff.id}
                         >
                           {creatingAccountId === staff.id
@@ -277,6 +305,25 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
               <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" placeholderTextColor={COLORS.muted} value={form.pin}
                 keyboardType="numeric" secureTextEntry maxLength={8}
                 onChangeText={(v) => setForm((f) => ({ ...f, pin: v.replace(/\D/g, '') }))} />
+              <View style={s.accountNowRow}>
+                <TouchableOpacity
+                  style={[s.checkbox, form.createAppAccount && s.checkboxActive]}
+                  onPress={() => setForm((f) => ({ ...f, createAppAccount: !f.createAppAccount }))}
+                >
+                  {form.createAppAccount ? <Text style={s.checkboxTick}>✓</Text> : null}
+                </TouchableOpacity>
+                <Text style={s.fieldLabel}>Criar conta App agora</Text>
+              </View>
+              {form.createAppAccount && (
+                <TextInput
+                  style={s.input}
+                  placeholder="Password da conta App (mín. 6)"
+                  placeholderTextColor={COLORS.muted}
+                  value={form.accountPassword}
+                  secureTextEntry
+                  onChangeText={(v) => setForm((f) => ({ ...f, accountPassword: v }))}
+                />
+              )}
               <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" placeholderTextColor={COLORS.muted} value={form.documentType}
                 onChangeText={(v) => setForm((f) => ({ ...f, documentType: v }))} />
               <TextInput style={s.input} placeholder="Nº documento" placeholderTextColor={COLORS.muted} value={form.documentNumber}
@@ -302,6 +349,52 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={showCreateAccountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !creatingAccountId && setShowCreateAccountModal(false)}
+      >
+        <View style={s.accountOverlay}>
+          <View style={s.accountCard}>
+            <Text style={s.accountTitle}>Criar conta App</Text>
+            <Text style={s.accountText}>
+              Defina a password para {accountTargetStaff?.fullName || 'este staff'} entrar por Email + Password.
+            </Text>
+            <TextInput
+              style={s.input}
+              placeholder="Password (mín. 6)"
+              placeholderTextColor={COLORS.muted}
+              value={accountPassword}
+              secureTextEntry
+              onChangeText={setAccountPassword}
+            />
+            <View style={s.accountActions}>
+              <TouchableOpacity
+                style={[s.formBtn, s.cancelBtn]}
+                onPress={() => {
+                  if (creatingAccountId) return;
+                  setShowCreateAccountModal(false);
+                  setAccountTargetStaff(null);
+                  setAccountPassword('');
+                }}
+              >
+                <Text style={s.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.formBtn, s.saveBtn, creatingAccountId && { opacity: 0.7 }]}
+                onPress={handleCreateAccount}
+                disabled={!!creatingAccountId}
+              >
+                {creatingAccountId
+                  ? <ActivityIndicator size="small" color={COLORS.white} />
+                  : <Text style={s.saveBtnText}>Criar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -364,6 +457,14 @@ const s = StyleSheet.create({
   },
   createAccountBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
   hasAccountText: { fontSize: 11, color: '#16A34A', marginTop: 4, fontWeight: '500' },
+  accountNowRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 1,
+    borderColor: COLORS.border, backgroundColor: COLORS.card,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkboxTick: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
   chevron: { fontSize: 22, color: COLORS.muted },
 
   addBtn: {
@@ -393,4 +494,15 @@ const s = StyleSheet.create({
   saveBtn:    { backgroundColor: COLORS.primary },
   cancelBtnText: { color: COLORS.muted,  fontWeight: '600', fontSize: 15 },
   saveBtnText:   { color: COLORS.white,  fontWeight: '700', fontSize: 15 },
+  accountOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  accountCard: {
+    width: '100%', backgroundColor: COLORS.bg, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, padding: 16,
+  },
+  accountTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+  accountText: { fontSize: 13, color: COLORS.muted, marginBottom: 10 },
+  accountActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
 });

@@ -33,6 +33,8 @@ type CreateStaffDto = {
   employmentStart?: string;
   employmentEnd?: string;
   notes?: string;
+  createAppAccount?: boolean;
+  accountPassword?: string;
 };
 
 type UpdateStaffDto = Partial<CreateStaffDto> & {
@@ -149,24 +151,46 @@ export class HtStaffService {
     return safe;
   }
 
-  private async ensureUserForStaff(email: string, fullName: string) {
+  private async ensureUserForStaff(
+    email: string,
+    fullName: string,
+    plainPassword?: string,
+  ) {
     const normalizedEmail = this.normalizeEmail(email);
     let user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, role: true },
     });
 
-    if (user) return user;
+    if (user) {
+      const updates: Record<string, any> = {};
+      if (user.role !== UserRole.STAFF) updates.role = UserRole.STAFF;
+      if (String(plainPassword || '').trim().length >= 6) {
+        updates.password = await bcrypt.hash(String(plainPassword).trim(), 10);
+      }
+      if (Object.keys(updates).length) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: updates,
+          select: { id: true, email: true, name: true, role: true },
+        });
+      }
+      return user;
+    }
 
-    const generatedPassword = await bcrypt.hash(`${normalizedEmail}:${Date.now()}`, 10);
+    const passwordRaw = String(plainPassword || '').trim();
+    const passwordToHash = passwordRaw.length >= 6
+      ? passwordRaw
+      : `${normalizedEmail}:${Date.now()}`;
+    const hashedPassword = await bcrypt.hash(passwordToHash, 10);
     user = await this.prisma.user.create({
       data: {
         email: normalizedEmail,
         name: fullName,
-        password: generatedPassword,
-        role: UserRole.CLIENT,
+        password: hashedPassword,
+        role: UserRole.STAFF,
       },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, role: true },
     });
 
     return user;
@@ -258,13 +282,20 @@ export class HtStaffService {
 
     const pin = this.normalizePin(dto.pin);
     const pinHash = pin ? await bcrypt.hash(pin, 10) : null;
-    const user = await this.ensureUserForStaff(email, fullName);
+    const shouldCreateAppAccount = dto.createAppAccount !== false;
+    const accountPassword = String(dto.accountPassword || '').trim();
+    if (shouldCreateAppAccount && accountPassword.length < 6) {
+      throw new BadRequestException('Password da conta App deve ter no mínimo 6 caracteres.');
+    }
+    const user = shouldCreateAppAccount
+      ? await this.ensureUserForStaff(email, fullName, accountPassword)
+      : null;
 
     const created = await this.prisma.$transaction(async (tx) => {
       const staff = await tx.htStaff.create({
         data: {
           businessId: dto.businessId,
-          userId: user.id,
+          userId: user?.id || null,
           fullName,
           email,
           phone: dto.phone?.trim() || null,
@@ -294,12 +325,14 @@ export class HtStaffService {
         },
       });
 
-      await this.syncCoreBusinessRole(tx, {
-        businessId: dto.businessId,
-        userId: user.id,
-        department: dto.department,
-        isActive: true,
-      });
+      if (user?.id) {
+        await this.syncCoreBusinessRole(tx, {
+          businessId: dto.businessId,
+          userId: user.id,
+          department: dto.department,
+          isActive: true,
+        });
+      }
 
       await tx.coreAuditLog.create({
         data: {
@@ -474,33 +507,26 @@ export class HtStaffService {
     return this.prisma.htHousekeepingTask.update({ where: { id: taskId }, data: { assignedToId: staff.id } });
   }
 
-  async createStaffAccount(staffId: string, businessId: string, ownerId: string) {
+  async createStaffAccount(
+    staffId: string,
+    businessId: string,
+    ownerId: string,
+    dto?: { password?: string },
+  ) {
     await this.assertOwnership(businessId, ownerId);
     const staff = await this.getStaffOrThrow(staffId, businessId);
 
     if (!staff.email) throw new BadRequestException('Funcionário não tem email definido.');
+    const password = String(dto?.password || '').trim();
+    if (password.length < 6) {
+      throw new BadRequestException('Password da conta App deve ter no mínimo 6 caracteres.');
+    }
 
     const normalizedEmail = this.normalizeEmail(staff.email);
-    let user = await this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
-      select: { id: true, email: true, name: true, role: true },
-    });
+    let user = await this.ensureUserForStaff(normalizedEmail, staff.fullName, password);
 
     let isNew = false;
-    if (!user) {
-      const generatedPassword = await bcrypt.hash(`${normalizedEmail}:${Date.now()}`, 10);
-      user = await this.prisma.user.create({
-        data: { email: normalizedEmail, name: staff.fullName, password: generatedPassword, role: UserRole.STAFF },
-        select: { id: true, email: true, name: true, role: true },
-      });
-      isNew = true;
-    } else if (user.role !== UserRole.STAFF) {
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { role: UserRole.STAFF },
-        select: { id: true, email: true, name: true, role: true },
-      });
-    }
+    if (!staff.userId) isNew = true;
 
     if (!staff.userId || staff.userId !== user.id) {
       await this.prisma.htStaff.update({

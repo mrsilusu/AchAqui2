@@ -63,6 +63,9 @@ export function useAuthSession() {
     : null;
 
   const effectiveRole = user?.role || roleFromToken;
+  const primaryStaffRole = Array.isArray(user?.staffRoles)
+    ? (user.staffRoles.find((r) => r?.module === 'HT' || r?.role?.startsWith?.('HT_')) || user.staffRoles[0])
+    : null;
 
   const saveSession = useCallback(async (nextSession) => {
     setSession(nextSession);
@@ -84,8 +87,8 @@ export function useAuthSession() {
     isAdmin: effectiveRole === 'ADMIN',
     isClient: effectiveRole === 'CLIENT',
     isStaff: effectiveRole === 'STAFF',
-    staffRole: jwtPayload?.staffRole || null,
-    staffBusinessId: jwtPayload?.businessId || null,
+    staffRole: jwtPayload?.staffRole || primaryStaffRole?.role || null,
+    staffBusinessId: jwtPayload?.businessId || primaryStaffRole?.businessId || null,
     staffId: jwtPayload?.staffId || null,
     loading,
     saveSession,
