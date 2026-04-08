@@ -36,7 +36,7 @@ import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
-import HospitalityModule        from '../HospitalityModule';
+import { HospitalityModule }    from './operations/HospitalityModule';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { AuthModal } from './modules/Auth/AuthModal';
@@ -1276,19 +1276,19 @@ function AppContent() {
           )}
 
           {/* Staff */}
-          {isStaffMode && authSession.isStaff && (
-            <HospitalityModule
-              businessId={authSession.staffBusinessId}
-              accessToken={authSession.accessToken}
-              isOwner={false}
-              staffRole={authSession.staffRole}
-              staffId={authSession.staffId}
-              onClose={() => {
-                setIsStaffMode(false);
-                authSession.saveSession(null);
-              }}
-            />
-          )}
+          {isStaffMode && authSession.isStaff && (() => {
+            const staffBusiness = businesses.find(b => b.id === authSession.staffBusinessId) ||
+              { id: authSession.staffBusinessId, name: 'O meu negócio', roomTypes: [], modules: { accommodation: true } };
+            return (
+              <HospitalityModule
+                business={staffBusiness}
+                ownerMode={false}
+                tenantId={authSession.staffBusinessId}
+                initialStaffToken={authSession.accessToken}
+                liveBookings={liveSync.bookings}
+              />
+            );
+          })()}
 
           {/* Cliente: todas as tabs via HomeModuleFull */}
           {!isBusinessMode && !isStaffMode && !authSession.isAdmin && (

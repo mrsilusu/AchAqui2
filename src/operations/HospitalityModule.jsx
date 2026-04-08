@@ -1319,7 +1319,7 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -1342,8 +1342,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   // ── RBAC Zero Trust ──────────────────────────────────────────────────────
   const isOwner = ownerMode === true;
 
-  // ── Staff token (8h JWT de /auth/staff-pin-login) ────────────────────────
-  const [staffToken, setStaffToken]         = useState(null);
+  // ── Staff token (8h JWT de /auth/staff-pin-login ou JWT de login STAFF) ──
+  const [staffToken, setStaffToken]         = useState(initialStaffToken);
   const [showPinLogin, setShowPinLogin]     = useState(false);
   const [showStaffMgmt, setShowStaffMgmt]   = useState(false);
   const [selectedStaff, setSelectedStaff]   = useState(null);
