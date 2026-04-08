@@ -246,6 +246,18 @@ export const backendApi = {
   htNoShow: (bookingId, accessToken) =>
     apiRequest(`/ht/bookings/${bookingId}/noshow`, { method: 'PATCH', body: {}, accessToken }),
 
+  // ─── HT — Staff ────────────────────────────────────────────────────────────
+  getHtStaff: (businessId, accessToken, includeInactive = false) =>
+    apiRequest(`/ht/staff?businessId=${businessId}&includeInactive=${includeInactive}`, { accessToken }),
+  htCreateStaff: (payload, accessToken) =>
+    apiRequest('/ht/staff', { method: 'POST', body: payload, accessToken }),
+  htUpdateStaff: (staffId, payload, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}`, { method: 'PATCH', body: payload, accessToken }),
+  htSuspendStaff: (staffId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/suspend`, { method: 'PATCH', body: {}, accessToken }),
+  htReactivateStaff: (staffId, accessToken) =>
+    apiRequest(`/ht/staff/${staffId}/reactivate`, { method: 'PATCH', body: {}, accessToken }),
+
   // ─── Social — My Profile
   getMyStats: (accessToken) => apiRequest('/social/me/stats', { accessToken }),
   getMyReviews: (accessToken) => apiRequest('/social/me/reviews', { accessToken }),

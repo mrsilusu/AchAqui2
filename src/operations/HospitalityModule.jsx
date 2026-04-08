@@ -42,6 +42,7 @@ import {
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
 import { GuestsScreen } from './GuestsScreen';
+import { StaffManagementModal } from './StaffManagementModal';
 import { backendApi } from '../lib/backendApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1054,6 +1055,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
   const [showGuests, setShowGuests] = useState(false);
+  const [showStaff, setShowStaff] = useState(false);
 
   // Overrides de status locais — aplicados sobre apiBookings para optimistic update
   // Limpos automaticamente quando o Realtime confirma o novo status
@@ -1373,6 +1375,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
               <Icon name="verified" size={12} color={COLORS.green} strokeWidth={2.5} />
               <Text style={hS.ownerBadgeText}>Activo</Text>
             </View>
+            <TouchableOpacity style={hS.pmsBtn} onPress={() => setShowStaff(true)}>
+              <Icon name="users" size={17} color={COLORS.blue} strokeWidth={2} />
+            </TouchableOpacity>
             <TouchableOpacity style={hS.pmsBtn} onPress={() => setShowDashboard(true)}>
               <Icon name="settings" size={17} color={COLORS.blue} strokeWidth={2} />
             </TouchableOpacity>
@@ -1589,6 +1594,13 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           bookings={activeBookings}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onClose={() => setShowGuests(false)}
+        />
+      )}
+      {isOwner && showStaff && (
+        <StaffManagementModal
+          businessId={ownerBusinessPrivate?.id}
+          accessToken={ctx?.accessToken}
+          onClose={() => setShowStaff(false)}
         />
       )}
     </View>

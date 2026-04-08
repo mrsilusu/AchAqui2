@@ -147,6 +147,23 @@ enum HtHousekeepingPriority {
   URGENT      // checkout com hóspede à espera
 }
 
+enum HtStaffDepartment {
+  RECEPTION
+  HOUSEKEEPING
+  MAINTENANCE
+  MANAGEMENT
+  SECURITY
+  RESTAURANT
+}
+
+enum HtShift {
+  MORNING
+  AFTERNOON
+  NIGHT
+  ROTATING
+  FLEXIBLE
+}
+
 // =============================================================================
 // ENUMS — AUDIT (CORE)
 // =============================================================================
@@ -196,6 +213,7 @@ model User {
   claimRequests ClaimRequest[]
   // PMS / módulos
   htBookings    HtRoomBooking[]
+  htStaffProfile HtStaff[]
   staffRoles    CoreBusinessStaff[]
   auditActions  CoreAuditLog[]
   // Social
@@ -242,6 +260,7 @@ model Business {
   htBookings     HtRoomBooking[]
   htGuests       HtGuestProfile[]
   htFolioItems   HtFolioItem[]
+  htStaff        HtStaff[]
   // DI — Dining (reservas de mesa já existentes)
   diBookings     DiTableBooking[]
   // Social
@@ -596,6 +615,7 @@ model HtHousekeepingTask {
   roomId        String
   room          HtRoom                 @relation(fields: [roomId], references: [id])
   assignedToId  String?
+  assignedStaff HtStaff?              @relation(fields: [assignedToId], references: [id])
   priority      HtHousekeepingPriority @default(NORMAL)
   startedAt     DateTime?
   completedAt   DateTime?
@@ -606,6 +626,67 @@ model HtHousekeepingTask {
   updatedAt     DateTime               @updatedAt
 
   @@map("ht_housekeeping_tasks")
+}
+
+// Perfil operacional do staff hoteleiro.
+// Separado do CoreBusinessStaff (autorizações) — este modelo guarda dados operacionais.
+// [TENANT]  businessId em todas as queries.
+// [GDPR]    documentNumber nunca no audit log.
+// [SECURITY] pinHash = bcrypt — nunca exposto na API.
+model HtStaff {
+  id                  String             @id @default(uuid())
+  // [TENANT]
+  businessId          String
+  business            Business           @relation(fields: [businessId], references: [id])
+  // Ligação opcional a um utilizador da app
+  userId              String?
+  user                User?              @relation(fields: [userId], references: [id])
+  // Ligação opcional ao registo de autorização (CoreBusinessStaff)
+  coreStaffId         String?            @unique
+  // Dados pessoais
+  fullName            String
+  phone               String?
+  email               String?
+  position            String?            // "Rececionista Chefe", "Camareira Sénior"
+  department          HtStaffDepartment
+  photoUrl            String?
+  // [GDPR] Identificação
+  documentType        String?            // "BI" | "Passaporte" | "DIRE"
+  documentNumber      String?
+  // Horário
+  shift               HtShift            @default(ROTATING)
+  workDays            Int[]              @default([1, 2, 3, 4, 5])
+  startTime           String?            // "08:00"
+  endTime             String?            // "16:00"
+  // Housekeeping
+  assignedFloors      Int[]              @default([])
+  maxRoomsPerDay      Int?
+  // [SECURITY] PIN de acesso ao PMS — bcrypt hash, nunca devolvido pela API
+  pinHash             String?
+  // Permissões operacionais granulares
+  canCancelBookings   Boolean            @default(false)
+  canApplyDiscounts   Boolean            @default(false)
+  canViewFinancials   Boolean            @default(false)
+  // Vínculo laboral
+  employmentStart     DateTime?
+  employmentEnd       DateTime?
+  isActive            Boolean            @default(true)
+  // Contacto de emergência
+  emergencyName       String?
+  emergencyPhone      String?
+  notes               String?
+  // Relações inversas
+  housekeepingTasks   HtHousekeepingTask[]
+  // [AUDIT] rastreio de quem criou / atualizou
+  addedById           String?
+  updatedById         String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([businessId, documentNumber])
+  @@index([businessId, department])
+  @@index([businessId, isActive])
+  @@map("ht_staff")
 }
 
 // =============================================================================
