@@ -37,6 +37,7 @@ import {
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { ReceptionScreen }    from '../../operations/ReceptionScreen';
 import { DashboardPMS }       from '../../operations/DashboardPMS';
+import StaffManagementModal   from '../../operations/StaffManagementModal';
 import { DiningModule }       from '../../operations/DiningModule';
 import { ProfessionalModule } from '../../operations/ProfessionalModule';
 import { backendApi } from '../../lib/backendApi';
@@ -431,6 +432,8 @@ export function OwnerModule({
   const [showRoomBookingsManager, setShowRoomBookingsManager] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showReception, setShowReception] = useState(false);
+  const [showStaffMgmtFromDashboard, setShowStaffMgmtFromDashboard] = useState(false);
+  const [openStaffOnHospitalityEntry, setOpenStaffOnHospitalityEntry] = useState(false);
   const [roomBookingsExpanded, setRoomBookingsExpanded] = useState({});
   const [selectedRoomBooking, setSelectedRoomBooking] = useState(null);
   const [roomBookingsFilter, setRoomBookingsFilter] = useState('all');
@@ -2016,6 +2019,8 @@ export function OwnerModule({
               business={ownerBiz}
               ownerMode={true}
               tenantId={ownerBusinessId}
+              openStaffOnMount={openStaffOnHospitalityEntry}
+              onOpenStaffConsumed={() => setOpenStaffOnHospitalityEntry(false)}
               ownerBusinessPrivate={ownerBiz}
               updateOwnerBiz={updateOwnerBiz}
               liveBookings={liveBookings}

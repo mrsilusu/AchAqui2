@@ -5,6 +5,7 @@
 //   businessId   — ID do negócio
 //   accessToken  — JWT do owner
 //   onOpenReception — callback para abrir o ReceptionScreen
+//   onOpenStaff  — callback para abrir gestão de Staff
 //   onOpenFolio   — callback para abrir o FolioScreen (reserva seleccionada)
 //   onClose       — fechar o modal
 // =============================================================================
@@ -21,6 +22,9 @@ import { ReceptionScreen } from './ReceptionScreen';
 import { ReservationMapModal } from './ReservationMapModal';
 import { GuestsScreen } from './GuestsScreen';
 import { RoomGanttScreen } from './RoomGanttScreen';
+import StaffManagementModal from './StaffManagementModal';
+import StaffProfileSheet from './StaffProfileSheet';
+import StaffActivityLog from './StaffActivityLog';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -194,6 +198,11 @@ export function DashboardPMS({
   const [cancelBookingFromMap, setCancelBookingFromMap] = useState(null);
   const [cancelReasonFromMap, setCancelReasonFromMap] = useState('');
   const [cancelMapLoading, setCancelMapLoading] = useState(false);
+  // ── Staff state (self-contained inside this modal) ───────────────────────
+  const [showStaffMgmt, setShowStaffMgmt]       = useState(false);
+  const [selectedStaff, setSelectedStaff]       = useState(null);
+  const [showStaffProfile, setShowStaffProfile] = useState(false);
+  const [showStaffActivity, setShowStaffActivity] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -279,7 +288,7 @@ export function DashboardPMS({
 
     try {
       setPolicySaving(true);
-      await backendApi.updateBusiness(businessId, { metadata }, accessToken);
+      await backendApi.htUpdatePmsConfig(businessId, { overbookingBuffer: safe }, accessToken);
       if (!alive.current) return;
       setBusinessMetadata(metadata);
       setSellablePercentInput(String(safe));
@@ -440,6 +449,18 @@ export function DashboardPMS({
                 sub="tarefas"
               />
             </View>
+              <View style={dS.metricsRow}>
+                <MetricCard
+                  icon="analytics"  label="ADR"
+                  value={`${(data?.kpis?.adr ?? 0).toLocaleString()} Kz`}
+                  color="#0891B2"
+                />
+                <MetricCard
+                  icon="analytics"  label="RevPAR"
+                  value={`${(data?.kpis?.revpar ?? 0).toLocaleString()} Kz`}
+                  color="#7C3AED"
+                />
+              </View>
 
             {/* ── Receita do dia ── */}
             <View style={dS.revenueCard}>
@@ -529,6 +550,14 @@ export function DashboardPMS({
               >
                 <Icon name="user" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Hóspedes · Perfis / Histórico</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#D97706' }]}
+                onPress={() => setShowStaffMgmt(true)}
+              >
+                <Icon name="users" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Staff</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
@@ -754,6 +783,39 @@ export function DashboardPMS({
           </View>
         </View>
       </Modal>
+
+      {/* ── STAFF MODALS (rendered inside DashboardPMS modal tree for iOS) ─ */}
+      <StaffManagementModal
+        visible={showStaffMgmt}
+        businessId={businessId}
+        accessToken={accessToken}
+        onClose={() => setShowStaffMgmt(false)}
+        onOpenProfile={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffMgmt(false);
+          setShowStaffProfile(true);
+        }}
+      />
+      <StaffProfileSheet
+        visible={showStaffProfile}
+        staff={selectedStaff}
+        businessId={businessId}
+        accessToken={accessToken}
+        onClose={() => { setShowStaffProfile(false); setShowStaffMgmt(true); }}
+        onRefresh={() => {}}
+        onOpenActivity={(staff) => {
+          setSelectedStaff(staff);
+          setShowStaffProfile(false);
+          setShowStaffActivity(true);
+        }}
+      />
+      <StaffActivityLog
+        visible={showStaffActivity}
+        staff={selectedStaff}
+        businessId={businessId}
+        accessToken={accessToken}
+        onClose={() => { setShowStaffActivity(false); setShowStaffProfile(true); }}
+      />
     </Modal>
   );
 }

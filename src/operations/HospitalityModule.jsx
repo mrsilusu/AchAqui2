@@ -2070,9 +2070,6 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
           onOpenReception={() => {}}
-          onOpenStaff={canStaffMgr ? () => {
-            setShowStaffMgmt(true);
-          } : undefined}
           onClose={() => setShowDashboard(false)}
           reloadTrigger={dashboardReloadTrigger}
           guestBookings={activeBookings}
@@ -2111,42 +2108,12 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         />
       )}
 
-      {/* ── STAFF COMPONENTS ──────────────────────────────────────────── */}
+      {/* ── STAFF PIN LOGIN (kiosk PIN mode) ───────────────────────────── */}
       <StaffPinLoginScreen
         visible={showPinLogin}
         businessId={ownerBusinessPrivate?.id || business?.id}
         onSuccess={handleStaffPinSuccess}
         onClose={() => setShowPinLogin(false)}
-      />
-      <StaffManagementModal
-        visible={showStaffMgmt}
-        businessId={ownerBusinessPrivate?.id || business?.id}
-        accessToken={ctx?.accessToken}
-        onClose={() => setShowStaffMgmt(false)}
-        onOpenProfile={(staff) => {
-          setSelectedStaff(staff);
-          setShowStaffProfile(true);
-        }}
-      />
-      <StaffProfileSheet
-        visible={showStaffProfile}
-        staff={selectedStaff}
-        businessId={ownerBusinessPrivate?.id || business?.id}
-        accessToken={ctx?.accessToken}
-        onClose={() => setShowStaffProfile(false)}
-        onRefresh={() => {}}
-        onOpenActivity={(staff) => {
-          setSelectedStaff(staff);
-          setShowStaffProfile(false);
-          setShowStaffActivity(true);
-        }}
-      />
-      <StaffActivityLog
-        visible={showStaffActivity}
-        staff={selectedStaff}
-        businessId={ownerBusinessPrivate?.id || business?.id}
-        accessToken={ctx?.accessToken}
-        onClose={() => setShowStaffActivity(false)}
       />
     </View>
   );
