@@ -579,13 +579,27 @@ export class BookingService {
   async getAvailability(businessId: string, roomTypeId: string, startDate: string, endDate: string) {
     const sDate = new Date(startDate);
     const eDate = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     if (isNaN(sDate.getTime()) || isNaN(eDate.getTime())) {
       throw new BadRequestException('Datas inválidas.');
     }
     const nights = Math.ceil((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
     const [physicalRooms, overlapBookings, businessPolicy] = await Promise.all([
       this.prisma.htRoom.count({
-        where: { roomTypeId, businessId, status: { not: 'MAINTENANCE' } },
+        where: {
+          roomTypeId,
+          businessId,
+          status: { not: 'MAINTENANCE' },
+          NOT: {
+            bookings: {
+              some: {
+                status: HtBookingStatus.CHECKED_IN,
+                endDate: { lt: today },
+              },
+            },
+          },
+        },
       }),
       this.prisma.htRoomBooking.findMany({
         where: {

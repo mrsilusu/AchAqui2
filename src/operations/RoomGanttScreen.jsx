@@ -19,6 +19,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, Alert, ActivityIndicator, RefreshControl, FlatList, TextInput,
   SafeAreaView, Platform, Dimensions,
+  Animated,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
@@ -41,6 +42,8 @@ const BOOKING_COLORS = {
   checked_in:   '#22A06B',
   checked_out:  '#9CA3AF',
   CHECKED_OUT:  '#9CA3AF',
+  NO_SHOW:      '#DC2626',
+  no_show:      '#DC2626',
   cancelled:    '#EF4444',
   CANCELLED:    '#EF4444',
   ical_block:   '#4338CA',
@@ -115,6 +118,21 @@ function addDays(ymd, n) {
   const d = new Date(ymd + 'T00:00:00');
   d.setDate(d.getDate() + n);
   return toYMD(d);
+}
+
+function formatDatePt(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+function toComparableYmd(value) {
+  if (!value) return null;
+  if (value instanceof Date) return toYMD(value);
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : toYMD(parsed);
 }
 
 function dayOfWeek(ymd) {
@@ -279,13 +297,14 @@ function GanttHeader({ dates, onScroll, scrollRef }) {
 }
 
 // ─── GanttBar ────────────────────────────────────────────────────────────────
-function GanttBar({ booking, dates, onPress, hasConflict }) {
+function GanttBar({ booking, dates, onPress, hasConflict, expiredPulse }) {
   const startIdx = dates.findIndex((d) => d >= booking.checkIn);
   const clippedStart = booking.checkIn < dates[0] ? 0 : startIdx;
 
-  const isEarlyOut = !!(booking.checkedOutAt && booking.originalEndDate
-    && booking.checkedOutAt < booking.originalEndDate);
-  const displayEnd = isEarlyOut ? booking.checkedOutAt : booking.checkOut;
+  const checkedOutYmd = toComparableYmd(booking.checkedOutAt);
+  const originalEndYmd = toComparableYmd(booking.originalEndDate);
+  const isEarlyOut = !!(checkedOutYmd && originalEndYmd && checkedOutYmd < originalEndYmd);
+  const displayEnd = isEarlyOut ? checkedOutYmd : booking.checkOut;
   const endIdx = dates.findIndex((d) => d >= displayEnd);
   const clippedEnd = endIdx === -1 ? dates.length : endIdx;
 
@@ -299,11 +318,13 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
 
   const width = (clippedEnd - clippedStart) * DATE_COL_WIDTH - 4;
   const left = clippedStart * DATE_COL_WIDTH + 2;
+  const todayYmd = toYMD(new Date());
+  const isExpired = booking.status === 'CHECKED_IN' && booking.checkOut < todayYmd;
 
   let trailingLeft = 0;
   let trailingWidth = 0;
   if (isEarlyOut) {
-    const origEndIdx = dates.findIndex((d) => d >= booking.originalEndDate);
+    const origEndIdx = dates.findIndex((d) => d >= originalEndYmd);
     const clippedOrig = origEndIdx === -1 ? dates.length : origEndIdx;
     trailingLeft = clippedEnd * DATE_COL_WIDTH + 2;
     trailingWidth = Math.max(0, (clippedOrig - clippedEnd) * DATE_COL_WIDTH - 4);
@@ -313,6 +334,46 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
   if (isIcal) {
     const src = (booking.source || '').toLowerCase();
     label = src.includes('booking') ? 'Bk.com' : src.includes('airbnb') ? 'Airbnb' : 'Externo';
+  }
+
+  let expiredExtension = null;
+  if (isExpired) {
+    const overdueDays = Math.max(
+      0,
+      Math.round((new Date(`${todayYmd}T00:00:00`).getTime() - new Date(`${booking.checkOut}T00:00:00`).getTime()) / 86400000),
+    );
+    const extensionStartIdx = booking.checkOut < dates[0]
+      ? 0
+      : dates.findIndex((d) => d >= booking.checkOut);
+    const todayIdx = dates.findIndex((d) => d >= todayYmd);
+    const extensionEndIdx = todayIdx === -1 ? dates.length : todayIdx;
+    const visibleWidth = Math.max(0, (extensionEndIdx - extensionStartIdx) * DATE_COL_WIDTH - 4);
+
+    if (extensionStartIdx !== -1 && visibleWidth > 0 && expiredPulse) {
+      expiredExtension = (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            gS.bar,
+            {
+              left: extensionStartIdx * DATE_COL_WIDTH + 2,
+              width: visibleWidth,
+              backgroundColor: '#DC2626',
+              opacity: expiredPulse,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={0.85}
+            onPress={() => Alert.alert(
+              'Estadia Expirada',
+              `Saída prevista: ${formatDatePt(booking.endDate || booking.checkOut)}\nEm excesso: ${overdueDays} noite(s)`,
+            )}
+          />
+        </Animated.View>
+      );
+    }
   }
 
   return (
@@ -352,13 +413,14 @@ function GanttBar({ booking, dates, onPress, hasConflict }) {
           ]}
         />
       )}
+      {expiredExtension}
     </>
   );
 }
 
 // ─── GanttRoomRow ────────────────────────────────────────────────────────────
 const GanttRoomRow = memo(function GanttRoomRow({
-  room, dates, bookings, onCellPress, onBarPress, onRoomPress, hasConflict, scrollRef, onScroll,
+  room, dates, bookings, onCellPress, onBarPress, onRoomPress, hasConflict, scrollRef, onScroll, expiredPulse,
 }) {
   return (
     <View style={[gS.roomRow, { height: ROW_HEIGHT }]}>
@@ -414,6 +476,7 @@ const GanttRoomRow = memo(function GanttRoomRow({
               dates={dates}
               onPress={onBarPress}
               hasConflict={hasConflict}
+              expiredPulse={expiredPulse}
             />
           ))}
         </View>
@@ -552,8 +615,9 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
             {booking.cancelReason ? (
               <Text style={[gS.sheetMeta, { color: '#991B1B' }]}>❌ Motivo: {booking.cancelReason}</Text>
             ) : null}
-            {booking.checkedOutAt && booking.originalEndDate
-             && booking.checkedOutAt < booking.originalEndDate && (
+            {toComparableYmd(booking.checkedOutAt)
+             && toComparableYmd(booking.originalEndDate)
+             && toComparableYmd(booking.checkedOutAt) < toComparableYmd(booking.originalEndDate) && (
               <View style={{ marginTop: 4, padding: 8, backgroundColor: '#FEF9C3',
                              borderRadius: 8, borderWidth: 1, borderColor: '#FDE047' }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E' }}>
@@ -901,6 +965,10 @@ export function RoomGanttScreen({
         ...b,
         checkIn:  b.checkIn  ? toYMD(new Date(b.checkIn))  : b.checkIn,
         checkOut: b.checkOut ? toYMD(new Date(b.checkOut)) : b.checkOut,
+        endDate: b.endDate ? new Date(b.endDate) : (b.checkOut ? new Date(b.checkOut) : null),
+        checkedInAt: b.checkedInAt ? new Date(b.checkedInAt) : null,
+        checkedOutAt: b.checkedOutAt ? new Date(b.checkedOutAt) : null,
+        originalEndDate: b.originalEndDate ? new Date(b.originalEndDate) : null,
       }));
       setBookings(normalized.length ? normalized : DEMO_BOOKINGS);
       setLoading(false);
@@ -960,13 +1028,15 @@ export function RoomGanttScreen({
           guestName:  b.guestName  || 'Hóspede',
           checkIn:    ciYmd,
           checkOut:   coYmd,
+          endDate:    b.endDate ? new Date(b.endDate) : (co ? new Date(co) : null),
           nights:     b.nights ?? (ciYmd && coYmd
             ? Math.max(1, Math.round((new Date(coYmd) - new Date(ciYmd)) / 86400000))
             : 1),
           totalPrice: b.totalPrice ?? 0,
           specialRequest: b.specialRequest || b.notes || '',
-          checkedOutAt:    b.checkedOutAt    ? toYMD(new Date(b.checkedOutAt))    : null,
-          originalEndDate: b.originalEndDate ? toYMD(new Date(b.originalEndDate)) : null,
+          checkedInAt:     b.checkedInAt     ? new Date(b.checkedInAt)     : null,
+          checkedOutAt:    b.checkedOutAt    ? new Date(b.checkedOutAt)    : null,
+          originalEndDate: b.originalEndDate ? new Date(b.originalEndDate) : null,
         };
       }).filter((b) => b.checkIn && b.checkOut && b.roomId);
 
@@ -1003,6 +1073,26 @@ export function RoomGanttScreen({
 
   // Carregar apenas uma vez ao montar (businessId + accessToken estáveis)
   useEffect(() => { load(); }, [load]);
+
+  const expiredPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(expiredPulse, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(expiredPulse, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [expiredPulse]);
 
   // ── Janela de datas ──────────────────────────────────────────────────────────
   const dates = useMemo(() => buildDateWindow(startDate, windowDays), [startDate, windowDays]);
@@ -1251,6 +1341,7 @@ export function RoomGanttScreen({
         hasConflict={conflict}
         onScroll={syncAllScroll}
         scrollRef={(ref) => { rowScrollRefs.current[room.id] = ref; }}
+        expiredPulse={expiredPulse}
       />
     );
   }, [roomBookingMap, conflictRooms, dates, handleCellPress, handleBarPress]);

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
-import { HtFolioItemType, HtPaymentMethod } from '@prisma/client';
+import { HtFolioItemType, HtPaymentMethod, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export class AddFolioItemDto {
@@ -50,10 +50,10 @@ export class FinancialCheckoutDto {
 export class HtFolioService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Validar que a reserva pertence ao owner ──────────────────────────────
+  // ─── Validar que a reserva pertence a negócio com acesso HT do utilizador ─
   private async assertOwner(bookingId: string, ownerId: string) {
     const booking = await this.prisma.htRoomBooking.findFirst({
-      where: { id: bookingId, business: { ownerId } },
+      where: { id: bookingId },
       include: {
         business: { select: { id: true, name: true } },
         room:     { select: { id: true, number: true } },
@@ -69,6 +69,31 @@ export class HtFolioService {
       },
     });
     if (!booking) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
+
+    const business = await this.prisma.business.findUnique({
+      where: { id: booking.businessId },
+      select: { ownerId: true },
+    });
+    const isOwner = business?.ownerId === ownerId;
+    if (!isOwner) {
+      const staff = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          businessId: booking.businessId,
+          userId: ownerId,
+          revokedAt: null,
+          OR: [
+            { role: StaffRole.GENERAL_MANAGER },
+            {
+              role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] },
+              OR: [{ module: 'HT' }, { module: null }],
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!staff) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
+    }
+
     return booking;
   }
 
@@ -247,7 +272,7 @@ export class HtFolioService {
           data: {
             businessId:  booking.businessId,
             bookingId,
-            type:        'ACCOMMODATION',
+              type:        'DISCOUNT',
             description: dto.discountReason || 'Desconto',
             quantity:    1,
             unitPrice:   -discount,

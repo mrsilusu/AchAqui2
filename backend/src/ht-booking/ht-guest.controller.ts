@@ -3,12 +3,14 @@ import {
   Query, Req, UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
+import { AppModule, StaffRole, UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { StaffAccess } from '../auth/decorators/staff-access.decorator';
 import { HtGuestService } from './ht-guest.service';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
+@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] })
 @Controller('ht/guests')
 export class HtGuestController {
   constructor(private readonly s: HtGuestService) {}

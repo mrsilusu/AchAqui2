@@ -138,6 +138,8 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const userRole: UserRole | undefined = request.user?.role;
     const userId: string | undefined = request.user?.userId;
+    const jwtStaffRole: StaffRole | undefined = request.user?.staffRole;
+    const jwtBusinessId: string | undefined = request.user?.businessId;
 
     if (requiredRoles?.length && userRole && requiredRoles.includes(userRole)) {
       return true;
@@ -151,6 +153,20 @@ export class RolesGuard implements CanActivate {
       }
       const allowed = await this.hasStaffAccess(userId, businessId, staffAccess.module, staffAccess.roles);
       if (allowed) return true;
+
+      // Fallback para DB legado sem linha em coreBusinessStaff:
+      // aceita claims HT no JWT quando business e role forem compatíveis.
+      if (
+        jwtBusinessId &&
+        businessId === jwtBusinessId &&
+        jwtStaffRole &&
+        (
+          !staffAccess.roles?.length ||
+          staffAccess.roles.includes(jwtStaffRole)
+        )
+      ) {
+        return true;
+      }
     }
 
     // STAFF role with staffId in JWT: allow access to their own business's HT endpoints

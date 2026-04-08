@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -17,8 +18,29 @@ export class HtGuestService {
   }
 
   private async assertOwnership(businessId: string, ownerId: string) {
-    const b = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
-    if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, ownerId: true },
+    });
+    if (!business) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    if (business.ownerId === ownerId) return;
+
+    const staff = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        businessId,
+        userId: ownerId,
+        revokedAt: null,
+        OR: [
+          { role: StaffRole.GENERAL_MANAGER },
+          {
+            role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] },
+            OR: [{ module: 'HT' }, { module: null }],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!staff) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
   // ─── Listar hóspedes ──────────────────────────────────────────────────────

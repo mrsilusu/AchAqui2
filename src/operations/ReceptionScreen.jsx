@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Modal, Alert, ActivityIndicator, RefreshControl, TextInput,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
@@ -144,40 +144,62 @@ function ChangeRoomModal({ visible, booking, rooms, onConfirm, onClose }) {
 }
 
 function CancelReasonModal({ visible, booking, reason, setReason, loading, onConfirm, onClose }) {
+  const safeClose = () => {
+    Keyboard.dismiss();
+    onClose?.();
+  };
+
+  const safeConfirm = () => {
+    Keyboard.dismiss();
+    onConfirm?.();
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={rpS.overlay}>
-        <View style={rpS.sheet}>
-          <View style={rpS.header}>
-            <Text style={rpS.title}>Cancelar Reserva</Text>
-            <TouchableOpacity onPress={onClose} disabled={loading}>
-              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
-            </TouchableOpacity>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={safeClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+      >
+        <View style={rpS.overlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={safeClose} />
+          <View style={[rpS.sheet, { maxHeight: '82%' }]}>
+            <View style={rpS.header}>
+              <Text style={rpS.title}>Cancelar Reserva</Text>
+              <TouchableOpacity onPress={safeClose} disabled={loading}>
+                <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={rpS.sub}>
+                Informe o motivo do cancelamento
+                {booking?.guestName ? ` para ${booking.guestName}` : ''}.
+              </Text>
+              <TextInput
+                style={[rpS.dateInput, { minHeight: 92, textAlignVertical: 'top', marginTop: 0 }]}
+                placeholder="Ex.: cliente pediu cancelamento por alteração da data"
+                value={reason}
+                onChangeText={setReason}
+                multiline
+                editable={!loading}
+                maxLength={500}
+                returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={Keyboard.dismiss}
+              />
+              <TouchableOpacity
+                style={[rpS.skipBtn, { backgroundColor: '#DC2626', marginTop: 12, opacity: loading ? 0.7 : 1 }]}
+                onPress={safeConfirm}
+                disabled={loading}
+              >
+                {loading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={[rpS.skipBtnText, { color: '#fff', fontWeight: '700' }]}>Confirmar Cancelamento</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-          <Text style={rpS.sub}>
-            Informe o motivo do cancelamento
-            {booking?.guestName ? ` para ${booking.guestName}` : ''}.
-          </Text>
-          <TextInput
-            style={[rpS.dateInput, { minHeight: 92, textAlignVertical: 'top', marginTop: 0 }]}
-            placeholder="Ex.: cliente pediu cancelamento por alteração da data"
-            value={reason}
-            onChangeText={setReason}
-            multiline
-            editable={!loading}
-            maxLength={500}
-          />
-          <TouchableOpacity
-            style={[rpS.skipBtn, { backgroundColor: '#DC2626', marginTop: 12, opacity: loading ? 0.7 : 1 }]}
-            onPress={onConfirm}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={[rpS.skipBtnText, { color: '#fff', fontWeight: '700' }]}>Confirmar Cancelamento</Text>}
-          </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -247,6 +269,66 @@ function CalendarPickerSimple({ value, minDate, maxDate, isOpen, onToggle, onCha
         </View>
       )}
     </View>
+  );
+}
+
+function ExpiredStayDateModal({
+  visible,
+  title,
+  subtitle,
+  minDate,
+  maxDate,
+  value,
+  setValue,
+  loading,
+  confirmText,
+  onConfirm,
+  onClose,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!visible) setIsOpen(false);
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rpS.overlay}>
+        <View style={rpS.sheet}>
+          <View style={rpS.header}>
+            <Text style={rpS.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose} disabled={loading}>
+              <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <Text style={rpS.sub}>{subtitle}</Text>
+
+          <CalendarPickerSimple
+            value={value}
+            minDate={minDate}
+            maxDate={maxDate}
+            isOpen={isOpen}
+            onToggle={() => setIsOpen((o) => !o)}
+            onChange={(v) => {
+              setValue(v);
+              setIsOpen(false);
+            }}
+          />
+
+          <TouchableOpacity
+            style={[rpS.skipBtn, { backgroundColor: value ? '#1565C0' : '#E5E7EB', marginTop: 16, opacity: loading ? 0.7 : 1 }]}
+            onPress={onConfirm}
+            disabled={!value || loading}
+          >
+            {loading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={[rpS.skipBtnText, { color: value ? '#fff' : '#888', fontWeight: '700' }]}>{confirmText}</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1179,15 +1261,20 @@ function RoomPickerModal({ visible, rooms, roomTypeId, booking, existingBookings
               <Text style={[rpS.skipBtnText, { color: '#fff' }]}>✅ Confirmar Check-In</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={rpS.skipBtn} onPress={() => {
-              const guestPayload = buildGuestPayload();
-              if (!guestPayload) return;
-              onSkip(guestPayload);
-            }}>
-              <Text style={rpS.skipBtnText}>
-                {noClean ? 'Continuar sem atribuir quarto' : 'Atribuir automaticamente'}
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={rpS.skipBtn} onPress={() => {
+                if (noClean) {
+                  Alert.alert(
+                    'Quarto obrigatório',
+                    'Não é possível concluir o check-in sem quarto atribuído.\nSeleccione um quarto da lista para continuar.',
+                  );
+                  return;
+                }
+                const guestPayload = buildGuestPayload();
+                if (!guestPayload) return;
+                onSkip(guestPayload);
+              }}>
+                <Text style={rpS.skipBtnText}>Atribuir automaticamente</Text>
+              </TouchableOpacity>
           )}
           </ScrollView>
         </View>
@@ -1255,6 +1342,9 @@ function fmt(dateStr, mode = 'date') {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   if (mode === 'time') return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if (mode === 'datetime') {
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
@@ -1314,6 +1404,17 @@ function isLateCheckIn(booking) {
   return bookingStart.getTime() < todayStart.getTime();
 }
 
+function isExpiredStay(booking) {
+  if (normalizeBookingStatus(booking?.status) !== 'CHECKED_IN') return false;
+  const end = parseBookingDate(booking?.endDate || booking?.checkOut);
+  if (!end) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endDate = new Date(end);
+  endDate.setHours(0, 0, 0, 0);
+  return endDate < today;
+}
+
 // ─── Card de reserva individual ───────────────────────────────────────────────
 function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const [open, setOpen] = useState(false);
@@ -1323,6 +1424,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
   const nts  = nights(booking.startDate, booking.endDate);
   const busy = actionLoading === booking.id;
   const showLateAlert = isLateCheckIn(booking);
+  const expiredStay = isExpiredStay(booking);
 
   return (
     <View style={[rS.card, { borderLeftColor: st.color }]}>
@@ -1334,13 +1436,18 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
             {booking.guestName || booking.user?.name || 'Hóspede'}
           </Text>
           <Text style={rS.guestSub}>
-            {room?.name || 'Quarto'}
-            {booking.room?.number ? ` · Nº ${booking.room.number}` : ''}
+            {booking.roomType?.name || room?.name || 'Quarto'}
+            {booking.room?.number ? ` Q. Nº${booking.room.number}` : ''}
             {' · '}{nts} noite{nts !== 1 ? 's' : ''}
           </Text>
         </View>
         <View style={rS.cardHeadRight}>
-          {showLateAlert ? (
+          {expiredStay ? (
+            <View style={{ width: 16, height: 16, alignItems: 'center', justifyContent: 'center', marginRight: 6 }} accessibilityLabel="Estadia terminada" pointerEvents="none">
+              <Text style={{ fontSize: 16, lineHeight: 16, color: '#DC2626' }}>⚠</Text>
+              <Text style={{ position: 'absolute', top: 3, fontSize: 9, lineHeight: 9, color: '#111', fontWeight: '800' }}>!</Text>
+            </View>
+          ) : showLateAlert ? (
             <Text style={{ fontSize: 16, marginRight: 6 }} accessibilityLabel="Check-in atrasado">⚠️</Text>
           ) : null}
           <View style={[rS.badge, { backgroundColor: st.bg }]}>
@@ -1353,6 +1460,14 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
       {/* ── Detalhes expandidos ── */}
       {open && (
         <View style={rS.cardBody}>
+          {expiredStay ? (
+            <View style={rS.expiredStayAlertBox}>
+              <Text style={rS.expiredStayAlertText}>
+                Estadia terminada em {fmt(booking.endDate)}. Acção imediata necessária.
+              </Text>
+            </View>
+          ) : null}
+
           {showLateAlert ? (
             <View style={{
               marginBottom: 10,
@@ -1397,7 +1512,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
           {booking.checkedInAt ? (
             <View style={rS.row}>
               <Icon name="clock" size={13} color={COLORS.green} strokeWidth={2} />
-              <Text style={[rS.rowText, { color: COLORS.green }]}>Check-in às {fmt(booking.checkedInAt, 'time')}</Text>
+              <Text style={[rS.rowText, { color: COLORS.green }]}>Check-in em {fmt(booking.checkedInAt, 'datetime')}</Text>
             </View>
           ) : null}
           {booking.totalPrice ? (
@@ -1467,26 +1582,66 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
             )}
             {statusKey === 'CHECKED_IN' && (
               <>
-                <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio', booking)} disabled={busy}>
-                  <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />
-                  <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Folio</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[rS.btn, { backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#86EFAC' }]} onPress={() => onAction(booking.id, 'guestprofile', booking)} disabled={busy}>
-                  <Icon name="user" size={14} color="#16A34A" strokeWidth={2} />
-                  <Text style={[rS.btnText, { color: '#16A34A', fontWeight: '600' }]}>Perfil</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[rS.btn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]} onPress={() => onAction(booking.id, 'extend', booking)} disabled={busy}>
-                  <Icon name="calendar" size={14} color="#7C3AED" strokeWidth={2} />
-                  <Text style={[rS.btnText, { color: '#7C3AED', fontWeight: '600' }]}>+Dias</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[rS.btn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA' }]} onPress={() => onAction(booking.id, 'changeroom', booking)} disabled={busy}>
-                  <Icon name="map" size={14} color="#D97706" strokeWidth={2} />
-                  <Text style={[rS.btnText, { color: '#D97706', fontWeight: '600' }]}>Quarto</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'checkout')} disabled={busy}>
-                  {busy ? <ActivityIndicator size="small" color="#fff" /> : (
-                    <><Icon name="arrow" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-Out</Text></>
-                  )}
+                {expiredStay ? (
+                  <>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]} onPress={() => onAction(booking.id, 'extend-expired', booking)} disabled={busy}>
+                      <Icon name="calendar" size={14} color="#7C3AED" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#7C3AED', fontWeight: '600' }]}>Estender</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'retroactive-checkout', booking)} disabled={busy}>
+                      <Icon name="calendar" size={14} color="#1565C0" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Retroativo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'force-checkout', booking)} disabled={busy}>
+                      {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+                        <><Icon name="arrow" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Forçar Hoje</Text></>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, rS.btnRed]} onPress={() => onAction(booking.id, 'unconfirmed-checkout', booking)} disabled={busy}>
+                      <Text style={[rS.btnText, { color: '#DC2626' }]}>Não Confirmada</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]} onPress={() => onAction(booking.id, 'folio', booking)} disabled={busy}>
+                      <Icon name="briefcase" size={14} color="#1565C0" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#1565C0', fontWeight: '600' }]}>Folio</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#86EFAC' }]} onPress={() => onAction(booking.id, 'guestprofile', booking)} disabled={busy}>
+                      <Icon name="user" size={14} color="#16A34A" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#16A34A', fontWeight: '600' }]}>Perfil</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#C4B5FD' }]} onPress={() => onAction(booking.id, 'extend', booking)} disabled={busy}>
+                      <Icon name="calendar" size={14} color="#7C3AED" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#7C3AED', fontWeight: '600' }]}>+Dias</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA' }]} onPress={() => onAction(booking.id, 'changeroom', booking)} disabled={busy}>
+                      <Icon name="map" size={14} color="#D97706" strokeWidth={2} />
+                      <Text style={[rS.btnText, { color: '#D97706', fontWeight: '600' }]}>Quarto</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[rS.btn, rS.btnOrange]} onPress={() => onAction(booking.id, 'checkout')} disabled={busy}>
+                      {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+                        <><Icon name="arrow" size={14} color="#fff" strokeWidth={2.5} /><Text style={rS.btnWhite}>Check-Out</Text></>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            )}
+            {statusKey === 'NO_SHOW' && (
+              <>
+                <TouchableOpacity
+                  style={[
+                    rS.btn,
+                    { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
+                    (booking.folio?.paymentStatus === 'PAID') && { opacity: 0.5 },
+                  ]}
+                  onPress={() => onAction(booking.id, 'revert-noshow', booking)}
+                  disabled={busy || booking.folio?.paymentStatus === 'PAID'}
+                >
+                  <Text style={[rS.btnText, { color: '#DC2626', fontWeight: '600' }]}>
+                    {booking.folio?.paymentStatus === 'PAID' ? 'Folio Encerrado' : '↩️ Reverter No-Show'}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1648,14 +1803,13 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
   const handleCreate = async () => {
     setLoading(true);
     try {
-      await backendApi.createBooking({
-        businessId, bookingType: 'ROOM', roomTypeId,
+      await backendApi.htCreateBooking({
+        businessId, roomTypeId,
         startDate: toIso(startDate), endDate: toIso(endDate),
         guestName: guestName.trim(),
         guestPhone: guestPhone.trim() || undefined,
-        adults: parseInt(adults,10)||1, rooms: 1,
+        adults: parseInt(adults,10)||1,
         notes: notes.trim() || undefined,
-        status: 'CONFIRMED',
       }, accessToken);
       onCreated?.(); onClose(); reset();
     } catch (e) {
@@ -1942,6 +2096,11 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const [cancelLoading, setCancelLoading] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [noShowBannerDismissed, setNoShowBannerDismissed] = useState(false);
+  const [expiredStays, setExpiredStays] = useState([]);
+  const [showExpiredList, setShowExpiredList] = useState(false);
+  const [expiredDateModal, setExpiredDateModal] = useState(null);
+  const [expiredDateValue, setExpiredDateValue] = useState('');
+  const [expiredDateLoading, setExpiredDateLoading] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -1975,7 +2134,23 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
     }
   }, [businessId, accessToken]);
 
+  const checkExpiredStays = useCallback(async () => {
+    if (!businessId || !accessToken) return;
+    try {
+      const result = await backendApi.htGetExpiredStays(businessId, accessToken);
+      if (alive.current) setExpiredStays(Array.isArray(result) ? result : []);
+    } catch {
+      // silencioso: não interromper fluxo de receção
+    }
+  }, [businessId, accessToken]);
+
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    checkExpiredStays();
+    const intervalId = setInterval(checkExpiredStays, 30 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [checkExpiredStays]);
 
   const _paRef = React.useRef(null);
   React.useEffect(() => {
@@ -1987,6 +2162,101 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       setTimeout(() => handleAction(pa.bookingId, pa.action, pa.bk), 300);
     }
   }, [loading]);
+
+  const toDDMMYYYY = useCallback((d) => {
+    if (!d) return '';
+    const dt = d instanceof Date ? d : new Date(d);
+    if (Number.isNaN(dt.getTime())) return '';
+    return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+  }, []);
+
+  const ddmmyyyyToISO = useCallback((v) => {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    const [dd, mm, yyyy] = s.split('/').map(Number);
+    if (!dd || !mm || !yyyy) return null;
+    const dt = new Date(Date.UTC(yyyy, mm - 1, dd, 12, 0, 0));
+    return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+  }, []);
+
+  const openExpiredDateFlow = useCallback((mode, booking) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (mode === 'extend') {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setExpiredDateValue(toDDMMYYYY(tomorrow));
+      setExpiredDateModal({
+        mode,
+        booking,
+        title: 'Estender Estadia Expirada',
+        subtitle: 'Selecione a nova data de saída.',
+        minDate: toDDMMYYYY(tomorrow),
+        maxDate: null,
+        confirmText: 'Confirmar Extensão',
+      });
+      return;
+    }
+
+    const minBase = booking?.checkedInAt || booking?.startDate;
+    setExpiredDateValue(toDDMMYYYY(today));
+    setExpiredDateModal({
+      mode,
+      booking,
+      title: 'Checkout Retroactivo',
+      subtitle: 'Selecione a data real de saída.',
+      minDate: toDDMMYYYY(minBase || today),
+      maxDate: toDDMMYYYY(today),
+      confirmText: 'Confirmar Checkout',
+    });
+  }, [toDDMMYYYY]);
+
+  const confirmExpiredDateFlow = useCallback(async () => {
+    if (!expiredDateModal?.booking) return;
+    const iso = ddmmyyyyToISO(expiredDateValue);
+    if (!iso) {
+      Alert.alert('Data inválida', 'Selecione uma data válida para continuar.');
+      return;
+    }
+
+    const booking = expiredDateModal.booking;
+    const guestName = booking?.guestName || booking?.user?.name || 'hóspede';
+    const isExtend = expiredDateModal.mode === 'extend';
+    const title = isExtend ? 'Confirmar Extensão' : 'Confirmar Checkout Retroactivo';
+    const msg = isExtend
+      ? `Estender estadia de ${guestName} até ${expiredDateValue}?`
+      : `Registar saída de ${guestName} em ${expiredDateValue}?`;
+
+    Alert.alert(title, msg, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        onPress: async () => {
+          setExpiredDateLoading(true);
+          setActionLoading(booking.id);
+          try {
+            if (isExtend) {
+              await backendApi.htExtendExpiredStay(booking.id, { newEndDate: iso }, accessToken);
+            } else {
+              await backendApi.htRetroactiveCheckout(booking.id, { realCheckoutDate: iso }, accessToken);
+            }
+            setExpiredDateModal(null);
+            setExpiredDateValue('');
+            await load(true);
+            await checkExpiredStays();
+            Alert.alert('Sucesso', isExtend ? 'Estadia estendida com sucesso.' : 'Checkout retroactivo registado.');
+          } catch (err) {
+            Alert.alert('Erro', err?.message || (isExtend ? 'Não foi possível estender a estadia.' : 'Não foi possível registar o checkout.'));
+          } finally {
+            if (alive.current) {
+              setExpiredDateLoading(false);
+              setActionLoading(null);
+            }
+          }
+        },
+      },
+    ]);
+  }, [accessToken, checkExpiredStays, ddmmyyyyToISO, expiredDateModal, expiredDateValue, load]);
 
   const handleAction = useCallback(async (bookingId, action, bookingObj = null) => {
     const labels = { checkin: 'Check-In', checkout: 'Check-Out', noshow: 'No-Show', confirm: 'Confirmar' };
@@ -2084,6 +2354,136 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
       }
       setCancelReason('');
       setCancelModal(bk);
+      return;
+    }
+
+    // Reverter No-Show
+    if (action === 'revert-noshow') {
+      const bk = bookingObj || [...(data.arrivals || []), ...(data.guests || []), ...(data.departures || [])].find(b => b.id === bookingId);
+      if (!bk || bk.status !== 'NO_SHOW') return;
+
+      // Verificar se folio está encerrado
+      const folioEncerrado = bk.folio?.paymentStatus === 'PAID';
+      if (folioEncerrado) {
+        Alert.alert('Folio Encerrado', 'O folio já foi pago — não é possível reverter o No-Show.');
+        return;
+      }
+
+      // Determinar se há penalidade configurada (usar padrão: com penalidade = true)
+      const hasPenalty = true; // Frontend sempre envia true por defaut; backend valida config
+
+      const message = hasPenalty
+        ? `Reverter No-Show com penalidade?\n\nO hóspede faz check-in agora. Data original mantida. Penalidade adicionada ao folio.`
+        : `Reverter No-Show sem penalidade?\n\nCheck-in efectivo agora. Período cobrado a partir de hoje.`;
+
+      Alert.alert(
+        'Reverter No-Show',
+        message,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: hasPenalty ? 'Reverter com Penalidade' : 'Reverter',
+            onPress: async () => {
+              setActionLoading(bookingId);
+              try {
+                await backendApi.htRevertNoShow(bookingId, { applyPenalty: hasPenalty }, accessToken);
+                await load(true);
+                Alert.alert('Sucesso', 'No-Show revertido. Hóspede em check-in.');
+              } catch (e) {
+                Alert.alert('Erro', e?.message || 'Não foi possível reverter o No-Show.');
+              } finally {
+                if (alive.current) setActionLoading(null);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    if (action === 'extend-expired' || action === 'retroactive-checkout') {
+      const bk = bookingObj || [...(data.guests || []), ...(data.departures || [])].find((b) => b.id === bookingId);
+      if (!bk) return;
+      if (bk.folio?.paymentStatus === 'PAID' || bk.paymentStatus === 'PAID') {
+        Alert.alert('Folio Encerrado', 'Folio já encerrado — não é possível alterar valores. Contacte o administrador.');
+        return;
+      }
+      openExpiredDateFlow(action === 'extend-expired' ? 'extend' : 'retroactive', bk);
+      return;
+    }
+
+    if (action === 'force-checkout') {
+      const bk = bookingObj || [...(data.guests || []), ...(data.departures || [])].find((b) => b.id === bookingId);
+      if (!bk) return;
+      if (bk.folio?.paymentStatus === 'PAID' || bk.paymentStatus === 'PAID') {
+        Alert.alert('Folio Encerrado', 'Folio já encerrado — não é possível alterar valores. Contacte o administrador.');
+        return;
+      }
+
+      const today = new Date();
+      const endDate = new Date(bk.endDate);
+      const overdueDays = Math.max(0, Math.ceil((today.getTime() - endDate.getTime()) / 86400000));
+      const pricePerNight = bk?.room?.roomType?.pricePerNight ?? bk?.roomType?.pricePerNight ?? 0;
+      const extraCharge = overdueDays * pricePerNight;
+      const guestName = bk?.guestName || bk?.user?.name || 'hóspede';
+
+      const message = [
+        `Checkout de ${guestName} hoje (${fmt(today, 'date')})?`,
+        '',
+        `Checkout previsto: ${fmt(endDate, 'date')}`,
+        `Noites em excesso: ${overdueDays} noite(s)`,
+        extraCharge > 0 ? `Valor extra a cobrar: ${Math.round(extraCharge).toLocaleString('pt-PT')} Kz` : null,
+      ].filter(Boolean).join('\n');
+
+      Alert.alert('Checkout Forçado', message, [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar Checkout',
+          onPress: async () => {
+            setActionLoading(bookingId);
+            try {
+              await backendApi.htForceCheckout(bookingId, accessToken);
+              await load(true);
+              await checkExpiredStays();
+              Alert.alert('Sucesso', 'Checkout forçado registado.');
+            } catch (err) {
+              Alert.alert('Erro', err?.message || 'Não foi possível registar o checkout.');
+            } finally {
+              if (alive.current) setActionLoading(null);
+            }
+          },
+        },
+      ]);
+      return;
+    }
+
+    if (action === 'unconfirmed-checkout') {
+      const bk = bookingObj || [...(data.guests || []), ...(data.departures || [])].find((b) => b.id === bookingId);
+      if (!bk) return;
+      const guestName = bk?.guestName || bk?.user?.name || 'hóspede';
+      Alert.alert(
+        'Saída Não Confirmada',
+        `Não foi possível confirmar a saída de ${guestName}.\nO quarto será marcado para inspeção.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Confirmar',
+            onPress: async () => {
+              setActionLoading(bookingId);
+              try {
+                await backendApi.htUnconfirmedCheckout(bookingId, accessToken);
+                await load(true);
+                await checkExpiredStays();
+                Alert.alert('Sucesso', 'Saída registada. Quarto marcado para inspeção.');
+              } catch (err) {
+                Alert.alert('Erro', err?.message || 'Erro ao registar saída.');
+              } finally {
+                if (alive.current) setActionLoading(null);
+              }
+            },
+          },
+        ],
+      );
       return;
     }
 
@@ -2201,7 +2601,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
           try {
             if (action === 'checkout') await backendApi.htCheckOut(bookingId, accessToken);
             if (action === 'noshow')   await backendApi.htNoShow(bookingId, accessToken);
-            if (action === 'confirm')  await backendApi.confirmBooking(bookingId, { businessId }, accessToken);
+            if (action === 'confirm')  await backendApi.htConfirmBooking(bookingId, accessToken);
             await load(true);
           } catch (e) {
             Alert.alert('Erro', e?.message || 'Operação falhou. Tenta novamente.');
@@ -2211,7 +2611,7 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
         },
       },
     ]);
-  }, [accessToken, businessId, load, data]);
+  }, [accessToken, businessId, load, data, openExpiredDateFlow, checkExpiredStays]);
 
   const submitCancelBooking = useCallback(async () => {
     if (!cancelModal) return;
@@ -2484,6 +2884,20 @@ Deseja continuar mesmo assim (quarto em uso)?`,
               );
             })()}
 
+            {expiredStays.length > 0 && (
+              <TouchableOpacity
+                style={rS.expiredBanner}
+                onPress={() => setShowExpiredList(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={rS.expiredBannerText}>
+                  {`🔴 ${expiredStays.length} ${expiredStays.length === 1
+                    ? 'estadia com data de saída expirada'
+                    : 'estadias com data de saída expirada'} — ação necessária`}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {list.length === 0 ? (
               <View style={rS.empty}>
                 <Text style={{ fontSize: 40, marginBottom: 14 }}>
@@ -2593,6 +3007,54 @@ Deseja continuar mesmo assim (quarto em uso)?`,
           setCancelReason('');
         }}
       />
+
+      <ExpiredStayDateModal
+        visible={!!expiredDateModal}
+        title={expiredDateModal?.title || 'Selecionar data'}
+        subtitle={expiredDateModal?.subtitle || ''}
+        minDate={expiredDateModal?.minDate || null}
+        maxDate={expiredDateModal?.maxDate || null}
+        value={expiredDateValue}
+        setValue={setExpiredDateValue}
+        loading={expiredDateLoading}
+        confirmText={expiredDateModal?.confirmText || 'Confirmar'}
+        onConfirm={confirmExpiredDateFlow}
+        onClose={() => {
+          if (expiredDateLoading) return;
+          setExpiredDateModal(null);
+          setExpiredDateValue('');
+        }}
+      />
+
+      <Modal visible={showExpiredList} transparent animationType="fade" onRequestClose={() => setShowExpiredList(false)}>
+        <View style={rpS.overlay}>
+          <View style={[rpS.sheet, { maxHeight: '80%' }]}>
+            <View style={rpS.header}>
+              <Text style={rpS.title}>Estadias Expiradas</Text>
+              <TouchableOpacity onPress={() => setShowExpiredList(false)}>
+                <Icon name="x" size={18} color={COLORS.darkText} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {(expiredStays || []).map((bk) => (
+                <View key={bk.id} style={[rpS.roomRow, { alignItems: 'flex-start', gap: 6 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#111' }}>
+                      {bk.guestName || bk.user?.name || 'Hóspede'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
+                      Saída prevista: {fmt(bk.endDate)}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
+                      Quarto: {bk.roomType?.name || bk.room?.roomType?.name || 'Quarto'}{bk.room?.number ? ` Q. Nº${bk.room.number}` : ''}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -2626,6 +3088,16 @@ const rS = StyleSheet.create({
   cardBody:      { paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: '#F0EDE6', gap: 6 },
   row:           { flexDirection: 'row', alignItems: 'center', gap: 7 },
   rowText:       { fontSize: 13, color: '#444', flex: 1 },
+  expiredStayAlertBox: {
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  expiredStayAlertText: { fontSize: 12, fontWeight: '700', color: '#991B1B' },
   actions:       { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   btn:           { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, minWidth: 80, justifyContent: 'center' },
   btnGreen:      { backgroundColor: '#22A06B' },
@@ -2634,6 +3106,19 @@ const rS = StyleSheet.create({
   btnRed:        { backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' },
   btnWhite:      { fontSize: 13, fontWeight: '700', color: '#fff' },
   btnText:       { fontSize: 13, fontWeight: '700' },
+  expiredBanner: {
+    backgroundColor: '#DC2626',
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  expiredBannerText: {
+    color: '#fff',
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 14,
+  },
   center:        { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   empty:         { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
   emptyTitle:    { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 6 },

@@ -1319,7 +1319,7 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -1363,6 +1363,11 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setStaffToken(token);
     setShowPinLogin(false);
   }, []);
+
+  useEffect(() => {
+    if (!isStaff || !canDashboard) return;
+    setShowDashboard(true);
+  }, [isStaff, canDashboard]);
 
   useEffect(() => {
     if (!openStaffOnMount || !canStaffMgr) return;
@@ -1845,6 +1850,24 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     if (totalAvail < totalCap) return { state: 'partial', available: totalAvail, total: totalCap };
     return { state: 'available', available: totalAvail, total: totalCap };
   }, [calendarDayAvailMap, filteredRooms, ownerRoomsWithIcal, activeBookings, getSellablePercentForRoom]);
+  if (isStaff && canDashboard) {
+    return (
+      <DashboardPMS
+        businessId={ownerBusinessPrivate?.id || business?.id}
+        accessToken={ctx?.accessToken}
+        staffToken={staffToken ?? null}
+        onOpenReception={() => {}}
+        onClose={() => {}}
+        onLogout={onLogout}
+        reloadTrigger={dashboardReloadTrigger}
+        guestBookings={activeBookings}
+        roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
+        noShowAlertBookings={noShowAlertDismissed ? [] : noShowAlertBookings}
+        onDismissNoShowAlert={() => setNoShowAlertDismissed(true)}
+      />
+    );
+  }
+
   if (rooms.length === 0) return (
     <View style={hS.emptyState}>
       <Text style={hS.emptyIcon}>🏨</Text>
@@ -2069,6 +2092,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <DashboardPMS
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
+          staffToken={isOwner ? null : (staffToken ?? null)}
+          onLogout={onLogout}
           onOpenReception={() => {}}
           onClose={() => setShowDashboard(false)}
           reloadTrigger={dashboardReloadTrigger}

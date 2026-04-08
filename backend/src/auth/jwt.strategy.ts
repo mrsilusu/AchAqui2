@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { UserRole } from '@prisma/client';
+import { AppModule, StaffRole, UserRole } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +9,10 @@ interface JwtPayload {
   sub: string;
   email: string;
   role: UserRole;
+  staffRoles?: Array<{ businessId: string; module: AppModule | null; role: StaffRole }>;
+  staffRole?: StaffRole;
+  businessId?: string;
+  staffId?: string;
 }
 
 @Injectable()
@@ -50,6 +54,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: payload.sub,
       email: payload.email,
       role: payload.role,
+      staffRoles: Array.isArray(payload.staffRoles) ? payload.staffRoles : [],
+      staffRole: payload.staffRole,
+      businessId: payload.businessId,
+      staffId: payload.staffId,
     };
   }
 }

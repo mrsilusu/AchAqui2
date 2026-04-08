@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -11,8 +12,29 @@ export class HtRoomsService {
       throw new BadRequestException('businessId é obrigatório.');
     }
 
-    const b = await this.prisma.business.findFirst({ where: { id: scopedBusinessId, ownerId } });
+    const b = await this.prisma.business.findUnique({
+      where: { id: scopedBusinessId },
+      select: { id: true, ownerId: true },
+    });
     if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    if (b.ownerId !== ownerId) {
+      const staff = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          businessId: scopedBusinessId,
+          userId: ownerId,
+          revokedAt: null,
+          OR: [
+            { role: StaffRole.GENERAL_MANAGER },
+            {
+              role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] },
+              OR: [{ module: 'HT' }, { module: null }],
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!staff) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    }
     return scopedBusinessId;
   }
 

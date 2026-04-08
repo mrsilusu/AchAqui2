@@ -1,23 +1,66 @@
 // backend/src/ht-booking/ht-dashboard.service.ts
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { HtStaffDepartment, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class HtDashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async assertOwnership(businessId: string, ownerId: string) {
-    const b = await this.prisma.business.findFirst({
+  private async hasBusinessAccess(businessId: string, userId: string, allowedRoles?: StaffRole[]) {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, ownerId: true },
+    });
+    if (!business) return false;
+    if (business.ownerId === userId) return true;
+
+    const roleFilter = allowedRoles?.length
+      ? { in: allowedRoles }
+      : { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] };
+
+    const staff = await this.prisma.coreBusinessStaff.findFirst({
       where: {
-        id: businessId,
+        businessId,
+        userId,
+        revokedAt: null,
         OR: [
-          { ownerId },
-          // fallback: negócio sem owner ainda atribuído mas reivindicado pelo user
-          { ownerId: null, id: businessId },
+          { role: StaffRole.GENERAL_MANAGER },
+          {
+            role: roleFilter as any,
+            OR: [{ module: 'HT' }, { module: null }],
+          },
         ],
       },
+      select: { id: true },
     });
-    if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    if (staff) return true;
+
+    // Fallback para ambientes legados: relação ativa em ht_staff sem sincronização em coreBusinessStaff.
+    const htStaff = await this.prisma.htStaff.findFirst({
+      where: {
+        businessId,
+        userId,
+        isActive: true,
+      },
+      select: { department: true },
+    });
+    if (!htStaff) return false;
+
+    if (!allowedRoles?.length) return true;
+
+    const inferredRole = htStaff.department === HtStaffDepartment.RECEPTION
+      ? StaffRole.HT_RECEPTIONIST
+      : htStaff.department === HtStaffDepartment.MANAGEMENT
+        ? StaffRole.HT_MANAGER
+        : StaffRole.HT_HOUSEKEEPER;
+
+    return allowedRoles.includes(inferredRole);
+  }
+
+  private async assertOwnership(businessId: string, ownerId: string) {
+    const allowed = await this.hasBusinessAccess(businessId, ownerId);
+    if (!allowed) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
   async getDashboard(businessId: string, ownerId: string) {
@@ -200,6 +243,17 @@ export class HtDashboardService {
         pendingTasks,
         avgCleaningByRoomType,
       },
+        kpis: {
+          adr:    departuresToday > 0
+                    ? Math.round((revenueToday._sum.totalPrice ?? 0) / departuresToday)
+                    : 0,
+          revpar: (() => {
+                    const adr = departuresToday > 0
+                      ? Math.round((revenueToday._sum.totalPrice ?? 0) / departuresToday)
+                      : 0;
+                    return Math.round(adr * (occupancyRate / 100));
+                  })(),
+        },
     };
   }
   // ─── Reservas para o Mapa (período configurável) ────────────────────────
@@ -215,7 +269,7 @@ export class HtDashboardService {
       this.prisma.htRoomBooking.findMany({
         where: {
           businessId,
-          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED'] },
+          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'NO_SHOW', 'CANCELLED'] },
           OR: [
             { startDate: { lte: to }, endDate: { gte: from } },
           ],
@@ -224,7 +278,7 @@ export class HtDashboardService {
           id: true, guestName: true, guestPhone: true, startDate: true, endDate: true,
           status: true, roomId: true, roomTypeId: true, totalPrice: true,
           cancelledAt: true, cancelReason: true,
-          checkedOutAt: true, originalEndDate: true,
+          checkedInAt: true, checkedOutAt: true, originalEndDate: true,
           paymentStatus: true, adults: true, children: true, rooms: true,
           roomType: { select: { id: true, name: true } },
         },
@@ -255,6 +309,7 @@ export class HtDashboardService {
         totalPrice:    bk.totalPrice,
         cancelledAt:   bk.cancelledAt,
         cancelReason:  bk.cancelReason,
+        checkedInAt:     bk.checkedInAt?.toISOString()     ?? null,
         checkedOutAt:    bk.checkedOutAt?.toISOString()    ?? null,
         originalEndDate: bk.originalEndDate?.toISOString() ?? null,
         paymentStatus: bk.paymentStatus,
@@ -274,7 +329,8 @@ export class HtDashboardService {
       include: { room: { include: { business: { select: { id: true, ownerId: true } } } } },
     });
     if (!task) throw new NotFoundException('Tarefa não encontrada.');
-    if (task.room.business.ownerId !== ownerId) {
+    const allowed = await this.hasBusinessAccess(task.room.business.id, ownerId, [StaffRole.HT_MANAGER, StaffRole.HT_HOUSEKEEPER]);
+    if (!allowed) {
       throw new ForbiddenException('Sem permissão para esta tarefa.');
     }
     if (task.completedAt) {
@@ -302,10 +358,11 @@ export class HtDashboardService {
   async approveInspection(roomId: string, ownerId: string) {
     const room = await this.prisma.htRoom.findUnique({
       where: { id: roomId },
-      include: { business: { select: { ownerId: true } } },
+      include: { business: { select: { id: true, ownerId: true } } },
     });
     if (!room) throw new NotFoundException('Quarto não encontrado.');
-    if (room.business.ownerId !== ownerId) {
+    const allowed = await this.hasBusinessAccess(room.business.id, ownerId, [StaffRole.HT_MANAGER]);
+    if (!allowed) {
       throw new ForbiddenException('Sem permissão para este quarto.');
     }
 

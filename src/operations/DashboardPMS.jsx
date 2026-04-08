@@ -15,6 +15,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   ScrollView, Modal, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { HousekeepingScreen } from './HousekeepingScreen';
@@ -25,6 +26,7 @@ import { RoomGanttScreen } from './RoomGanttScreen';
 import StaffManagementModal from './StaffManagementModal';
 import StaffProfileSheet from './StaffProfileSheet';
 import StaffActivityLog from './StaffActivityLog';
+import { canSeeSection } from '../lib/staffPermissions';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -123,8 +125,8 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
   const dirtyCount    = rooms.filter(r => r.status === 'DIRTY' || r.status === 'CLEANING').length;
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={dS.root}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={dS.root} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={dS.header}>
           <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
@@ -164,7 +166,7 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
           )}
           <View style={{ height: 40 }} />
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -173,6 +175,8 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 export function DashboardPMS({
   businessId,
   accessToken,
+  staffToken = null,
+  onLogout,
   onOpenReception,
   onClose,
   reloadTrigger = 0,
@@ -181,6 +185,14 @@ export function DashboardPMS({
   noShowAlertBookings = [],
   onDismissNoShowAlert,
 }) {
+  const insets = useSafeAreaInsets();
+  const isStaffMode = !!staffToken;
+  const effectiveAccessToken = accessToken || staffToken || null;
+  const canAccessReception = !isStaffMode || canSeeSection(staffToken, 'reception');
+  const canAccessHousekeeping = !isStaffMode || canSeeSection(staffToken, 'housekeeping');
+  const canAccessBookingsMgr = !isStaffMode || canSeeSection(staffToken, 'bookingsManager');
+  const canAccessStaff = !isStaffMode || canSeeSection(staffToken, 'staffManager');
+
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -211,10 +223,10 @@ export function DashboardPMS({
   }, []);
 
   const load = useCallback(async (isRefresh = false) => {
-    if (!businessId || !accessToken) return;
+    if (!businessId || !effectiveAccessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const result = await backendApi.getHtDashboard(businessId, accessToken);
+      const result = await backendApi.getHtDashboard(businessId, effectiveAccessToken);
       if (!alive.current) return;
       setData(result);
     } catch (e) {
@@ -224,7 +236,7 @@ export function DashboardPMS({
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [businessId, accessToken]);
+  }, [businessId, effectiveAccessToken]);
 
   // Recarregar quando reloadTrigger muda (ex: depois de acções na Receção)
   useEffect(() => { load(); }, [load, reloadTrigger]);
@@ -234,7 +246,7 @@ export function DashboardPMS({
     const loadBusinessPolicy = async () => {
       if (!businessId) return;
       try {
-        const biz = await backendApi.getBusiness(businessId, accessToken);
+        const biz = await backendApi.getBusiness(businessId, effectiveAccessToken);
         if (cancelled) return;
         const metadata = (biz?.metadata && typeof biz.metadata === 'object') ? biz.metadata : {};
         const raw = Number(metadata?.pms?.sellablePercent ?? 100);
@@ -249,7 +261,7 @@ export function DashboardPMS({
     };
     loadBusinessPolicy();
     return () => { cancelled = true; };
-  }, [businessId, accessToken]);
+  }, [businessId, effectiveAccessToken]);
 
   const submitCancelFromMap = useCallback(async () => {
     if (!cancelBookingFromMap) return;
@@ -260,7 +272,7 @@ export function DashboardPMS({
     }
     setCancelMapLoading(true);
     try {
-      await backendApi.cancelBooking(cancelBookingFromMap.id, { reason }, accessToken);
+      await backendApi.cancelBooking(cancelBookingFromMap.id, { reason }, effectiveAccessToken);
       setCancelBookingFromMap(null);
       setCancelReasonFromMap('');
       load(true);
@@ -269,7 +281,7 @@ export function DashboardPMS({
     } finally {
       if (alive.current) setCancelMapLoading(false);
     }
-  }, [cancelBookingFromMap, cancelReasonFromMap, accessToken, load]);
+  }, [cancelBookingFromMap, cancelReasonFromMap, effectiveAccessToken, load]);
 
   const handleSaveSellablePercent = useCallback(async () => {
     const raw = Number(sellablePercentInput);
@@ -288,7 +300,7 @@ export function DashboardPMS({
 
     try {
       setPolicySaving(true);
-      await backendApi.htUpdatePmsConfig(businessId, { overbookingBuffer: safe }, accessToken);
+      await backendApi.htUpdatePmsConfig(businessId, { overbookingBuffer: safe }, effectiveAccessToken);
       if (!alive.current) return;
       setBusinessMetadata(metadata);
       setSellablePercentInput(String(safe));
@@ -300,21 +312,21 @@ export function DashboardPMS({
     } finally {
       if (alive.current) setPolicySaving(false);
     }
-  }, [sellablePercentInput, businessMetadata, businessId, accessToken, load]);
+  }, [sellablePercentInput, businessMetadata, businessId, effectiveAccessToken, load]);
 
   // ─── Housekeeping: marcar quarto como limpo ou em manutenção ─────────────
   const handleMarkClean = useCallback(async (roomId, taskId) => {
     setActionLoading(roomId);
     try {
-      if (taskId) await backendApi.completeHousekeepingTask(taskId, accessToken);
-      else await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, accessToken);
+      if (taskId) await backendApi.completeHousekeepingTask(taskId, effectiveAccessToken);
+      else await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, effectiveAccessToken);
       await load(true);
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível marcar o quarto como limpo.');
     } finally {
       if (alive.current) setActionLoading(null);
     }
-  }, [accessToken, load]);
+  }, [effectiveAccessToken, load]);
 
   const handleMarkMaintenance = useCallback(async (roomId) => {
     Alert.alert('Manutenção', 'Marcar quarto como em manutenção?', [
@@ -324,7 +336,7 @@ export function DashboardPMS({
         onPress: async () => {
           setActionLoading(roomId);
           try {
-            await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, accessToken);
+            await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, effectiveAccessToken);
             await load(true);
           } catch (e) {
             Alert.alert('Erro', e?.message || 'Operação falhou.');
@@ -334,18 +346,18 @@ export function DashboardPMS({
         },
       },
     ]);
-  }, [accessToken, load]);
+  }, [effectiveAccessToken, load]);
 
   const today = new Date();
   const todayStr = fmtDate(today);
   const showNoShowBanner = noShowAlertBookings.length > 0;
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={dS.root}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={dS.root} edges={['left', 'right']}>
 
         {/* ── Header ── */}
-        <View style={dS.header}>
+        <View style={[dS.header, { paddingTop: Math.max(14, insets.top + 8) }]}>
           <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
             <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -353,9 +365,15 @@ export function DashboardPMS({
             <Text style={dS.headerTitle}>Dashboard</Text>
             <Text style={dS.headerSub}>{todayStr}</Text>
           </View>
-          <TouchableOpacity style={dS.iconBtn} onPress={() => load(true)}>
-            <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
-          </TouchableOpacity>
+          {isStaffMode && typeof onLogout === 'function' ? (
+            <TouchableOpacity style={[dS.iconBtn, dS.logoutBtn]} onPress={onLogout}>
+              <Text style={dS.logoutBtnText}>Logout</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={dS.iconBtn} onPress={() => load(true)}>
+              <Icon name="calendar" size={18} color={COLORS.blue} strokeWidth={2} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {loading ? (
@@ -496,11 +514,14 @@ export function DashboardPMS({
 
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
+              {canAccessReception && (
               <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
                 <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessHousekeeping && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
                 onPress={() => setShowHousekeeping(true)}
@@ -517,6 +538,8 @@ export function DashboardPMS({
                 </Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessHousekeeping && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#1565C0' }]}
                 onPress={() => setShowRooms(true)}
@@ -527,6 +550,8 @@ export function DashboardPMS({
                 </Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D32323' }]}
                 onPress={() => setShowMap(true)}
@@ -535,6 +560,8 @@ export function DashboardPMS({
                 <Text style={dS.receptionBtnText}>Mapa de Reservas</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#0891B2' }]}
                 onPress={() => setShowGantt(true)}
@@ -544,6 +571,8 @@ export function DashboardPMS({
                 <Text style={dS.receptionBtnText}>Mapa · Gantt · Quartos</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessBookingsMgr && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
                 onPress={() => setShowGuests(true)}
@@ -552,6 +581,8 @@ export function DashboardPMS({
                 <Text style={dS.receptionBtnText}>Hóspedes · Perfis / Histórico</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
+              {canAccessStaff && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D97706' }]}
                 onPress={() => setShowStaffMgmt(true)}
@@ -560,6 +591,7 @@ export function DashboardPMS({
                 <Text style={dS.receptionBtnText}>Staff</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
+              )}
             </View>
 
             {/* ── Room Calendar (vista semanal) ── */}
@@ -624,11 +656,11 @@ export function DashboardPMS({
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
-      </View>
+      </SafeAreaView>
       {showReception && (
         <ReceptionScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           roomTypes={[]}
           pendingAction={pendingReceptionAction}
           onPendingActionConsumed={() => setPendingReceptionAction(null)}
@@ -638,7 +670,7 @@ export function DashboardPMS({
       {showHousekeeping && (
         <HousekeepingScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           onTaskCompleted={() => load(true)}
           onClose={() => { setShowHousekeeping(false); load(true); }}
         />
@@ -646,11 +678,11 @@ export function DashboardPMS({
       {showMap && (
         <ReservationMapModal
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           onClose={() => { setShowMap(false); load(true); }}
           onBookingAction={async (bookingId, action, bk) => {
             setShowMap(false);
-            const token = accessToken;
+            const token = effectiveAccessToken;
             try {
               // Regra: check-in requer CONFIRMED
               if (action === 'checkin') {
@@ -728,14 +760,14 @@ export function DashboardPMS({
       {showGuests && (
         <GuestsScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           onClose={() => setShowGuests(false)}
         />
       )}
       {showGantt && (
         <RoomGanttScreen
           businessId={businessId}
-          accessToken={accessToken}
+          accessToken={effectiveAccessToken}
           bookings={guestBookings}
           overbookingBuffer={Number(businessMetadata?.pms?.sellablePercent ?? 100)}
           onClose={() => setShowGantt(false)}
@@ -788,7 +820,7 @@ export function DashboardPMS({
       <StaffManagementModal
         visible={showStaffMgmt}
         businessId={businessId}
-        accessToken={accessToken}
+        accessToken={effectiveAccessToken}
         onClose={() => setShowStaffMgmt(false)}
         onOpenProfile={(staff) => {
           setSelectedStaff(staff);
@@ -800,7 +832,7 @@ export function DashboardPMS({
         visible={showStaffProfile}
         staff={selectedStaff}
         businessId={businessId}
-        accessToken={accessToken}
+        accessToken={effectiveAccessToken}
         onClose={() => { setShowStaffProfile(false); setShowStaffMgmt(true); }}
         onRefresh={() => {}}
         onOpenActivity={(staff) => {
@@ -813,7 +845,7 @@ export function DashboardPMS({
         visible={showStaffActivity}
         staff={selectedStaff}
         businessId={businessId}
-        accessToken={accessToken}
+        accessToken={effectiveAccessToken}
         onClose={() => { setShowStaffActivity(false); setShowStaffProfile(true); }}
       />
     </Modal>
@@ -825,6 +857,8 @@ const dS = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#F7F6F2' },
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
   iconBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  logoutBtn:    { minWidth: 72, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#D32323' },
+  logoutBtnText:{ color: '#fff', fontSize: 12, fontWeight: '700' },
   headerTitle:  { fontSize: 16, fontWeight: '700', color: '#111' },
   headerSub:    { fontSize: 12, color: '#888', marginTop: 1 },
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },

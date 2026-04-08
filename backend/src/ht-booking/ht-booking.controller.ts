@@ -1,17 +1,20 @@
 // backend/src/ht-booking/ht-booking.controller.ts
 import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
+import { AppModule, StaffRole, UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { StaffAccess } from '../auth/decorators/staff-access.decorator';
 import { HtBookingService } from './ht-booking.service';
 import { HtIcalService }    from './ht-ical.service';
 import { HtDashboardService } from './ht-dashboard.service';
 import { HtFolioService, AddFolioItemDto, FinancialCheckoutDto } from './ht-folio.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
+import { CreateHtBookingDto } from './dto/create-booking.dto';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
+@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] })
 @Controller('ht')
 export class HtBookingController {
   constructor(
@@ -43,6 +46,11 @@ export class HtBookingController {
     return this.htBookingService.getCurrentGuests(businessId, req.user.userId);
   }
 
+  @Get('bookings/expired')
+  getExpiredStays(@Query('businessId') businessId: string, @Req() req: any) {
+    return this.htBookingService.getExpiredStays(businessId, req.user.userId);
+  }
+
   @Patch('bookings/:id/checkin')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   checkIn(@Param('id') id: string, @Body() dto: CheckInDto, @Req() req: any, @Ip() ip: string) {
@@ -71,15 +79,48 @@ export class HtBookingController {
     return this.htBookingService.postponeBooking(id, req.user.userId, ip);
   }
 
+  @Post('bookings/:id/revert-noshow')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  revertNoShow(@Param('id') id: string, @Body() body: { applyPenalty: boolean }, @Req() req: any, @Ip() ip: string) {
+    return this.htBookingService.revertNoShow(id, body.applyPenalty, req.user.userId, ip);
+  }
+
   @Patch('bookings/:id/cancel')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   cancelBooking(@Param('id') id: string, @Body() dto: CancelBookingDto, @Req() req: any, @Ip() ip: string) {
     return this.htBookingService.cancel(id, req.user.userId, dto, ip);
   }
 
+    // ─── Criar Reserva ────────────────────────────────────────────────────────
+    @Post('bookings')
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    createBooking(@Body() dto: CreateHtBookingDto, @Req() req: any) {
+      return this.htBookingService.createBooking(dto, req.user.userId);
+    }
+
+    // ─── Confirmar Reserva ────────────────────────────────────────────────────
+    @Patch('bookings/:id/confirm')
+    @Throttle({ default: { limit: 30, ttl: 60_000 } })
+    confirmBooking(@Param('id') id: string, @Req() req: any, @Ip() ip: string) {
+      return this.htBookingService.confirmBooking(id, req.user.userId, ip);
+    }
+
+    // ─── Configuração PMS ─────────────────────────────────────────────────────
+    @Patch('config')
+    @Throttle({ default: { limit: 10, ttl: 60_000 } })
+    @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
+    updateConfig(
+      @Query('businessId') businessId: string,
+      @Body() body: { overbookingBuffer?: number },
+      @Req() req: any,
+    ) {
+      return this.htBookingService.updatePmsConfig(businessId, req.user.userId, body);
+    }
+
   // ─── iCal Sync (backend) ─────────────────────────────────────────────────────
   @Post('ical/sync')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
   syncIcal(@Query('businessId') businessId: string, @Req() req: any) {
     return this.htIcalService.syncForBusiness(businessId, req.user.userId);
   }
@@ -110,6 +151,45 @@ export class HtBookingController {
     return this.htBookingService.extendStay(id, req.user.userId, body.newEndDate, ip);
   }
 
+  @Patch('bookings/:id/extend-expired')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  extendExpiredStay(
+    @Param('id') id: string,
+    @Body() body: { newEndDate: string },
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    return this.htBookingService.extendExpiredStay(id, req.user.userId, body.newEndDate, ip);
+  }
+
+  @Patch('bookings/:id/retroactive-checkout')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  retroactiveCheckout(
+    @Param('id') id: string,
+    @Body() body: { realCheckoutDate: string },
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    return this.htBookingService.expiredCheckOut(
+      id,
+      req.user.userId,
+      { mode: 'retroactive', realCheckoutDate: body?.realCheckoutDate },
+      ip,
+    );
+  }
+
+  @Patch('bookings/:id/force-checkout')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  forceCheckout(@Param('id') id: string, @Req() req: any, @Ip() ip: string) {
+    return this.htBookingService.expiredCheckOut(id, req.user.userId, { mode: 'forced' }, ip);
+  }
+
+  @Patch('bookings/:id/unconfirmed-checkout')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  unconfirmedCheckout(@Param('id') id: string, @Req() req: any, @Ip() ip: string) {
+    return this.htBookingService.expiredCheckOut(id, req.user.userId, { mode: 'unconfirmed' }, ip);
+  }
+
   @Patch('bookings/:id/change-room')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   changeRoom(
@@ -124,6 +204,7 @@ export class HtBookingController {
   // ─── Housekeeping ────────────────────────────────────────────────────────────
   @Patch('housekeeping/:id/complete')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_HOUSEKEEPER, StaffRole.HT_MANAGER] })
   async completeHousekeepingTask(@Param('id') id: string, @Req() req: any) {
     // Verificar que a tarefa pertence a um quarto do owner
     const task = await this.htDashboardService.completeTask(id, req.user.userId);
@@ -132,6 +213,7 @@ export class HtBookingController {
 
   @Patch('housekeeping/rooms/:roomId/approve')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
   approveHousekeepingInspection(@Param('roomId') roomId: string, @Req() req: any) {
     return this.htDashboardService.approveInspection(roomId, req.user.userId);
   }
@@ -150,6 +232,7 @@ export class HtBookingController {
 
   @Delete('bookings/:bookingId/folio/:itemId')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
   removeFolioItem(
     @Param('bookingId') bookingId: string,
     @Param('itemId')    itemId: string,

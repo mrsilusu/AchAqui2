@@ -837,6 +837,7 @@ function AppContent() {
       await authSession.saveSession(null);
       setAdminSessionBackup(null);
       setIsBusinessMode(false);
+      setIsStaffMode(false);
       setActiveNavTab('home');
     }
   }, [authSession]);
@@ -1288,6 +1289,7 @@ function AppContent() {
                 tenantId={authSession.staffBusinessId}
                 initialStaffToken={authSession.accessToken}
                 liveBookings={liveSync.bookings}
+                onLogout={handleLogout}
               />
             );
           })()}
