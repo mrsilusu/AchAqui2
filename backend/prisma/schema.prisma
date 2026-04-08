@@ -147,6 +147,23 @@ enum HtHousekeepingPriority {
   URGENT      // checkout com hóspede à espera
 }
 
+enum HtStaffDepartment {
+  RECEPTION
+  HOUSEKEEPING
+  MAINTENANCE
+  MANAGEMENT
+  SECURITY
+  RESTAURANT
+}
+
+enum HtShift {
+  MORNING
+  AFTERNOON
+  NIGHT
+  ROTATING
+  FLEXIBLE
+}
+
 // =============================================================================
 // ENUMS — AUDIT (CORE)
 // =============================================================================
@@ -159,6 +176,7 @@ enum AuditAction {
   HT_BOOKING_CHECKED_IN
   HT_BOOKING_CHECKED_OUT
   HT_BOOKING_NO_SHOW
+  HT_BOOKING_REVERT_NO_SHOW
   HT_BOOKING_MODIFIED
   HT_FOLIO_ITEM_ADDED
   HT_FOLIO_ITEM_REMOVED
@@ -217,6 +235,7 @@ model User {
   questions     BusinessQuestion[]
   // PMS / módulos
   htBookings    HtRoomBooking[]
+  htStaffProfiles HtStaff[]
   staffRoles    CoreBusinessStaff[]
   auditActions  CoreAuditLog[]
   createdAt     DateTime             @default(now())
@@ -261,6 +280,7 @@ model Business {
   htRooms        HtRoom[]
   htBookings     HtRoomBooking[]
   htGuests       HtGuestProfile[]
+  htStaff        HtStaff[]
   htFolioItems   HtFolioItem[]
   // DI — Dining (reservas de mesa já existentes)
   diBookings     DiTableBooking[]
@@ -584,6 +604,7 @@ model HtPmsConfig {
   vatNumber           String?  // NIF do estabelecimento (AGT)
   invoicePrefix       String?  // ex: "ACH-HTL"
   invoiceSequence     Int      @default(0)
+    overbookingBuffer   Int      @default(100) // % da capacidade vendável (100 = real, 90 = buffer, 105 = overbooking)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -675,6 +696,49 @@ model HtGuestProfile {
   @@unique([businessId, documentNumber])
   @@index([businessId, nif])
   @@map("ht_guest_profiles")
+}
+
+model HtStaff {
+  id                 String               @id @default(uuid())
+  businessId         String
+  business           Business             @relation(fields: [businessId], references: [id])
+  userId             String?
+  user               User?                @relation(fields: [userId], references: [id])
+  coreStaffId        String?              @unique
+  fullName           String
+  phone              String?
+  email              String?
+  position           String?
+  department         HtStaffDepartment
+  photoUrl           String?
+  documentType       String?
+  documentNumber     String?
+  shift              HtShift              @default(ROTATING)
+  workDays           Int[]                @default([1, 2, 3, 4, 5])
+  startTime          String?
+  endTime            String?
+  assignedFloors     Int[]                @default([])
+  maxRoomsPerDay     Int?
+  pinHash            String?
+  canCancelBookings  Boolean              @default(false)
+  canApplyDiscounts  Boolean              @default(false)
+  canViewFinancials  Boolean              @default(false)
+  employmentStart    DateTime?
+  employmentEnd      DateTime?
+  isActive           Boolean              @default(true)
+  emergencyName      String?
+  emergencyPhone     String?
+  notes              String?
+  addedById          String?
+  updatedById        String?
+  housekeepingTasks  HtHousekeepingTask[] @relation("HtStaffTasks")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([businessId, documentNumber])
+  @@index([businessId, department])
+  @@index([businessId, isActive])
+  @@map("ht_staff")
 }
 
 // Reserva de quarto.
@@ -771,6 +835,7 @@ model HtHousekeepingTask {
   roomId        String
   room          HtRoom                 @relation(fields: [roomId], references: [id])
   assignedToId  String?
+  assignedTo    HtStaff?               @relation("HtStaffTasks", fields: [assignedToId], references: [id])
   priority      HtHousekeepingPriority @default(NORMAL)
   startedAt     DateTime?
   completedAt   DateTime?
