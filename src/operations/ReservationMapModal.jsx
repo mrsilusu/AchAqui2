@@ -7,6 +7,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Modal, ActivityIndicator, Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
@@ -208,6 +209,7 @@ export function ReservationMapModal({ businessId, accessToken, onClose, onBookin
   const [collapsed,    setCollapsed]    = useState({});
   const [selectedBk,   setSelectedBk]  = useState(null);
   const alive = useRef(true);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -331,7 +333,7 @@ export function ReservationMapModal({ businessId, accessToken, onClose, onBookin
       <View style={gS.root}>
 
         {/* Header */}
-        <View style={gS.header}>
+        <View style={[gS.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity style={gS.iconBtn} onPress={onClose}>
             <Icon name="back" size={20} color={COLORS.darkText} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -546,7 +548,7 @@ export function ReservationMapModal({ businessId, accessToken, onClose, onBookin
 const gS = StyleSheet.create({
   root:           { flex: 1, backgroundColor: '#F5F4F0' },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12,
+                     paddingHorizontal: 16, paddingBottom: 12,
                     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E1D8' },
   iconBtn:        { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle:    { fontSize: 16, fontWeight: '700', color: '#111' },

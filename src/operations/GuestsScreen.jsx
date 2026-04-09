@@ -4,6 +4,7 @@ import {
   Modal, TextInput, FlatList, StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
@@ -369,6 +370,7 @@ function EditGuestModal({ guest, businessId, accessToken, onSave, onClose }) {
 function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated }) {
   const [localGuest, setLocalGuest] = useState(guest);
   const [showEdit, setShowEdit]     = useState(false);
+  const insets = useSafeAreaInsets();
 
   const handleSaved = useCallback((updated) => {
     setLocalGuest(updated);
@@ -389,7 +391,7 @@ function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated 
   return (
     <View style={[gS.root, StyleSheet.absoluteFill, { zIndex: 9999 }]}>
       <View style={gS.root}>
-        <View style={gS.headerSafe}>
+        <View style={[gS.headerSafe, { paddingTop: Math.max(insets.top, 12) }]}>
           <View style={gS.header}>
             <TouchableOpacity onPress={onClose} style={gS.iconBtn}>
               <Icon name="x" size={22} color="#111" strokeWidth={2.5} />
@@ -573,6 +575,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
   const [filterStatus, setFilter]         = useState('all');
   const [selectedGuest, setSelected]      = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const load = useCallback(async (q = '') => {
     if (!businessId || !accessToken) { setLoading(false); return; }
@@ -642,7 +645,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={gS.root}>
 
-        <View style={gS.headerSafe}>
+        <View style={[gS.headerSafe, { paddingTop: Math.max(insets.top, 12) }]}>
           <View style={gS.header}>
             <TouchableOpacity onPress={onClose} style={gS.iconBtn}>
               <Icon name="x" size={22} color="#111" strokeWidth={2.5} />
@@ -770,7 +773,7 @@ export function GuestsScreen({ businessId, accessToken, onClose }) {
 // ─── Estilos ──────────────────────────────────────────────────────────────────────────────
 const gS = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#F7F6F2' },
-  headerSafe:   { backgroundColor: '#fff', paddingTop: 16,
+  headerSafe:   { backgroundColor: '#fff',
                   borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, backgroundColor: '#fff' },

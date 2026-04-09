@@ -1322,7 +1322,10 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout, forceLimitedOwnerMode = false, staffRoleOverride = null }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
-  const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
+  // Em modo staff (forceLimitedOwnerMode=true), ignorar ctx.ownerBusinessPrivate
+  // que pode ser o negócio hardcoded do AppContext (OWNER_BUSINESS) e não o negócio
+  // real do staff.
+  const ownerBusinessPrivate = ownerBizProp ?? (forceLimitedOwnerMode ? null : ctx?.ownerBusinessPrivate) ?? business;
   const updateOwnerBiz = updateOwnerBizProp ?? ctx?.updateOwnerBiz ?? (() => {});
   const globalSellablePercent = useMemo(() => {
     const raw = Number(ownerBusinessPrivate?.metadata?.pms?.sellablePercent ?? 100);

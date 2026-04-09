@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Modal, Alert, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
@@ -156,6 +157,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
   const [actionLoading, setActionLoading] = useState(null);
   const [filter, setFilter]       = useState('dirty'); // dirty | all
   const alive = useRef(true);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     alive.current = true;
@@ -276,7 +278,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
       <View style={hkS.root}>
 
         {/* Header */}
-        <View style={hkS.header}>
+        <View style={[hkS.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity style={hkS.iconBtn} onPress={onClose}>
             <Icon name="back" size={20} color={COLORS.darkText} strokeWidth={2.5} />
           </TouchableOpacity>
@@ -356,7 +358,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
 const hkS = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#F7F6F2' },
   header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                   paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12,
+                    paddingHorizontal: 16, paddingBottom: 12,
                    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
   iconBtn:       { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle:   { fontSize: 16, fontWeight: '700', color: '#111' },
