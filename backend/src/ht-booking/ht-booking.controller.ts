@@ -27,28 +27,73 @@ export class HtBookingController {
   // ─── Dashboard ────────────────────────────────────────────────────────────
   @Get('dashboard')
   getDashboard(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htDashboardService.getDashboard(businessId, req.user.userId);
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
+
+    return this.htDashboardService.getDashboard(
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   // ─── Receção ──────────────────────────────────────────────────────────────
   @Get('bookings/arrivals')
   getArrivals(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htBookingService.getTodayArrivals(businessId, req.user.userId);
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
+
+    return this.htBookingService.getTodayArrivals(
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   @Get('bookings/departures')
   getDepartures(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htBookingService.getTodayDepartures(businessId, req.user.userId);
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
+
+    return this.htBookingService.getTodayDepartures(
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   @Get('bookings/guests')
   getCurrentGuests(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htBookingService.getCurrentGuests(businessId, req.user.userId);
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
+
+    return this.htBookingService.getCurrentGuests(
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   @Get('bookings/expired')
   getExpiredStays(@Query('businessId') businessId: string, @Req() req: any) {
-    return this.htBookingService.getExpiredStays(businessId, req.user.userId);
+    return this.htBookingService.getExpiredStays(
+      businessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   @Patch('bookings/:id/checkin')
@@ -136,7 +181,14 @@ export class HtBookingController {
   ) {
     const f = from ? new Date(from) : (() => { const d = new Date(); d.setDate(1); return d; })();
     const t = to   ? new Date(to)   : (() => { const d = new Date(); d.setMonth(d.getMonth()+1,0); return d; })();
-    return this.htDashboardService.getBookingsForMap(businessId, req.user.userId, f, t);
+    return this.htDashboardService.getBookingsForMap(
+      businessId,
+      req.user.userId,
+      f,
+      t,
+      req.user.role ?? 'OWNER',
+      req.user.businessId ?? undefined,
+    );
   }
 
   // ─── Prolongar estadia / Alterar quarto ─────────────────────────────────────

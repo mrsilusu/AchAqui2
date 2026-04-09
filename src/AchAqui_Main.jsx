@@ -36,7 +36,7 @@ import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
-import { HospitalityModule }    from './operations/HospitalityModule';
+import { StaffHospitalityView } from './operations/StaffHospitalityView';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { AuthModal } from './modules/Auth/AuthModal';
@@ -579,6 +579,9 @@ function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets,
 function AppContent() {
   const insets = useSafeAreaInsets();
   const authSession = useAuthSession();
+  const isStaff = authSession.isStaff ?? false;
+  const staffRole = authSession.staffRole ?? null;
+  const staffBusinessId = authSession.staffBusinessId ?? null;
   const liveSync = useLiveSync({
     user: authSession.user,
     accessToken: authSession.accessToken,
@@ -820,10 +823,21 @@ function AppContent() {
     await authSession.saveSession(session);
     const hasHtStaffAssignment = Array.isArray(session?.user?.staffRoles)
       && session.user.staffRoles.some((r) => r?.module === 'HT' || String(r?.role || '').startsWith('HT_'));
+    // Verificar também os claims do JWT (cobre fallback sem coreBusinessStaff)
+    let jwtHasStaffClaims = false;
+    try {
+      const jwtPayload = session?.accessToken
+        ? JSON.parse(atob(session.accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+        : null;
+      jwtHasStaffClaims = !!(jwtPayload?.staffRole && jwtPayload?.businessId);
+    } catch { /* token inválido ou não-JWT */ }
     if (session?.user?.role === 'OWNER') {
       setIsBusinessMode(true);
       setActiveBusinessTab('dashboard');
-    } else if (session?.user?.role === 'STAFF' || hasHtStaffAssignment) {
+    }
+    if (session?.user?.role === 'STAFF' || hasHtStaffAssignment || jwtHasStaffClaims) {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
       setIsStaffMode(true);
     }
   }, [authSession]);
@@ -1241,17 +1255,23 @@ function AppContent() {
   }, [isBusinessMode]);
 
   const handleToggleOwnerMode = useCallback(() => {
-    if (!authSession.isOwner) {
-      Alert.alert('Acesso restrito', 'Apenas utilizadores com perfil OWNER podem entrar no modo Dono.');
+    if (authSession.isOwner) {
+      setIsBusinessMode((current) => !current);
       return;
     }
-
-    setIsBusinessMode((current) => !current);
-  }, [authSession.isOwner]);
+    // Staff pode entrar no módulo PMS via este botão
+    if (authSession.isStaff) {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
+      setIsStaffMode(true);
+      return;
+    }
+    Alert.alert('Acesso restrito', 'Apenas utilizadores com perfil OWNER podem entrar no modo Dono.');
+  }, [authSession.isOwner, authSession.isStaff]);
 
   useEffect(() => {
     if (authSession.loading) return;
-    if (!authSession.isOwner && isBusinessMode) {
+    if (!authSession.isOwner && !authSession.isStaff && isBusinessMode) {
       setIsBusinessMode(false);
       setActiveNavTab('home');
     }
@@ -1279,23 +1299,19 @@ function AppContent() {
           )}
 
           {/* Staff */}
-          {isStaffMode && authSession.isStaff && (() => {
-            const staffBusiness = businesses.find(b => b.id === authSession.staffBusinessId) ||
-              { id: authSession.staffBusinessId, name: 'O meu negócio', roomTypes: [], modules: { accommodation: true } };
-            return (
-              <HospitalityModule
-                business={staffBusiness}
-                ownerMode={false}
-                tenantId={authSession.staffBusinessId}
-                initialStaffToken={authSession.accessToken}
-                liveBookings={liveSync.bookings}
-                onLogout={handleLogout}
-              />
-            );
-          })()}
+          {isStaff && isBusinessMode && staffBusinessId && (
+            <StaffHospitalityView
+              businesses={businesses}
+              businessId={staffBusinessId}
+              staffRole={staffRole}
+              accessToken={authSession.accessToken}
+              liveBookings={liveSync.bookings}
+              onLogout={handleLogout}
+            />
+          )}
 
           {/* Cliente: todas as tabs via HomeModuleFull */}
-          {!isBusinessMode && !isStaffMode && !authSession.isAdmin && (
+          {!isBusinessMode && !authSession.isAdmin && (
             <HomeModuleFull
               {...filters}
               activeNavTab={activeNavTab}
@@ -1328,7 +1344,7 @@ function AppContent() {
           )}
 
           {/* Dono */}
-          {isBusinessMode && !authSession.isAdmin && (
+          {isBusinessMode && !isStaff && !authSession.isAdmin && (
             <OwnerModule
               businesses={businesses}
               activeBusinessTab={activeBusinessTab}
@@ -1353,7 +1369,7 @@ function AppContent() {
             />
           )}
 
-          {!authSession.isAdmin && !isStaffMode && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
+          {!authSession.isAdmin && !isStaff && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
 

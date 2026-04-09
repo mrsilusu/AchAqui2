@@ -58,13 +58,29 @@ export class HtDashboardService {
     return allowedRoles.includes(inferredRole);
   }
 
-  private async assertOwnership(businessId: string, ownerId: string) {
-    const allowed = await this.hasBusinessAccess(businessId, ownerId);
-    if (!allowed) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+  private async assertAccess(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    // STAFF: o businessId foi validado e assinado no JWT durante o login
+    // Basta confirmar que o businessId pedido coincide com o do JWT
+    if (actorRole === 'STAFF') {
+      if (!actorBusinessId || actorBusinessId !== businessId) {
+        throw new ForbiddenException('Sem permissão para este estabelecimento.');
+      }
+      return;
+    }
+
+    // OWNER: validação existente contra a base de dados
+    const b = await this.prisma.business.findFirst({
+      where: {
+        id: businessId,
+        OR: [{ ownerId: actorId }, { ownerId: null, id: businessId }],
+      },
+      select: { id: true },
+    });
+    if (!b) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
-  async getDashboard(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async getDashboard(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
 
     const now   = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);
@@ -257,8 +273,8 @@ export class HtDashboardService {
     };
   }
   // ─── Reservas para o Mapa (período configurável) ────────────────────────
-  async getBookingsForMap(businessId: string, ownerId: string, from: Date, to: Date) {
-    await this.assertOwnership(businessId, ownerId);
+  async getBookingsForMap(businessId: string, actorId: string, from: Date, to: Date, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
 
     const [rooms, bookings] = await Promise.all([
       this.prisma.htRoom.findMany({

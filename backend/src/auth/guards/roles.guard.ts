@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AppModule, StaffRole, UserRole } from '@prisma/client';
+import { AppModule, HtStaffDepartment, StaffRole, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { STAFF_ACCESS_KEY, StaffAccessOptions } from '../decorators/staff-access.decorator';
@@ -118,7 +118,28 @@ export class RolesGuard implements CanActivate {
       select: { id: true },
     });
 
-    return !!assignment;
+    if (assignment) return true;
+
+    // Fallback: verifica ht_staff directamente para ambientes sem sincronização em coreBusinessStaff
+    if (module === AppModule.HT) {
+      const htStaff = await this.prisma.htStaff.findFirst({
+        where: { businessId, userId, isActive: true },
+        select: { department: true },
+      });
+      if (!htStaff) return false;
+      if (!allowedRoles?.length) return true;
+
+      const inferredRole =
+        htStaff.department === HtStaffDepartment.RECEPTION
+          ? StaffRole.HT_RECEPTIONIST
+          : htStaff.department === HtStaffDepartment.MANAGEMENT
+            ? StaffRole.HT_MANAGER
+            : StaffRole.HT_HOUSEKEEPER;
+
+      return allowedRoles.includes(inferredRole);
+    }
+
+    return false;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -141,44 +162,18 @@ export class RolesGuard implements CanActivate {
     const jwtStaffRole: StaffRole | undefined = request.user?.staffRole;
     const jwtBusinessId: string | undefined = request.user?.businessId;
 
+    // Se já passar na lista normal → permitir (OWNER, ADMIN…)
     if (requiredRoles?.length && userRole && requiredRoles.includes(userRole)) {
       return true;
     }
 
-    // STAFF tokens with businessId in JWT can access via StaffAccess decorator
-    if (staffAccess && userId) {
-      const businessId = await this.resolveBusinessId(request);
-      if (!businessId) {
-        throw new ForbiddenException('Sem businessId para validar permissões de staff.');
-      }
-      const allowed = await this.hasStaffAccess(userId, businessId, staffAccess.module, staffAccess.roles);
-      if (allowed) return true;
-
-      // Fallback para DB legado sem linha em coreBusinessStaff:
-      // aceita claims HT no JWT quando business e role forem compatíveis.
-      if (
-        jwtBusinessId &&
-        businessId === jwtBusinessId &&
-        jwtStaffRole &&
-        (
-          !staffAccess.roles?.length ||
-          staffAccess.roles.includes(jwtStaffRole)
-        )
-      ) {
-        return true;
-      }
-    }
-
-    // STAFF role with staffId in JWT: allow access to their own business's HT endpoints
-    if (userRole === UserRole.STAFF && request.user?.staffId && request.user?.businessId) {
-      const jwtBusinessId = request.user.businessId;
-      const reqBusinessId =
-        request?.query?.businessId ||
-        request?.body?.businessId ||
-        request?.params?.businessId;
-      if (!reqBusinessId || reqBusinessId === jwtBusinessId) {
-        return true;
-      }
+    // STAFF: o businessId no JWT foi assinado pelo servidor no login
+    // Validação de tenant é feita ao nível dos services
+    if (
+      String(userRole) === 'STAFF' &&
+      request.user?.businessId
+    ) {
+      return true;
     }
 
     throw new ForbiddenException('Sem permissão para esta ação.');

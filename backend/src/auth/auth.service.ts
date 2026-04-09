@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
-import { AppModule, StaffRole, User, UserRole } from '@prisma/client';
+import { AppModule, HtStaffDepartment, StaffRole, User, UserRole } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -101,6 +101,7 @@ export class AuthService {
     staffRole: StaffRole;
     staffId: string;
   } | null> {
+    // 1ª tentativa: coreBusinessStaff (tabela unificada)
     const assignment = await this.prisma.coreBusinessStaff.findFirst({
       where: {
         userId,
@@ -111,19 +112,40 @@ export class AuthService {
       select: { businessId: true, role: true },
     });
 
-    if (!assignment) return null;
+    if (assignment) {
+      const htStaff = await this.prisma.htStaff.findFirst({
+        where: { userId, businessId: assignment.businessId, isActive: true },
+        select: { id: true },
+      });
+      if (htStaff?.id) {
+        return {
+          businessId: assignment.businessId,
+          staffRole: assignment.role,
+          staffId: htStaff.id,
+        };
+      }
+    }
 
-    const htStaff = await this.prisma.htStaff.findFirst({
-      where: { userId, businessId: assignment.businessId, isActive: true },
-      select: { id: true },
+    // 2ª tentativa (fallback legado): ht_staff sem entrada em coreBusinessStaff
+    const htStaffDirect = await this.prisma.htStaff.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, businessId: true, department: true },
     });
 
-    if (!htStaff?.id) return null;
+    if (!htStaffDirect) return null;
+
+    const inferredRole: StaffRole =
+      htStaffDirect.department === HtStaffDepartment.RECEPTION
+        ? StaffRole.HT_RECEPTIONIST
+        : htStaffDirect.department === HtStaffDepartment.MANAGEMENT
+          ? StaffRole.HT_MANAGER
+          : StaffRole.HT_HOUSEKEEPER;
 
     return {
-      businessId: assignment.businessId,
-      staffRole: assignment.role,
-      staffId: htStaff.id,
+      businessId: htStaffDirect.businessId,
+      staffRole: inferredRole,
+      staffId: htStaffDirect.id,
     };
   }
 
@@ -152,7 +174,7 @@ export class AuthService {
   private async createStaffAccessToken(params: {
     userId: string;
     email: string;
-    staffRole: StaffRole;
+    staffRole?: StaffRole | null;
     businessId: string;
     staffId: string;
   }) {
@@ -161,7 +183,7 @@ export class AuthService {
         sub: params.userId,
         email: params.email,
         role: UserRole.STAFF,
-        staffRole: params.staffRole,
+        staffRole: params.staffRole ?? null,
         businessId: params.businessId,
         staffId: params.staffId,
       },
@@ -260,6 +282,57 @@ export class AuthService {
       throw new UnauthorizedException('Conta suspensa. Contacta o suporte.');
     }
 
+    if (user.role === UserRole.STAFF) {
+      const htStaff = await this.prisma.htStaff.findFirst({
+        where: {
+          userId: user.id,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          businessId: true,
+        },
+      });
+
+      if (!htStaff) {
+        throw new UnauthorizedException('Conta de staff inactiva.');
+      }
+
+      const coreStaff = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          userId: user.id,
+          module: AppModule.HT,
+          revokedAt: null,
+        },
+        select: {
+          role: true,
+        },
+      });
+
+      const accessToken = await this.createStaffAccessToken({
+        userId: user.id,
+        email: user.email,
+        staffRole: coreStaff?.role ?? null,
+        businessId: htStaff.businessId,
+        staffId: htStaff.id,
+      });
+      const refreshToken = await this.createRefreshToken(user);
+      const staffRoles = await this.getActiveStaffRoles(user.id);
+
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          staffRoles,
+          businessId: htStaff.businessId,
+        },
+      };
+    }
+
     return this.buildAuthResponse(user);
   }
 
@@ -311,7 +384,14 @@ export class AuthService {
       select: { role: true },
     });
 
-    const staffRole = staffRoleRow?.role ?? StaffRole.HT_HOUSEKEEPER;
+    // Quando não existe entrada em coreBusinessStaff, infere o role a partir do department
+    const staffRole: StaffRole = staffRoleRow?.role ?? (
+      matchedStaff.department === HtStaffDepartment.RECEPTION
+        ? StaffRole.HT_RECEPTIONIST
+        : matchedStaff.department === HtStaffDepartment.MANAGEMENT
+          ? StaffRole.HT_MANAGER
+          : StaffRole.HT_HOUSEKEEPER
+    );
     const accessToken = await this.createStaffAccessToken({
       userId: matchedStaff.userId,
       email: matchedStaff.email,

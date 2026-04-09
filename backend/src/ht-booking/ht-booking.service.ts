@@ -29,6 +29,29 @@ export class HtBookingService {
     return raw.replace(/\s+/g, '').toUpperCase();
   }
 
+  private async assertAccess(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    // STAFF: o businessId foi validado e assinado no JWT durante o login
+    // Basta confirmar que o businessId pedido coincide com o do JWT
+    if (actorRole === 'STAFF') {
+      if (!actorBusinessId || actorBusinessId !== businessId) {
+        throw new ForbiddenException('Sem permissão para este estabelecimento.');
+      }
+      return;
+    }
+
+    // OWNER: validação existente contra a base de dados
+    const b = await this.prisma.business.findFirst({
+      where: {
+        id: businessId,
+        OR: [{ ownerId: actorId }, { ownerId: null, id: businessId }],
+      },
+      select: { id: true },
+    });
+    if (!b) {
+      throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    }
+  }
+
   private async hasBusinessAccess(businessId: string, userId: string, allowedRoles?: StaffRole[]) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
@@ -709,7 +732,8 @@ export class HtBookingService {
 
   // CHEGADAS — janela de 14 dias (7 passados + próximos 7) para incluir atrasos de check-in.
   // [TENANT] [GDPR] — não expõe dados sensíveis do hóspede.
-  async getTodayArrivals(businessId: string, ownerId: string) {
+  async getTodayArrivals(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
     const now   = new Date();
     const start = new Date(now); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
     const end7  = new Date(now); end7.setDate(end7.getDate() + 7); end7.setHours(23, 59, 59, 999);
@@ -727,7 +751,8 @@ export class HtBookingService {
   // SAÍDAS — duas listas combinadas:
   //   1. Checkouts pendentes: CHECKED_IN com endDate hoje ou nos próx. 7 dias
   //   2. Checkouts recentes:  CHECKED_OUT nos últimos 7 dias
-  async getTodayDepartures(businessId: string, ownerId: string) {
+  async getTodayDepartures(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
     const now   = new Date();
     const today = new Date(now); today.setHours(0, 0, 0, 0);
     const next7 = new Date(now); next7.setDate(next7.getDate() + 7); next7.setHours(23, 59, 59, 999);
@@ -757,7 +782,8 @@ export class HtBookingService {
   }
 
   // HÓSPEDES ACTUAIS — todos com status CHECKED_IN.
-  async getCurrentGuests(businessId: string, ownerId: string) {
+  async getCurrentGuests(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
     return this.prisma.htRoomBooking.findMany({
       where: { businessId, status: HtBookingStatus.CHECKED_IN },
       select: BOOKING_SELECT,
@@ -766,8 +792,8 @@ export class HtBookingService {
   }
 
   // ESTADIAS EXPIRADAS — hóspedes CHECKED_IN com endDate anterior a hoje.
-  async getExpiredStays(businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async getExpiredStays(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

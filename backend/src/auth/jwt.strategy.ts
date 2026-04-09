@@ -55,9 +55,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       role: payload.role,
       staffRoles: Array.isArray(payload.staffRoles) ? payload.staffRoles : [],
-      staffRole: payload.staffRole,
-      businessId: payload.businessId,
-      staffId: payload.staffId,
+      staffRole: payload.staffRole ?? null,
+      businessId: payload.businessId ?? null,
+      staffId: payload.staffId ?? null,
     };
   }
 }

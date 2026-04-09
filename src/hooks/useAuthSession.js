@@ -66,7 +66,6 @@ export function useAuthSession() {
   const primaryStaffRole = Array.isArray(user?.staffRoles)
     ? (user.staffRoles.find((r) => r?.module === 'HT' || r?.role?.startsWith?.('HT_')) || user.staffRoles[0])
     : null;
-  const hasStaffContext = !!(jwtPayload?.staffId || jwtPayload?.businessId || primaryStaffRole?.businessId);
 
   const saveSession = useCallback(async (nextSession) => {
     setSession(nextSession);
@@ -87,10 +86,10 @@ export function useAuthSession() {
     isOwner: effectiveRole === 'OWNER',
     isAdmin: effectiveRole === 'ADMIN',
     isClient: effectiveRole === 'CLIENT',
-    isStaff: effectiveRole === 'STAFF' || hasStaffContext,
-    staffRole: jwtPayload?.staffRole || primaryStaffRole?.role || null,
-    staffBusinessId: jwtPayload?.businessId || primaryStaffRole?.businessId || null,
-    staffId: jwtPayload?.staffId || null,
+    isStaff: user?.role === 'STAFF',
+    staffRole: parseJwtPayload(session?.accessToken)?.staffRole ?? null,
+    staffBusinessId: parseJwtPayload(session?.accessToken)?.businessId ?? null,
+    staffId: parseJwtPayload(session?.accessToken)?.staffId ?? null,
     loading,
     saveSession,
     reloadSession: loadSession,

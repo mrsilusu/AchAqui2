@@ -1319,7 +1319,7 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout, forceLimitedOwnerMode = false, staffRoleOverride = null }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   const ownerBusinessPrivate = ownerBizProp ?? ctx?.ownerBusinessPrivate ?? business;
@@ -1340,7 +1340,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   }, [roomSellablePercentMap, globalSellablePercent]);
 
   // ── RBAC Zero Trust ──────────────────────────────────────────────────────
-  const isOwner = ownerMode === true;
+  const isLimitedStaffOwnerMode = ownerMode === true && forceLimitedOwnerMode === true;
+  const isOwner = ownerMode === true && !isLimitedStaffOwnerMode;
 
   // ── Staff token (8h JWT de /auth/staff-pin-login ou JWT de login STAFF) ──
   const [staffToken, setStaffToken]         = useState(initialStaffToken);
@@ -1350,19 +1351,33 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [showStaffProfile, setShowStaffProfile] = useState(false);
   const [showStaffActivity, setShowStaffActivity] = useState(false);
 
-  // Permissões de secção derivadas do token de staff (null quando modo owner)
-  const staffRole       = staffToken ? getStaffRole(staffToken) : null;
-  const isStaff         = !isOwner && isStaffTokenValid(staffToken ?? '');
-  const canDashboard    = isOwner || canSeeSection(staffToken ?? '', 'dashboard');
-  const canReception    = isOwner || canSeeSection(staffToken ?? '', 'reception');
-  const canHousekeeping = isOwner || canSeeSection(staffToken ?? '', 'housekeeping');
-  const canBookingsMgr  = isOwner || canSeeSection(staffToken ?? '', 'bookingsManager');
-  const canStaffMgr     = isOwner;
+  // Permissões de secção derivadas do token de staff (null quando modo owner).
+  // initialStaffToken pode ser o accessToken normal do signIn (role=STAFF com claims staffRole+businessId)
+  // ou o token emitido pelo PIN. Ambos têm o mesmo formato de claims — usar o que existir.
+  const effectiveStaffToken = staffToken || initialStaffToken || null;
+  const tokenStaffRole = effectiveStaffToken ? getStaffRole(effectiveStaffToken) : null;
+  const staffRole = staffRoleOverride || tokenStaffRole;
+  const isStaff = !isOwner && (isLimitedStaffOwnerMode || isStaffTokenValid(effectiveStaffToken ?? ''));
+  const canDashboard = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'dashboard');
+  const canReception = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'reception');
+  const canHousekeeping = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'housekeeping');
+  const canBookingsMgr = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'bookingsManager');
+  const canStaffMgr = isOwner || (isStaff && staffRole === 'HT_MANAGER');
 
   const handleStaffPinSuccess = useCallback(({ accessToken: token }) => {
     setStaffToken(token);
     setShowPinLogin(false);
   }, []);
+
+  const handleStaffAuthExpired = useCallback(() => {
+    setStaffToken(null);
+    setShowDashboard(false);
+    // Quando o staff fez login com senha (initialStaffToken = accessToken da sessão),
+    // a sessão expirou — fazer logout completo para voltar ao ecrã de login.
+    if (typeof onLogout === 'function') {
+      onLogout();
+    }
+  }, [onLogout]);
 
   useEffect(() => {
     if (!isStaff || !canDashboard) return;
@@ -1856,6 +1871,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         businessId={ownerBusinessPrivate?.id || business?.id}
         accessToken={ctx?.accessToken}
         staffToken={staffToken ?? null}
+        onAuthExpired={handleStaffAuthExpired}
         onOpenReception={() => {}}
         onClose={() => {}}
         onLogout={onLogout}
@@ -2093,6 +2109,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           businessId={ownerBusinessPrivate?.id || business?.id}
           accessToken={ctx?.accessToken}
           staffToken={isOwner ? null : (staffToken ?? null)}
+          onAuthExpired={handleStaffAuthExpired}
           onLogout={onLogout}
           onOpenReception={() => {}}
           onClose={() => setShowDashboard(false)}
