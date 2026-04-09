@@ -22,7 +22,8 @@ export class HtGuestController {
     @Query('search') search: string,
     @Req() req: any,
   ) {
-    return this.s.list(businessId, req.user.userId, search);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+    return this.s.list(resolvedId, req.user.userId, search, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   // GET /ht/guests/:id?businessId=
@@ -32,13 +33,15 @@ export class HtGuestController {
     @Query('businessId') businessId: string,
     @Req() req: any,
   ) {
-    return this.s.findOne(id, businessId, req.user.userId);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+    return this.s.findOne(id, resolvedId, req.user.userId, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   // POST /ht/guests
   @Post()
   create(@Body() body: any, @Req() req: any) {
-    return this.s.create(body.businessId, req.user.userId, body);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : body.businessId;
+    return this.s.create(resolvedId, req.user.userId, body, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   // PATCH /ht/guests/:id?businessId=
@@ -49,7 +52,8 @@ export class HtGuestController {
     @Body() body: any,
     @Req() req: any,
   ) {
-    return this.s.update(id, businessId, req.user.userId, body);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+    return this.s.update(id, resolvedId, req.user.userId, body, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   // POST /ht/guests/:id/link-booking
@@ -59,6 +63,7 @@ export class HtGuestController {
     @Body() body: { bookingId: string; businessId: string },
     @Req() req: any,
   ) {
-    return this.s.linkToBooking(guestId, body.bookingId, body.businessId, req.user.userId);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : body.businessId;
+    return this.s.linkToBooking(guestId, body.bookingId, resolvedId, req.user.userId, req.user.role ?? 'OWNER', req.user.businessId);
   }
 }

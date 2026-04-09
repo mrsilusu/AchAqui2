@@ -89,8 +89,8 @@ export class HtRoomsService {
     });
   }
 
-  async create(ownerId: string, dto: { businessId: string; roomTypeId: string; number: string; floor?: number; notes?: string }) {
-    const scopedBusinessId = await this.assertOwnership(dto.businessId, ownerId);
+  async create(ownerId: string, dto: { businessId: string; roomTypeId: string; number: string; floor?: number; notes?: string }, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    const scopedBusinessId = await this.assertAccess(dto.businessId, ownerId, actorRole, actorBusinessId);
     const rt = await this.prisma.htRoomType.findFirst({ where: { id: dto.roomTypeId, businessId: scopedBusinessId } });
     if (!rt) throw new NotFoundException('Tipo de quarto não encontrado.');
     // Verificar número único no estabelecimento
@@ -103,10 +103,10 @@ export class HtRoomsService {
     });
   }
 
-  async update(id: string, ownerId: string, dto: { number?: string; floor?: number; notes?: string; status?: string }) {
+  async update(id: string, ownerId: string, dto: { number?: string; floor?: number; notes?: string; status?: string }, actorRole: string = 'OWNER', actorBusinessId?: string) {
     const room = await this.prisma.htRoom.findUnique({ where: { id }, include: { business: { select: { id: true } } } });
     if (!room) throw new NotFoundException('Quarto não encontrado.');
-    await this.assertOwnership(room.business.id, ownerId);
+    await this.assertAccess(room.business.id, ownerId, actorRole, actorBusinessId);
     if (dto.number && dto.number !== room.number) {
       const exists = await this.prisma.htRoom.findFirst({ where: { businessId: room.business.id, number: dto.number } });
       if (exists) throw new BadRequestException(`Quarto nº ${dto.number} já existe.`);
@@ -161,7 +161,7 @@ export class HtRoomsService {
     });
   }
 
-  async remove(id: string, ownerId: string) {
+  async remove(id: string, ownerId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
     const room = await this.prisma.htRoom.findUnique({
       where: { id },
       include: {
@@ -170,7 +170,7 @@ export class HtRoomsService {
       },
     });
     if (!room) throw new NotFoundException('Quarto não encontrado.');
-    await this.assertOwnership(room.business.id, ownerId);
+    await this.assertAccess(room.business.id, ownerId, actorRole, actorBusinessId);
     if (room.bookings.length > 0) throw new BadRequestException('Não é possível remover um quarto com reservas activas.');
 
     await this.prisma.htRoom.delete({ where: { id } });

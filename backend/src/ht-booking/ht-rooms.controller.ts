@@ -21,18 +21,24 @@ export class HtRoomsController {
   @Post()
   @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
   create(@Body() body: any, @Req() req: any) {
-    return this.s.create(req.user.userId, body);
+    const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : body.businessId;
+    return this.s.create(
+      req.user.userId,
+      { ...body, businessId: resolvedId },
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+    );
   }
 
   @Patch(':id')
   @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_HOUSEKEEPER] })
   update(@Param('id') id: string, @Body() body: any, @Req() req: any) {
-    return this.s.update(id, req.user.userId, body);
+    return this.s.update(id, req.user.userId, body, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   @Delete(':id')
   @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
   remove(@Param('id') id: string, @Req() req: any) {
-    return this.s.remove(id, req.user.userId);
+    return this.s.remove(id, req.user.userId, req.user.role ?? 'OWNER', req.user.businessId);
   }
 }

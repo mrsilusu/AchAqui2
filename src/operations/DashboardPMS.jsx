@@ -49,6 +49,19 @@ function fmtMoney(n) {
   return `${Number(n).toLocaleString('pt-PT')} Kz`;
 }
 
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload || !globalThis.atob) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(globalThis.atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 // ─── Card de métrica ──────────────────────────────────────────────────────────
 function MetricCard({ icon, label, value, color, sub }) {
   return (
@@ -177,8 +190,8 @@ export function DashboardPMS({
   accessToken,
   staffToken = null,
   onLogout,
-    staffRole = null,
-    onAuthExpired,
+  staffRole = null,
+  onAuthExpired,
   onOpenReception,
   onClose,
   reloadTrigger = 0,
@@ -192,6 +205,14 @@ export function DashboardPMS({
   const isJwtStaff = !!staffRole && !staffToken;
   const isStaffMode = isKioskStaff || isJwtStaff;
   const effectiveAccessToken = staffToken || accessToken || null;
+  const authPayload = decodeJwtPayload(effectiveAccessToken);
+  const loggedUserLabel = String(
+    authPayload?.fullName
+      || authPayload?.name
+      || authPayload?.email
+      || authPayload?.sub
+      || '',
+  ).trim();
   const canAccessReception = !isStaffMode
     || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
       : canSeeSection(staffToken, 'reception'));
@@ -391,6 +412,11 @@ export function DashboardPMS({
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={dS.headerTitle}>Dashboard</Text>
             <Text style={dS.headerSub}>{todayStr}</Text>
+            {!!loggedUserLabel && (
+              <Text style={dS.headerUserText} numberOfLines={1}>
+                Utilizador: {loggedUserLabel}
+              </Text>
+            )}
           </View>
           {isStaffMode && typeof onLogout === 'function' ? (
             <TouchableOpacity style={[dS.iconBtn, dS.logoutBtn]} onPress={onLogout}>
@@ -518,7 +544,6 @@ export function DashboardPMS({
             </View>
 
             {/* ── Overbooking Buffer / Stop-Sell ── */}
-            {!isStaffMode && <View style={dS.policyCard}>
             {!isStaffMode && (
               <View style={dS.policyCard}>
               <Text style={dS.policyTitle}>Overbooking Buffer / Stop-Sell</Text>
@@ -892,6 +917,7 @@ const dS = StyleSheet.create({
   logoutBtnText:{ color: '#fff', fontSize: 12, fontWeight: '700' },
   headerTitle:  { fontSize: 16, fontWeight: '700', color: '#111' },
   headerSub:    { fontSize: 12, color: '#888', marginTop: 1 },
+  headerUserText:{ fontSize: 12, color: '#555', marginTop: 2, fontWeight: '600', maxWidth: 210 },
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   loadingText:  { marginTop: 10, color: '#888', fontSize: 13 },
   scroll:       { padding: 16, gap: 12 },

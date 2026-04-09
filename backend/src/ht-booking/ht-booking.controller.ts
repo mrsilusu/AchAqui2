@@ -88,8 +88,13 @@ export class HtBookingController {
 
   @Get('bookings/expired')
   getExpiredStays(@Query('businessId') businessId: string, @Req() req: any) {
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
+
     return this.htBookingService.getExpiredStays(
-      businessId,
+      resolvedBusinessId,
       req.user.userId,
       req.user.role ?? 'OWNER',
       req.user.businessId ?? undefined,
@@ -140,7 +145,13 @@ export class HtBookingController {
     @Post('bookings')
     @Throttle({ default: { limit: 20, ttl: 60_000 } })
     createBooking(@Body() dto: CreateHtBookingDto, @Req() req: any) {
-      return this.htBookingService.createBooking(dto, req.user.userId);
+      const resolvedBusinessId = String(req.user.role) === 'STAFF' ? req.user.businessId : dto.businessId;
+      return this.htBookingService.createBooking(
+        { ...dto, businessId: resolvedBusinessId },
+        req.user.userId,
+        req.user.role ?? 'OWNER',
+        req.user.businessId,
+      );
     }
 
     // ─── Confirmar Reserva ────────────────────────────────────────────────────
@@ -159,7 +170,14 @@ export class HtBookingController {
       @Body() body: { overbookingBuffer?: number },
       @Req() req: any,
     ) {
-      return this.htBookingService.updatePmsConfig(businessId, req.user.userId, body);
+      const resolvedBusinessId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+      return this.htBookingService.updatePmsConfig(
+        resolvedBusinessId,
+        req.user.userId,
+        body,
+        req.user.role ?? 'OWNER',
+        req.user.businessId,
+      );
     }
 
   // ─── iCal Sync (backend) ─────────────────────────────────────────────────────
@@ -179,10 +197,14 @@ export class HtBookingController {
     @Query('to')   to:   string,
     @Req() req: any,
   ) {
+    const resolvedBusinessId =
+      String(req.user.role) === 'STAFF'
+        ? req.user.businessId
+        : businessId;
     const f = from ? new Date(from) : (() => { const d = new Date(); d.setDate(1); return d; })();
     const t = to   ? new Date(to)   : (() => { const d = new Date(); d.setMonth(d.getMonth()+1,0); return d; })();
     return this.htDashboardService.getBookingsForMap(
-      businessId,
+      resolvedBusinessId,
       req.user.userId,
       f,
       t,
