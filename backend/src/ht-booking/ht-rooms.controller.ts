@@ -14,7 +14,8 @@ export class HtRoomsController {
 
   @Get()
   getAll(@Query('businessId') bId: string, @Req() req: any) {
-    return this.s.getAll(bId, req.user.userId);
+     const resolvedId = String(req.user.role) === 'STAFF' ? req.user.businessId : bId;
+     return this.s.getAll(resolvedId, req.user.userId, req.user.role ?? 'OWNER', req.user.businessId);
   }
 
   @Post()

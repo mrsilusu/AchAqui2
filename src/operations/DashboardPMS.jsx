@@ -177,6 +177,8 @@ export function DashboardPMS({
   accessToken,
   staffToken = null,
   onLogout,
+    staffRole = null,
+    onAuthExpired,
   onOpenReception,
   onClose,
   reloadTrigger = 0,
@@ -186,12 +188,22 @@ export function DashboardPMS({
   onDismissNoShowAlert,
 }) {
   const insets = useSafeAreaInsets();
-  const isStaffMode = !!staffToken;
-  const effectiveAccessToken = accessToken || staffToken || null;
-  const canAccessReception = !isStaffMode || canSeeSection(staffToken, 'reception');
-  const canAccessHousekeeping = !isStaffMode || canSeeSection(staffToken, 'housekeeping');
-  const canAccessBookingsMgr = !isStaffMode || canSeeSection(staffToken, 'bookingsManager');
-  const canAccessStaff = !isStaffMode || canSeeSection(staffToken, 'staffManager');
+  const isKioskStaff = !!staffToken;
+  const isJwtStaff = !!staffRole && !staffToken;
+  const isStaffMode = isKioskStaff || isJwtStaff;
+  const effectiveAccessToken = staffToken || accessToken || null;
+  const canAccessReception = !isStaffMode
+    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
+      : canSeeSection(staffToken, 'reception'));
+  const canAccessHousekeeping = !isStaffMode
+    || (isJwtStaff ? (staffRole === 'HT_HOUSEKEEPER' || staffRole === 'HT_MANAGER')
+      : canSeeSection(staffToken, 'housekeeping'));
+  const canAccessBookingsMgr = !isStaffMode
+    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
+      : canSeeSection(staffToken, 'bookingsManager'));
+  const canAccessStaff = !isStaffMode
+    || (isJwtStaff ? staffRole === 'HT_MANAGER'
+      : canSeeSection(staffToken, 'staffManager'));
 
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -222,6 +234,15 @@ export function DashboardPMS({
     return () => { alive.current = false; };
   }, []);
 
+  const handleAuthError = useCallback((error) => {
+    if (!isStaffMode || error?.type !== 'token') return false;
+    if (typeof onAuthExpired === 'function') {
+      onAuthExpired();
+      return true;
+    }
+    return false;
+  }, [isStaffMode, onAuthExpired]);
+
   const load = useCallback(async (isRefresh = false) => {
     if (!businessId || !effectiveAccessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
@@ -231,12 +252,13 @@ export function DashboardPMS({
       setData(result);
     } catch (e) {
       if (!alive.current) return;
+      if (handleAuthError(e)) return;
       // Falha silenciosa — mostrar dados vazios em vez de crashar
       setData(null);
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [businessId, effectiveAccessToken]);
+  }, [businessId, effectiveAccessToken, handleAuthError]);
 
   // Recarregar quando reloadTrigger muda (ex: depois de acções na Receção)
   useEffect(() => { load(); }, [load, reloadTrigger]);
@@ -253,15 +275,16 @@ export function DashboardPMS({
         const safe = Number.isFinite(raw) ? Math.max(50, Math.min(150, Math.round(raw))) : 100;
         setBusinessMetadata(metadata);
         setSellablePercentInput(String(safe));
-      } catch {
+      } catch (e) {
         if (cancelled) return;
+        if (handleAuthError(e)) return;
         setBusinessMetadata({});
         setSellablePercentInput('100');
       }
     };
     loadBusinessPolicy();
     return () => { cancelled = true; };
-  }, [businessId, effectiveAccessToken]);
+  }, [businessId, effectiveAccessToken, handleAuthError]);
 
   const submitCancelFromMap = useCallback(async () => {
     if (!cancelBookingFromMap) return;
@@ -277,11 +300,12 @@ export function DashboardPMS({
       setCancelReasonFromMap('');
       load(true);
     } catch (e) {
+      if (handleAuthError(e)) return;
       Alert.alert('Erro', e?.message || 'Operação falhou.');
     } finally {
       if (alive.current) setCancelMapLoading(false);
     }
-  }, [cancelBookingFromMap, cancelReasonFromMap, effectiveAccessToken, load]);
+  }, [cancelBookingFromMap, cancelReasonFromMap, effectiveAccessToken, handleAuthError, load]);
 
   const handleSaveSellablePercent = useCallback(async () => {
     const raw = Number(sellablePercentInput);
@@ -308,11 +332,12 @@ export function DashboardPMS({
       await load(true);
     } catch (e) {
       if (!alive.current) return;
+      if (handleAuthError(e)) return;
       Alert.alert('Erro', e?.message || 'Não foi possível guardar a política de capacidade.');
     } finally {
       if (alive.current) setPolicySaving(false);
     }
-  }, [sellablePercentInput, businessMetadata, businessId, effectiveAccessToken, load]);
+  }, [sellablePercentInput, businessMetadata, businessId, effectiveAccessToken, handleAuthError, load]);
 
   // ─── Housekeeping: marcar quarto como limpo ou em manutenção ─────────────
   const handleMarkClean = useCallback(async (roomId, taskId) => {
@@ -322,11 +347,12 @@ export function DashboardPMS({
       else await backendApi.updateHtRoom(roomId, { status: 'INSPECTING' }, effectiveAccessToken);
       await load(true);
     } catch (e) {
+      if (handleAuthError(e)) return;
       Alert.alert('Erro', e?.message || 'Não foi possível marcar o quarto como limpo.');
     } finally {
       if (alive.current) setActionLoading(null);
     }
-  }, [effectiveAccessToken, load]);
+  }, [effectiveAccessToken, handleAuthError, load]);
 
   const handleMarkMaintenance = useCallback(async (roomId) => {
     Alert.alert('Manutenção', 'Marcar quarto como em manutenção?', [
@@ -339,6 +365,7 @@ export function DashboardPMS({
             await backendApi.updateHtRoom(roomId, { status: 'MAINTENANCE' }, effectiveAccessToken);
             await load(true);
           } catch (e) {
+            if (handleAuthError(e)) return;
             Alert.alert('Erro', e?.message || 'Operação falhou.');
           } finally {
             if (alive.current) setActionLoading(null);
@@ -346,7 +373,7 @@ export function DashboardPMS({
         },
       },
     ]);
-  }, [effectiveAccessToken, load]);
+  }, [effectiveAccessToken, handleAuthError, load]);
 
   const today = new Date();
   const todayStr = fmtDate(today);
@@ -491,7 +518,9 @@ export function DashboardPMS({
             </View>
 
             {/* ── Overbooking Buffer / Stop-Sell ── */}
-            <View style={dS.policyCard}>
+            {!isStaffMode && <View style={dS.policyCard}>
+            {!isStaffMode && (
+              <View style={dS.policyCard}>
               <Text style={dS.policyTitle}>Overbooking Buffer / Stop-Sell</Text>
               <Text style={dS.policyText}>
                 Define a capacidade vendável por tipo de quarto. 100% = capacidade real; 90% = buffer operacional; 105% = overbooking controlado.
@@ -510,7 +539,8 @@ export function DashboardPMS({
                   <Text style={dS.policyBtnText}>{policySaving ? 'A guardar...' : 'Guardar'}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+              </View>
+            )}
 
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
@@ -743,6 +773,7 @@ export function DashboardPMS({
               }
               load(true);
             } catch (e) {
+              if (handleAuthError(e)) return;
               Alert.alert('Erro', e?.message || 'Operação falhou.');
             }
           }}

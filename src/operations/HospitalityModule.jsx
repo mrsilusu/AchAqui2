@@ -1875,6 +1875,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         onOpenReception={() => {}}
         onClose={() => {}}
         onLogout={onLogout}
+          staffRole={staffRole}
         reloadTrigger={dashboardReloadTrigger}
         guestBookings={activeBookings}
         roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
@@ -2112,6 +2113,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           onAuthExpired={handleStaffAuthExpired}
           onLogout={onLogout}
           onOpenReception={() => {}}
+            staffRole={isOwner ? null : staffRole}
           onClose={() => setShowDashboard(false)}
           reloadTrigger={dashboardReloadTrigger}
           guestBookings={activeBookings}

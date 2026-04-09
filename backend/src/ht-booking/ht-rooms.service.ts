@@ -6,6 +6,23 @@ import { PrismaService } from '../prisma/prisma.service';
 export class HtRoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async assertAccess(
+    businessId: string,
+    actorId: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+  ): Promise<string> {
+    const scopedBusinessId = String(businessId || '').trim();
+    if (!scopedBusinessId) throw new BadRequestException('businessId é obrigatório.');
+    if (String(actorRole) === 'STAFF') {
+      if (!actorBusinessId || actorBusinessId !== scopedBusinessId) {
+        throw new ForbiddenException('Sem permissão para este estabelecimento.');
+      }
+      return scopedBusinessId;
+    }
+    return this.assertOwnership(businessId, actorId);
+  }
+
   private async assertOwnership(businessId: string, ownerId: string) {
     const scopedBusinessId = String(businessId || '').trim();
     if (!scopedBusinessId) {
@@ -38,8 +55,8 @@ export class HtRoomsService {
     return scopedBusinessId;
   }
 
-  async getAll(businessId: string, ownerId: string) {
-    const scopedBusinessId = await this.assertOwnership(businessId, ownerId);
+  async getAll(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    const scopedBusinessId = await this.assertAccess(businessId, actorId, actorRole, actorBusinessId);
     return this.prisma.htRoom.findMany({
       where: { businessId: scopedBusinessId },
       include: {
