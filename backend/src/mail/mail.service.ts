@@ -71,4 +71,15 @@ export class MailService implements OnModuleInit {
       clientPreview: nodemailer.getTestMessageUrl(clientResult),
     };
   }
+
+  async sendPasswordResetEmail(params: { to: string; resetLink: string }) {
+    const result = await this.transporter.sendMail({
+      from: 'no-reply@achaqui.app',
+      to: params.to,
+      subject: 'Recuperar senha — AchAqui',
+      text: `Clique no link para redefinir a sua senha:\n\n${params.resetLink}\n\nEste link expira em 1 hora. Se não pediu a recuperação, ignore este email.`,
+      html: `<p>Clique no link abaixo para redefinir a sua senha:</p><p><a href="${params.resetLink}">${params.resetLink}</a></p><p>Este link expira em <strong>1 hora</strong>. Se não pediu a recuperação, ignore este email.</p>`,
+    });
+    return { preview: nodemailer.getTestMessageUrl(result) };
+  }
 }

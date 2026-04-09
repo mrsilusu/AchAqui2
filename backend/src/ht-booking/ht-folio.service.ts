@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
-import { HtFolioItemType, HtPaymentMethod } from '@prisma/client';
+import { HtFolioItemType, HtPaymentMethod, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export class AddFolioItemDto {
@@ -50,10 +50,10 @@ export class FinancialCheckoutDto {
 export class HtFolioService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Validar que a reserva pertence ao owner ──────────────────────────────
+  // ─── Validar que a reserva pertence a negócio com acesso HT do utilizador ─
   private async assertOwner(bookingId: string, ownerId: string) {
     const booking = await this.prisma.htRoomBooking.findFirst({
-      where: { id: bookingId, business: { ownerId } },
+      where: { id: bookingId },
       include: {
         business: { select: { id: true, name: true } },
         room:     { select: { id: true, number: true } },
@@ -62,18 +62,78 @@ export class HtFolioService {
           where:   { removedAt: null },
           orderBy: { addedAt: 'asc' },
         },
+        guestProfile: {
+          select: { documentType: true, documentNumber: true, nationality: true },
+        },
+        roomType: { select: { pricePerNight: true, name: true } },
       },
     });
     if (!booking) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
+
+    const business = await this.prisma.business.findUnique({
+      where: { id: booking.businessId },
+      select: { ownerId: true },
+    });
+    const isOwner = business?.ownerId === ownerId;
+    if (!isOwner) {
+      const staff = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          businessId: booking.businessId,
+          userId: ownerId,
+          revokedAt: null,
+          OR: [
+            { role: StaffRole.GENERAL_MANAGER },
+            {
+              role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] },
+              OR: [{ module: 'HT' }, { module: null }],
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!staff) throw new ForbiddenException('Reserva não encontrada ou sem permissão.');
+    }
+
     return booking;
   }
 
   // ─── Listar folio completo ────────────────────────────────────────────────
   async getFolio(bookingId: string, ownerId: string) {
     const booking = await this.assertOwner(bookingId, ownerId);
-    const subtotal   = booking.folio.reduce((s, i) => s + i.amount, 0);
-    const totalPrice = booking.totalPrice ?? 0;
-    const paid       = booking.depositPaid ?? 0;
+    const nights = Math.max(1, Math.round(
+      (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
+    ));
+
+    // Separar extras (minibar, room service, etc.) dos itens de alojamento já no folio
+    const existingAccomItems = booking.folio.filter(i => i.type === 'ACCOMMODATION' && i.amount > 0 && !i.removedAt);
+    const extraItems         = booking.folio.filter(i => i.type !== 'ACCOMMODATION' && !i.removedAt);
+    const discountItems      = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+
+    // Valor base de alojamento: pricePerNight × nights (guardado como totalPrice na reserva)
+    // Os extras são cobrados adicionalmente
+    const baseAccomPrice = booking.roomType
+      ? (booking.roomType.pricePerNight ?? 0) * nights * (booking.rooms ?? 1)
+      : (booking.totalPrice ?? 0);
+
+    const extrasTotal = extraItems.reduce((s, i) => s + i.amount, 0);
+    const discountsTotal = discountItems.reduce((s, i) => s + i.amount, 0); // negativo
+
+    // Item virtual de alojamento (sempre mostrado, independente do estado do folio)
+    const accomDisplayItem = {
+      id:          '__accommodation__',
+      type:        'ACCOMMODATION' as const,
+      description: `Alojamento · ${nights} noite${nights !== 1 ? 's' : ''} · Quarto ${booking.room?.number ?? '—'}`,
+      quantity:    nights,
+      unitPrice:   baseAccomPrice / Math.max(nights, 1),
+      amount:      baseAccomPrice,
+      addedAt:     booking.startDate,
+      removedAt:   null,
+    };
+
+    const displayItems = [accomDisplayItem, ...extraItems, ...discountItems];
+    const totalPrice   = baseAccomPrice + extrasTotal + discountsTotal;
+    const subtotal     = totalPrice;
+    const paid         = booking.depositPaid ?? 0;
 
     return {
       booking: {
@@ -87,14 +147,14 @@ export class HtFolioService {
         paymentMethod: booking.paymentMethod,
         totalPrice,
         depositPaid:   paid,
-        balance:       totalPrice - paid,
+        balance:       Math.max(0, totalPrice - paid),
       },
-      items:   booking.folio,
+      items:   displayItems.filter(i => !i.removedAt),
       summary: {
         subtotal,
         totalPrice,
         depositPaid: paid,
-        balance:     totalPrice - paid,
+        balance:     Math.max(0, totalPrice - paid),
       },
     };
   }
@@ -103,8 +163,21 @@ export class HtFolioService {
   async addItem(bookingId: string, ownerId: string, dto: AddFolioItemDto) {
     const booking = await this.assertOwner(bookingId, ownerId);
 
-    if (booking.status === 'CHECKED_OUT' || booking.status === 'CANCELLED') {
-      throw new BadRequestException('Não é possível adicionar itens a uma reserva encerrada.');
+    // [RULE] Lançamentos no folio só são permitidos quando o hóspede está fisicamente
+    // presente no hotel (CHECKED_IN). Aceitar PENDING ou CONFIRMED permitiria cobrar
+    // consumos a hóspedes que ainda não chegaram ou que nunca chegaram (no-show).
+    if (booking.status !== 'CHECKED_IN') {
+      const statusLabel: Record<string, string> = {
+        PENDING:     'pendente (hóspede ainda não chegou)',
+        CONFIRMED:   'confirmada (hóspede ainda não fez check-in)',
+        CHECKED_OUT: 'encerrada (hóspede já saiu)',
+        CANCELLED:   'cancelada',
+        NO_SHOW:     'no-show',
+      };
+      const label = statusLabel[booking.status] ?? booking.status;
+      throw new BadRequestException(
+        `Não é possível lançar consumos: reserva ${label}. Só é possível em reservas com check-in activo.`
+      );
     }
 
     const amount = dto.quantity * dto.unitPrice;
@@ -174,11 +247,23 @@ export class HtFolioService {
       throw new BadRequestException('Reserva não está em estado válido para checkout financeiro.');
     }
 
-    const subtotal     = booking.folio.reduce((s, i) => s + i.amount, 0);
-    const discount     = dto.discountAmount ?? 0;
-    const finalTotal   = Math.max(0, subtotal - discount);
-    const depositPaid  = dto.depositPaid ?? booking.depositPaid ?? 0;
-    const balance      = Math.max(0, finalTotal - depositPaid);
+    // Calcular totalPrice da mesma forma que getFolio para garantir consistência:
+    // acomodação (virtual) + extras explícitos + descontos já no folio
+    const nights = Math.max(1, Math.round(
+      (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
+    ));
+    const baseAccomPrice = booking.roomType
+      ? (booking.roomType.pricePerNight ?? 0) * nights * (booking.rooms ?? 1)
+      : (booking.totalPrice ?? 0);
+    const extraItems    = booking.folio.filter(i => i.type !== 'ACCOMMODATION' && !i.removedAt);
+    const discountInFolio = booking.folio.filter(i => i.amount < 0 && !i.removedAt);
+    const extrasTotal   = extraItems.reduce((s, i) => s + i.amount, 0);
+    const discountsFolioTotal = discountInFolio.reduce((s, i) => s + i.amount, 0);
+    const subtotal      = baseAccomPrice + extrasTotal + discountsFolioTotal;
+    const discount      = dto.discountAmount ?? 0;
+    const finalTotal    = Math.max(0, subtotal - discount);
+    const depositPaid   = dto.depositPaid ?? booking.depositPaid ?? 0;
+    const balance       = Math.max(0, finalTotal - depositPaid);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // Aplicar desconto como item negativo se houver
@@ -187,7 +272,7 @@ export class HtFolioService {
           data: {
             businessId:  booking.businessId,
             bookingId,
-            type:        'ACCOMMODATION',
+              type:        'DISCOUNT',
             description: dto.discountReason || 'Desconto',
             quantity:    1,
             unitPrice:   -discount,
@@ -214,23 +299,36 @@ export class HtFolioService {
       });
     });
 
+    // Buscar config PMS para dados fiscais (NIF, prefixo de fatura)
+    const pmsConfig = await this.prisma.htPmsConfig.findUnique({
+      where: { businessId: booking.businessId },
+      select: { vatNumber: true, invoicePrefix: true },
+    }).catch(() => null);
+
     // Gerar recibo
-    const receipt = this.generateReceipt(updated, booking.folio);
+    const receipt = this.generateReceipt(updated, booking.folio, pmsConfig);
     return { booking: updated, receipt };
   }
 
   // ─── Gerar dados do recibo ────────────────────────────────────────────────
-  private generateReceipt(booking: any, items: any[]) {
+  private generateReceipt(booking: any, items: any[], pmsConfig?: { vatNumber?: string | null; invoicePrefix?: string | null } | null) {
     const nights = Math.max(1, Math.round(
       (new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000
     ));
     return {
       receiptNumber: `REC-${Date.now()}`,
       issuedAt:      new Date().toISOString(),
-      business:      booking.business,
+      business: {
+        ...booking.business,
+        vatNumber:     pmsConfig?.vatNumber     || null,
+        invoicePrefix: pmsConfig?.invoicePrefix || null,
+      },
       guest: {
-        name:  booking.guestName || booking.user?.name,
-        email: booking.user?.email,
+        name:           booking.guestName  || booking.user?.name,
+        email:          booking.user?.email,
+        phone:          booking.guestPhone || null,
+        documentType:   booking.guestProfile?.documentType   || null,
+        documentNumber: booking.guestProfile?.documentNumber || null,
       },
       stay: {
         room:      booking.room?.number,

@@ -1,13 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { BookingService } from './booking.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 // Limite global de leitura: 60 req/min por IP
-@UseGuards(ThrottlerGuard)
 @Controller('bookings')
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
@@ -17,6 +17,23 @@ export class BookingController {
     @Req() req: { user: { userId: string; role: UserRole } },
   ) {
     return this.bookingService.findAllForUser(req.user.userId, req.user.role);
+  }
+
+  // PÚBLICO — qualquer cliente pode verificar disponibilidade antes de reservar.
+  // Não expõe dados privados (sem guestName, bookedRanges, etc.) — apenas
+  // { available, physicalRooms, occupied, nextAvailableDate }.
+  // Rate limit: 120 req/min por IP para suportar bursts legítimos do calendário
+  // sem abrir demasiado para scraping.
+  @Get('availability')
+  @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  getAvailability(
+    @Query('businessId') businessId: string,
+    @Query('roomTypeId') roomTypeId: string,
+    @Query('startDate')  startDate:  string,
+    @Query('endDate')    endDate:    string,
+  ) {
+    return this.bookingService.getAvailability(businessId, roomTypeId, startDate, endDate);
   }
 
   // SEGURANÇA: Rate limit agressivo em criação de reservas —
@@ -47,6 +64,18 @@ export class BookingController {
 
   // SEGURANÇA: rejectByOwner valida internamente que booking.business.ownerId === currentUserId.
   // Um Owner A não consegue cancelar reservas de Owner B mesmo conhecendo o bookingId.
+  // Editar datas / tipo de quarto de uma reserva (OWNER only)
+  @Patch(':id')
+  @Roles(UserRole.OWNER)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  updateBooking(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+    @Body() body: { startDate?: string; endDate?: string; roomTypeId?: string },
+  ) {
+    return this.bookingService.updateByOwner(id, req.user.userId, body);
+  }
+
   @Patch(':id/reject')
   @Roles(UserRole.OWNER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })

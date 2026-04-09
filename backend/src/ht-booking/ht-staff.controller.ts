@@ -1,63 +1,90 @@
-// backend/src/ht-booking/ht-staff.controller.ts
-import {
-  Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards,
-} from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
-import {
-  HtStaffService,
-  CreateHtStaffDto,
-  UpdateHtStaffDto,
-} from './ht-staff.service';
+import { HtStaffService } from './ht-staff.service';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
 @Controller('ht/staff')
 export class HtStaffController {
-  constructor(private readonly htStaffService: HtStaffService) {}
+  constructor(private readonly s: HtStaffService) {}
 
-  // GET /ht/staff?businessId=...&includeInactive=true
   @Get()
-  getStaff(
-    @Query('businessId')      businessId: string,
+  list(
+    @Query('businessId') businessId: string,
     @Query('includeInactive') includeInactive: string,
-    @Req()                    req: any,
+    @Req() req: any,
   ) {
-    return includeInactive === 'true'
-      ? this.htStaffService.getAllStaff(businessId, req.user.userId)
-      : this.htStaffService.getStaff(businessId, req.user.userId);
+    return this.s.getStaff(businessId, req.user.userId, includeInactive !== 'false');
   }
 
-  // POST /ht/staff
   @Post()
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  createStaff(@Body() dto: CreateHtStaffDto, @Req() req: any) {
-    return this.htStaffService.createStaff(req.user.userId, dto);
+  create(@Body() body: any, @Req() req: any) {
+    return this.s.createStaff(req.user.userId, body);
   }
 
-  // PATCH /ht/staff/:id
+  @Delete(':id')
+  remove(@Param('id') id: string, @Query('businessId') businessId: string, @Req() req: any) {
+    return this.s.suspendStaff(id, businessId, req.user.userId, 'Removido pelo owner');
+  }
+
   @Patch(':id')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  updateStaff(
+  update(
     @Param('id') id: string,
-    @Body()      dto: UpdateHtStaffDto,
-    @Req()       req: any,
+    @Query('businessId') businessId: string,
+    @Body() body: any,
+    @Req() req: any,
   ) {
-    return this.htStaffService.updateStaff(id, req.user.userId, dto);
+    return this.s.updateStaff(id, businessId, req.user.userId, body);
   }
 
-  // PATCH /ht/staff/:id/suspend
   @Patch(':id/suspend')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  suspendStaff(@Param('id') id: string, @Req() req: any) {
-    return this.htStaffService.suspendStaff(id, req.user.userId);
+  suspend(
+    @Param('id') id: string,
+    @Query('businessId') businessId: string,
+    @Body() body: { reason?: string },
+    @Req() req: any,
+  ) {
+    return this.s.suspendStaff(id, businessId, req.user.userId, body?.reason || 'Suspenso pelo owner');
   }
 
-  // PATCH /ht/staff/:id/reactivate
   @Patch(':id/reactivate')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  reactivateStaff(@Param('id') id: string, @Req() req: any) {
-    return this.htStaffService.reactivateStaff(id, req.user.userId);
+  reactivate(
+    @Param('id') id: string,
+    @Query('businessId') businessId: string,
+    @Req() req: any,
+  ) {
+    return this.s.reactivateStaff(id, businessId, req.user.userId);
+  }
+
+  @Get(':id/activity')
+  activity(
+    @Param('id') id: string,
+    @Query('businessId') businessId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() req: any,
+  ) {
+    return this.s.getStaffActivity(id, businessId, req.user.userId, from, to);
+  }
+
+  @Patch('tasks/:taskId/assign')
+  assignTask(
+    @Param('taskId') taskId: string,
+    @Body() body: { staffId: string; businessId: string },
+    @Req() req: any,
+  ) {
+    return this.s.assignTask(taskId, body.staffId, body.businessId, req.user.userId);
+  }
+
+  @Post(':id/create-account')
+  createAccount(
+    @Param('id') id: string,
+    @Query('businessId') businessId: string,
+    @Body() body: { password?: string },
+    @Req() req: any,
+  ) {
+    return this.s.createStaffAccount(id, businessId, req.user.userId, body);
   }
 }

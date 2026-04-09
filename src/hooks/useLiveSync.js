@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { backendApi } from '../lib/backendApi';
 import { getSupabaseClient } from '../lib/supabaseClient';
 
@@ -12,6 +12,9 @@ export function useLiveSync({ user, accessToken }) {
   const [error, setError] = useState(null);
 
   const isAuthenticated = Boolean(accessToken && user?.id);
+
+  const bookingDebounceRef = useRef(null);
+  const notifDebounceRef = useRef(null);
 
   const loadBookings = useCallback(async () => {
     if (!isAuthenticated) {
@@ -140,7 +143,8 @@ export function useLiveSync({ user, accessToken }) {
         'postgres_changes',
         { event: '*', schema: 'public', table, filter: `userId=eq.${user.id}` },
         () => {
-          loadBookings();
+          clearTimeout(bookingDebounceRef.current);
+          bookingDebounceRef.current = setTimeout(loadBookings, 300);
         },
       );
     }
@@ -150,7 +154,8 @@ export function useLiveSync({ user, accessToken }) {
         'postgres_changes',
         { event: '*', schema: 'public', table, filter: `userId=eq.${user.id}` },
         () => {
-          loadNotifications();
+          clearTimeout(notifDebounceRef.current);
+          notifDebounceRef.current = setTimeout(loadNotifications, 300);
         },
       );
     }
@@ -158,6 +163,8 @@ export function useLiveSync({ user, accessToken }) {
     channel.subscribe();
 
     return () => {
+      clearTimeout(bookingDebounceRef.current);
+      clearTimeout(notifDebounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, loadBookings, loadNotifications, user?.id]);

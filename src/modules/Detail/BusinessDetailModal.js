@@ -22,17 +22,17 @@
  */
 
 import React, {
-  useState, useRef, useMemo, useCallback,
+  useState, useRef, useMemo, useCallback, useEffect,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Image, Animated, PanResponder, Linking, Share, Alert,
-  Dimensions, Platform,
+  Dimensions, Platform, TextInput, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
-import { apiRequest } from '../../lib/backendApi';
+import { apiRequest, backendApi } from '../../lib/backendApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 300;
@@ -50,7 +50,15 @@ const BUSINESS_TYPE_BADGES = {
   education:     { icon: '🎓', label: 'Educação',      color: '#DC2626' },
   freelancer:    { icon: '💼', label: 'Freelancer',    color: '#8B5CF6' },
   accommodation: { icon: '🏨', label: 'Alojamento',    color: '#0EA5E9' },
+  finance:       { icon: '💰', label: 'Financeiro',    color: '#1D4ED8' },
 };
+
+function getBusinessBadge(business) {
+  const ids = business.subCategoryIds || [];
+  if (ids.includes('atm'))  return { icon: '🏧', label: 'ATM',   color: '#047857' };
+  if (ids.includes('bank')) return { icon: '🏦', label: 'Banco', color: '#1D4ED8' };
+  return business.businessType ? (BUSINESS_TYPE_BADGES[business.businessType] ?? null) : null;
+}
 
 const OPERATIONAL_MODULES = [
   { id: 'gastronomy',    layer: 'dining',       label: 'Menu & Reservar Mesa',        emoji: '🍽️', color: '#EA580C', bgColor: '#FFF7ED' },
@@ -134,6 +142,8 @@ export function BusinessDetailModal({
   onClose,
   layer,  // useOperationalLayer() criado externamente (Main) — Nível 2 acima
   authSession = null,  // { accessToken, userId, role }
+  onOpenAuth = null,   // () => void — abre modal de login
+  userLocation = null, // { latitude, longitude } — distância real de estrada via OSRM
 }) {
   const insets  = useSafeAreaInsets();
   const safeTop = insets.top + (Platform.OS === 'android' ? 4 : 0);
@@ -169,8 +179,84 @@ export function BusinessDetailModal({
   const [showReviewStats,   setShowReviewStats]     = useState(false);
   const [claimLoading,      setClaimLoading]        = useState(false);
   const [claimDone,         setClaimDone]           = useState(false);
+  const [socialLoading,     setSocialLoading]       = useState(false);
+  const [isBookmarked,      setIsBookmarked]        = useState(false);
+  const [checkInCount,      setCheckInCount]        = useState(0);
+  const [followerCount,     setFollowerCount]       = useState(0);
+  const [feedPosts,         setFeedPosts]           = useState([]);
+  const [loyaltyState,      setLoyaltyState]        = useState({ points: 0, tier: 'bronze' });
+  // Reviews (Sprint B)
+  const [reviews,           setReviews]             = useState([]);
+  const [reviewsLoading,    setReviewsLoading]      = useState(false);
+  const [helpfulReviewsMap, setHelpfulReviewsMap]   = useState({}); // reviewId -> { isHelpful, count }
+  const [showReviewModal,   setShowReviewModal]     = useState(false);
+  const [pendingStars,      setPendingStars]        = useState(0);
+  const [reviewComment,     setReviewComment]       = useState('');
+  const [reviewSubmitting,  setReviewSubmitting]    = useState(false);
+  // Q&A (Sprint B/C)
+  const [questions,         setQuestions]           = useState([]);
+  const [showAskModal,      setShowAskModal]        = useState(false);
+  const [askText,           setAskText]             = useState('');
+  const [askSubmitting,     setAskSubmitting]       = useState(false);
 
   const scrollRef      = useRef(null);
+
+  // Distância de estrada via OSRM (OpenStreetMap routing, gratuito).
+  // Substitui a estimativa dos cards assim que o modal abre.
+  const [roadDistanceText, setRoadDistanceText] = useState(null);
+  useEffect(() => {
+    setRoadDistanceText(null);
+    const lat = Number(business?.latitude);
+    const lng = Number(business?.longitude);
+    if (!userLocation || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    let active = true;
+    const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.longitude},${userLocation.latitude};${lng},${lat}?overview=false`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (!active) return;
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          const meters = data.routes[0].distance;
+          const km = meters / 1000;
+          setRoadDistanceText(km < 1 ? `${Math.round(meters)}m` : `${km.toFixed(1)}km`);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [business?.id, userLocation?.latitude, userLocation?.longitude]);
+
+
+  // -- Estado social real + reviews + Q&A
+  useEffect(() => {
+    setIsBookmarked(bookmarkedIds.includes(business?.id));
+    if (!business?.id) return;
+
+    // Reviews e Q&A são públicos — carregam sempre
+    setReviewsLoading(true);
+    Promise.all([
+      backendApi.getReviews(business.id).catch(() => []),
+      backendApi.getQuestions(business.id).catch(() => []),
+    ]).then(([fetchedReviews, fetchedQuestions]) => {
+      if (Array.isArray(fetchedReviews)) setReviews(fetchedReviews);
+      if (Array.isArray(fetchedQuestions)) setQuestions(fetchedQuestions);
+    }).finally(() => setReviewsLoading(false));
+
+    if (!authSession?.accessToken) return;
+    Promise.all([
+      backendApi.getSocialState(business.id, authSession.accessToken),
+      backendApi.getBusinessFeed(business.id, 10, authSession.accessToken),
+      backendApi.getLoyaltyState(business.id, authSession.accessToken),
+    ])
+      .then(([state, feed, loyalty]) => {
+        if (state?.isBookmarked !== undefined) setIsBookmarked(state.isBookmarked);
+        if (state?.isFollowed   !== undefined) setFollowed(state.isFollowed);
+        if (state?.followerCount !== undefined) setFollowerCount(state.followerCount);
+        if (state?.checkInCount !== undefined) setCheckInCount(state.checkInCount);
+        if (Array.isArray(feed)) setFeedPosts(feed);
+        if (loyalty?.points !== undefined) setLoyaltyState(loyalty);
+      })
+      .catch(() => {});
+  }, [business?.id, authSession?.accessToken]);
   const sectionOffsets = useRef({});
   const gestureStartY  = useRef(0);        // Y onde o gesto começou
   const carouselAtStart = useRef(true);    // true = carrossel na primeira foto
@@ -181,7 +267,7 @@ export function BusinessDetailModal({
   const bookmarked     = bookmarkedIds.includes(business.id);
   const status         = getBusinessStatus(business.statusText, business.isOpen);
   const photos         = business.photos?.length > 0 ? business.photos : null;
-  const badge          = business.businessType ? BUSINESS_TYPE_BADGES[business.businessType] : null;
+  const badge          = getBusinessBadge(business);
   const activeModules  = OPERATIONAL_MODULES.filter(m => business.modules?.[m.id]);
   // dedupe por layer
   const actionButtons  = activeModules.filter((m, i, a) => a.findIndex(x => x.layer === m.layer) === i);
@@ -196,8 +282,23 @@ export function BusinessDetailModal({
     return tabs;
   }, [business]);
 
+  const mapLat = business.latitude || -8.8368;
+  const mapLng = business.longitude || 13.2343;
+  const staticMapUrl = `https://static-maps.yandex.ru/1.x/?lang=pt_PT&ll=${mapLng},${mapLat}&z=15&size=650,220&l=map&pt=${mapLng},${mapLat},pm2rdm`;
+
   const filteredReviews = useMemo(() => {
-    let r = [...REVIEWS_MOCK];
+    const source = reviews;
+    let r = [...source].map(rv => ({
+      ...rv,
+      // Normalize API response fields to UI fields
+      date: rv.date || (rv.createdAt ? new Date(rv.createdAt).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' }) : ''),
+      name: rv.name || rv.user?.name || 'Utilizador',
+      avatar: rv.avatar || '👤',
+      photos: rv.photos || [],
+      helpful: rv.helpfulCount ?? rv.helpful ?? 0,
+      ownerResponse: rv.ownerResponse ?? rv.ownerReply ?? null,
+      ownerResponseDate: rv.ownerResponseDate ?? (rv.ownerReplyDate ? new Date(rv.ownerReplyDate).toLocaleDateString('pt-PT') : null),
+    }));
     if (reviewFilter === '5')      r = r.filter(x => x.rating === 5);
     if (reviewFilter === '4')      r = r.filter(x => x.rating >= 4);
     if (reviewFilter === 'photos') r = r.filter(x => x.photos.length > 0);
@@ -205,14 +306,16 @@ export function BusinessDetailModal({
     if (reviewSort === 'highest')  r.sort((a, b) => b.rating - a.rating);
     if (reviewSort === 'lowest')   r.sort((a, b) => a.rating - b.rating);
     return r;
-  }, [reviewSort, reviewFilter]);
+  }, [reviews, reviewsLoading, reviewSort, reviewFilter]);
 
   const reviewStats = useMemo(() => {
-    const total = REVIEWS_MOCK.length;
-    const avg = (REVIEWS_MOCK.reduce((s, r) => s + r.rating, 0) / total).toFixed(1);
-    const dist = [5,4,3,2,1].reduce((acc, n) => { acc[n] = REVIEWS_MOCK.filter(r => r.rating === n).length; return acc; }, {});
+    const source = reviews;
+    const total = source.length;
+    if (total === 0) return { total: business.reviews || 0, avg: (business.rating || 0).toFixed(1), dist: { 5:0,4:0,3:0,2:0,1:0 } };
+    const avg = (source.reduce((s, r) => s + r.rating, 0) / total).toFixed(1);
+    const dist = [5,4,3,2,1].reduce((acc, n) => { acc[n] = source.filter(r => r.rating === n).length; return acc; }, {});
     return { total, avg, dist };
-  }, []);
+  }, [reviews, business.rating, business.reviews]);
 
   // ── Swipe-right-to-close ───────────────────────────────────────────────────
   // Regras de activação:
@@ -344,6 +447,12 @@ export function BusinessDetailModal({
     const offset = sectionOffsets.current[tab];
     if (offset !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, offset - 48), animated: true });
   }, []);
+
+  const requireAuth = useCallback((action) => {
+    if (authSession?.accessToken) { action(); return; }
+    // Open login directly — Alert.alert is unreliable on web/Expo environments
+    onOpenAuth?.();
+  }, [authSession, onOpenAuth]);
 
   const toggleHelpful = (id) => setHelpfulReviews(p => ({ ...p, [id]: !p[id] }));
 
@@ -482,7 +591,7 @@ export function BusinessDetailModal({
           </View>
           <View style={s.infoMeta2}>
             <Icon name="location" size={12} color={COLORS.grayText} strokeWidth={1.5} />
-            <Text style={s.distanceText}>{business.distanceText}</Text>
+            <Text style={s.distanceText}>{roadDistanceText ?? business.distanceText}</Text>
             {business.priceLevel && <Text style={s.priceDot}>·</Text>}
             {business.priceLevel && <Text style={s.priceText}>{'Kz'.repeat(business.priceLevel)}</Text>}
           </View>
@@ -495,19 +604,19 @@ export function BusinessDetailModal({
             <Text style={s.ratingTitle}>Avaliar</Text>
             <View style={s.starsRow}>
               {[1,2,3,4,5].map(i => (
-                <TouchableOpacity key={i} onPress={() => setRatingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <TouchableOpacity key={i} onPress={() => requireAuth(() => { setPendingStars(i); setReviewComment(''); setShowReviewModal(true); })} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                   <Text style={{ fontSize: 20, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
                 </TouchableOpacity>
               ))}
             </View>
             <View style={s.statDivider} />
             <View style={s.statCol}>
-              <Text style={s.statValue}>{business.followers != null ? business.followers.toLocaleString() : '1243'}</Text>
+              <Text style={s.statValue}>{(followerCount || business.followers || 0).toLocaleString()}</Text>
               <Text style={s.statLabel}>Seguidores</Text>
             </View>
             <View style={s.statDivider} />
             <View style={s.statCol}>
-              <Text style={s.statValue}>{((business.checkIns || 856) + userCheckIns).toLocaleString()}</Text>
+              <Text style={s.statValue}>{(checkInCount || business.checkIns || 0).toLocaleString()}</Text>
               <Text style={s.statLabel}>Check-ins</Text>
             </View>
           </View>
@@ -516,7 +625,16 @@ export function BusinessDetailModal({
           <View style={s.socialBtnsRow}>
             <TouchableOpacity
               style={[s.socialBtn, followed && s.socialBtnActive]}
-              onPress={() => setFollowed(p => !p)}
+              onPress={() => requireAuth(async () => {
+                if (socialLoading) return;
+                setSocialLoading(true);
+                try {
+                  const res = await backendApi.toggleFollow(business.id, authSession.accessToken);
+                  setFollowed(res.isFollowed);
+                  if (res.followerCount !== undefined) setFollowerCount(res.followerCount);
+                } catch { setFollowed(p => !p); }
+                finally { setSocialLoading(false); }
+              })}
               activeOpacity={0.8}
             >
               <Icon name={followed ? 'check' : 'save'} size={13} color={followed ? COLORS.white : COLORS.darkText} strokeWidth={2} />
@@ -524,15 +642,35 @@ export function BusinessDetailModal({
             </TouchableOpacity>
             <TouchableOpacity
               style={s.socialBtn}
-              onPress={() => { setUserCheckIns(p => p + 1); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); }}
+              onPress={() => requireAuth(async () => {
+                if (socialLoading) return;
+                setSocialLoading(true);
+                try {
+                  const res = await backendApi.checkIn(business.id, authSession.accessToken);
+                  if (res.checkedIn) { setCheckInCount(res.checkInCount); Alert.alert('Check-in feito! ✓', 'Obrigado pela visita.'); }
+                  else { Alert.alert('Já fizeste check-in', res.message || 'Volta amanhã.'); }
+                } catch { Alert.alert('Erro', 'Não foi possível registar.'); }
+                finally { setSocialLoading(false); }
+              })}
               activeOpacity={0.8}
             >
               <Icon name="checkin" size={13} color={COLORS.darkText} strokeWidth={1.5} />
               <Text style={s.socialBtnText}>Check-in</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.socialBtn} onPress={() => onToggleBookmark?.(business.id)} activeOpacity={0.8}>
-              <Icon name="bookmark" size={13} color={COLORS.darkText} strokeWidth={1.5} />
-              <Text style={s.socialBtnText}>Guardar</Text>
+            <TouchableOpacity style={s.socialBtn} onPress={() => requireAuth(async () => {
+                if (socialLoading) return;
+                setSocialLoading(true);
+                try {
+                  const res = await backendApi.toggleBookmark(business.id, authSession.accessToken);
+                  setIsBookmarked(res.isBookmarked);
+                  onToggleBookmark?.(business.id);
+                } catch { onToggleBookmark?.(business.id); }
+                finally { setSocialLoading(false); }
+              })}
+              activeOpacity={0.8}
+            >
+              <Icon name={isBookmarked ? 'heartFilled' : 'bookmark'} size={13} color={isBookmarked ? COLORS.white : COLORS.darkText} strokeWidth={1.5} />
+              <Text style={[s.socialBtnText, isBookmarked && s.socialBtnTextActive]}>Guardar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -557,7 +695,7 @@ export function BusinessDetailModal({
               <TouchableOpacity
                 key={btn.layer}
                 style={s.actionBtn}
-                onPress={() => layer.open(btn.layer, business)}
+                onPress={() => requireAuth(() => layer.open(btn.layer, business))}
                 activeOpacity={0.82}
               >
                 <Text style={s.actionEmoji}>{btn.emoji}</Text>
@@ -640,12 +778,22 @@ export function BusinessDetailModal({
           )}
           {business.description && <Text style={s.description}>{business.description}</Text>}
 
-          {/* Mapa placeholder */}
-          {business.address && (
-            <View style={s.mapPlaceholder}>
-              <Text style={s.mapPlaceholderText}>Mini mapa</Text>
-            </View>
-          )}
+          {/* Mini mapa clicável */}
+          {(business.latitude || business.longitude) && (() => {
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={s.mapPlaceholder}
+                onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${mapLat},${mapLng}`).catch(() => {})}
+              >
+                <Image source={{ uri: staticMapUrl }} style={s.mapImage} resizeMode="cover" />
+                <View style={s.mapOverlayBadge}>
+                  <Icon name="mapPin" size={13} color={COLORS.red} strokeWidth={1.8} />
+                  <Text style={s.mapOverlayText}>Abrir no Google Maps</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })()}
 
           {/* Morada */}
           {business.address && (
@@ -654,7 +802,12 @@ export function BusinessDetailModal({
                 <Text style={s.addressMain}>{business.address}</Text>
                 {business.neighborhood && <Text style={s.addressSub}>{business.neighborhood}</Text>}
               </View>
-              <TouchableOpacity style={s.directionsBtn} onPress={() => Alert.alert('Direções', 'Em breve...')}>
+              <TouchableOpacity style={s.directionsBtn} onPress={() => {
+                const lat = business.latitude || -8.8368;
+                const lng = business.longitude || 13.2343;
+                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`)
+                  .catch(() => Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`));
+              }}>
                 <Text style={s.directionsBtnText}>Direcoes →</Text>
               </TouchableOpacity>
             </View>
@@ -743,8 +896,13 @@ export function BusinessDetailModal({
 
           {/* Lista de reviews */}
           <View style={{ gap: 12, marginBottom: 12 }}>
-            {filteredReviews.slice(0, 3).map(review => {
-              const helpful = helpfulReviews[review.id];
+            {filteredReviews.length === 0 && !reviewsLoading && (
+              <Text style={{ color: COLORS.grayText, fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>
+                Sem avaliações ainda. Sê o primeiro a avaliar!
+              </Text>
+            )}
+            {filteredReviews.slice(0, 5).map(review => {
+              const helpfulEntry = helpfulReviewsMap[review.id] ?? { isHelpful: false, count: review.helpful ?? 0 };
               return (
                 <View key={review.id} style={s.reviewCard}>
                   <View style={s.reviewHeader}>
@@ -765,10 +923,18 @@ export function BusinessDetailModal({
                       ))}
                     </ScrollView>
                   )}
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }} onPress={() => toggleHelpful(review.id)}>
-                    <Icon name="like" size={14} color={helpful ? COLORS.red : COLORS.grayText} strokeWidth={1.5} />
-                    <Text style={{ fontSize: 12, color: helpful ? COLORS.red : COLORS.grayText, fontWeight: '600' }}>
-                      Útil ({review.helpful + (helpful ? 1 : 0)})
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                    onPress={() => requireAuth(async () => {
+                      try {
+                        const res = await backendApi.toggleReviewHelpful(review.id, authSession.accessToken);
+                        setHelpfulReviewsMap(p => ({ ...p, [review.id]: { isHelpful: res.isHelpful, count: res.helpfulCount } }));
+                      } catch { /* silent */ }
+                    })}
+                  >
+                    <Icon name="like" size={14} color={helpfulEntry.isHelpful ? COLORS.red : COLORS.grayText} strokeWidth={1.5} />
+                    <Text style={{ fontSize: 12, color: helpfulEntry.isHelpful ? COLORS.red : COLORS.grayText, fontWeight: '600' }}>
+                      Útil ({helpfulEntry.count})
                     </Text>
                   </TouchableOpacity>
                   {review.ownerResponse && (
@@ -789,9 +955,9 @@ export function BusinessDetailModal({
             <Text style={s.viewAllText}>Ver todas as avaliações ({filteredReviews.length}) →</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.addPhotoBtn} onPress={() => Alert.alert('Fotos', 'Adicionar fotos...')}>
+          <TouchableOpacity style={s.addPhotoBtn} onPress={() => requireAuth(() => { setPendingStars(0); setReviewComment(''); setShowReviewModal(true); })}>
             <Icon name="camera" size={18} color={COLORS.darkText} strokeWidth={1.5} />
-            <Text style={s.addPhotoText}>Adicionar fotos</Text>
+            <Text style={s.addPhotoText}>Escrever avaliação</Text>
           </TouchableOpacity>
         </View>
 
@@ -806,22 +972,45 @@ export function BusinessDetailModal({
           <View style={s.qaSection}>
             <View style={s.qaHeader}>
               <Text style={s.qaTitle}>Perguntas & Respostas</Text>
-              <TouchableOpacity onPress={() => Alert.alert('Perguntar', 'Escreva a sua pergunta...')}>
+              <TouchableOpacity onPress={() => requireAuth(() => { setAskText(''); setShowAskModal(true); })}>
                 <Text style={s.qaAskBtn}>Perguntar</Text>
               </TouchableOpacity>
             </View>
-            {QA_MOCK.map(qa => (
+            {questions.length === 0 && !reviewsLoading && (
+              <Text style={{ color: COLORS.grayText, fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>Sem perguntas ainda. Sê o primeiro a perguntar!</Text>
+            )}
+            {questions.slice(0, 5).map(qa => (
               <View key={qa.id} style={s.qaItem}>
                 <Text style={s.qaQuestion}>❓ {qa.question}</Text>
-                <Text style={s.qaAnswer}>{qa.answer}</Text>
+                {qa.answer ? (
+                  <Text style={s.qaAnswer}>{qa.answer}</Text>
+                ) : (
+                  <Text style={[s.qaAnswer, { color: COLORS.grayText, fontStyle: 'italic' }]}>Sem resposta ainda.</Text>
+                )}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                  <Text style={s.qaDate}>{qa.date}</Text>
-                  <Text style={s.qaHelpful}>👍 {qa.helpful} útil</Text>
+                  <Text style={s.qaDate}>{qa.date || (qa.createdAt ? new Date(qa.createdAt).toLocaleDateString('pt-PT') : '')}</Text>
+                  <TouchableOpacity onPress={() => requireAuth(async () => {
+                    try {
+                      const res = await backendApi.toggleQuestionHelpful(qa.id, authSession.accessToken);
+                      setQuestions(prev => prev.map(q => q.id === qa.id ? { ...q, helpfulCount: res.helpfulCount } : q));
+                    } catch { /* silent */ }
+                  })}>
+                    <Text style={s.qaHelpful}>👍 {qa.helpfulCount ?? qa.helpful ?? 0} útil</Text>
+                  </TouchableOpacity>
                 </View>
+                {/* Owner answer button (only shown to owner) */}
+                {isOwner && !qa.answer && (
+                  <TouchableOpacity
+                    style={{ marginTop: 4 }}
+                    onPress={() => { setAskText(''); setShowAskModal(qa.id); }}
+                  >
+                    <Text style={{ fontSize: 12, color: COLORS.red, fontWeight: '600' }}>Responder →</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
-            <TouchableOpacity onPress={() => Alert.alert('Perguntas', 'Ver todas as perguntas em breve.') }>
-              <Text style={s.viewAllText}>Ver todas as perguntas →</Text>
+            <TouchableOpacity onPress={() => {}}>
+              <Text style={s.viewAllText}>Ver todas as perguntas ({questions.length}) →</Text>
             </TouchableOpacity>
           </View>
 
@@ -845,10 +1034,214 @@ export function BusinessDetailModal({
               <Text style={s.referralHint}>Toque para copiar</Text>
             </View>
           )}
+
+          <View style={s.feedCard}>
+            <View style={s.feedHeader}>
+              <Text style={s.feedTitle}>Feed do Negócio</Text>
+              {isOwner && (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!authSession?.accessToken) return;
+                    backendApi.createBusinessFeedPost(
+                      business.id,
+                      { content: `Novidade de ${business.name} em ${new Date().toLocaleDateString('pt-PT')}.` },
+                      authSession.accessToken,
+                    )
+                      .then(async () => {
+                        const fresh = await backendApi.getBusinessFeed(business.id, 10, authSession.accessToken);
+                        setFeedPosts(Array.isArray(fresh) ? fresh : []);
+                      })
+                      .catch(() => Alert.alert('Erro', 'Não foi possível publicar no feed.'));
+                  }}
+                >
+                  <Text style={s.feedPostBtn}>Publicar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {feedPosts.length === 0 ? (
+              <Text style={s.feedEmpty}>Sem posts ainda. Este espaço mostra novidades e campanhas em tempo real.</Text>
+            ) : (
+              feedPosts.slice(0, 4).map(post => (
+                <View key={post.id} style={s.feedItem}>
+                  <Text style={s.feedItemText}>{post.content}</Text>
+                  <Text style={s.feedItemMeta}>
+                    {post.author?.name || 'Negócio'} • {new Date(post.createdAt).toLocaleDateString('pt-PT')}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={s.loyaltyCard}>
+            <Text style={s.loyaltyTitle}>Fidelidade</Text>
+            <Text style={s.loyaltyPoints}>{(loyaltyState?.points || 0).toLocaleString()} pts</Text>
+            <Text style={s.loyaltyTier}>Nível: {(loyaltyState?.tier || 'bronze').toUpperCase()}</Text>
+            <TouchableOpacity
+              style={s.loyaltyRedeemBtn}
+              onPress={() => requireAuth(async () => {
+                try {
+                  const res = await backendApi.redeemLoyalty(business.id, { points: 50, rewardCode: 'SNACK50' }, authSession.accessToken);
+                  setLoyaltyState(s0 => ({ ...s0, points: res.currentPoints, tier: res.tier }));
+                  Alert.alert('Resgate concluído', 'Cupão SNACK50 aplicado com sucesso.');
+                } catch {
+                  Alert.alert('Fidelidade', 'Pontos insuficientes ou sistema indisponível.');
+                }
+              })}
+            >
+              <Text style={s.loyaltyRedeemText}>Resgatar 50 pts</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Animated.ScrollView>
 
       {/* Nível 2 (OperationalLayerRenderer) renderizado externamente em Main */}
+
+      {/* ── REVIEW MODAL ─────────────────────────────────────────── */}
+      {showReviewModal && (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}
+            activeOpacity={1}
+            onPress={() => setShowReviewModal(false)}
+          />
+          <View style={s.bottomSheet}>
+            <View style={s.bottomSheetHandle} />
+            <Text style={s.bottomSheetTitle}>Avaliar {business.name}</Text>
+            {/* Star picker */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginVertical: 16 }}>
+              {[1,2,3,4,5].map(i => (
+                <TouchableOpacity key={i} onPress={() => setPendingStars(i)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+                  <Text style={{ fontSize: 36, color: i <= pendingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {/* Comment input */}
+            <TextInput
+              style={s.reviewInput}
+              placeholder="Descreve a tua experiência... (mínimo 5 caracteres)"
+              placeholderTextColor={COLORS.grayText}
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+            />
+            <Text style={{ fontSize: 11, color: COLORS.grayText, textAlign: 'right', marginBottom: 12 }}>
+              {reviewComment.length}/500
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={[s.sheetBtn, { flex: 1, backgroundColor: '#F3F4F6' }]}
+                onPress={() => setShowReviewModal(false)}
+              >
+                <Text style={[s.sheetBtnText, { color: COLORS.darkText }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.sheetBtn, { flex: 2, backgroundColor: pendingStars > 0 && reviewComment.trim().length >= 5 ? COLORS.red : '#E5E7EB' }]}
+                disabled={reviewSubmitting || pendingStars === 0 || reviewComment.trim().length < 5}
+                onPress={async () => {
+                  if (reviewSubmitting || pendingStars === 0 || reviewComment.trim().length < 5) return;
+                  setReviewSubmitting(true);
+                  try {
+                    const newReview = await backendApi.createReview(
+                      business.id,
+                      { rating: pendingStars, comment: reviewComment.trim() },
+                      authSession.accessToken,
+                    );
+                    setReviews(prev => {
+                      const without = prev.filter(r => r.userId !== authSession.userId);
+                      return [newReview, ...without];
+                    });
+                    setRatingStars(pendingStars);
+                    setShowReviewModal(false);
+                  } catch (err) {
+                    Alert.alert('Erro', err?.message || 'Não foi possível guardar a avaliação.');
+                  } finally {
+                    setReviewSubmitting(false);
+                  }
+                }}
+              >
+                <Text style={[s.sheetBtnText, { color: pendingStars > 0 && reviewComment.trim().length >= 5 ? '#FFF' : COLORS.grayText }]}>
+                  {reviewSubmitting ? 'A enviar...' : 'Publicar avaliação'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
+
+      {/* ── ASK / ANSWER MODAL ───────────────────────────────────── */}
+      {showAskModal && (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}
+            activeOpacity={1}
+            onPress={() => setShowAskModal(false)}
+          />
+          <View style={s.bottomSheet}>
+            <View style={s.bottomSheetHandle} />
+            <Text style={s.bottomSheetTitle}>
+              {typeof showAskModal === 'string' ? 'Responder à pergunta' : 'Fazer uma pergunta'}
+            </Text>
+            <TextInput
+              style={[s.reviewInput, { marginTop: 12 }]}
+              placeholder={typeof showAskModal === 'string' ? 'Escreve a tua resposta...' : 'Qual é a tua pergunta sobre este negócio?'}
+              placeholderTextColor={COLORS.grayText}
+              value={askText}
+              onChangeText={setAskText}
+              multiline
+              maxLength={300}
+              textAlignVertical="top"
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <TouchableOpacity
+                style={[s.sheetBtn, { flex: 1, backgroundColor: '#F3F4F6' }]}
+                onPress={() => setShowAskModal(false)}
+              >
+                <Text style={[s.sheetBtnText, { color: COLORS.darkText }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.sheetBtn, { flex: 2, backgroundColor: askText.trim().length >= 5 ? COLORS.red : '#E5E7EB' }]}
+                disabled={askSubmitting || askText.trim().length < 5}
+                onPress={async () => {
+                  if (askSubmitting || askText.trim().length < 5) return;
+                  setAskSubmitting(true);
+                  try {
+                    if (typeof showAskModal === 'string') {
+                      // Owner answering a question
+                      const updated = await backendApi.answerQuestion(showAskModal, askText.trim(), authSession.accessToken);
+                      setQuestions(prev => prev.map(q => q.id === showAskModal ? { ...q, answer: updated.answer, answeredAt: updated.answeredAt } : q));
+                    } else {
+                      // User asking a question
+                      const newQ = await backendApi.askQuestion(business.id, askText.trim(), authSession.accessToken);
+                      setQuestions(prev => [newQ, ...prev]);
+                    }
+                    setShowAskModal(false);
+                    setAskText('');
+                  } catch (err) {
+                    Alert.alert('Erro', err?.message || 'Não foi possível enviar.');
+                  } finally {
+                    setAskSubmitting(false);
+                  }
+                }}
+              >
+                <Text style={[s.sheetBtnText, { color: askText.trim().length >= 5 ? '#FFF' : COLORS.grayText }]}>
+                  {askSubmitting ? 'A enviar...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </Animated.View>
   );
 }
@@ -864,6 +1257,14 @@ const s = StyleSheet.create({
   fixedBtnsRow:      { position: 'absolute', left: 0, right: 0, zIndex: 9999, elevation: 10, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 8 },
   floatingBtn:       { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   fixedTitle:        { flex: 1, fontSize: 16, fontWeight: '700', color: '#111111', letterSpacing: -0.3, textAlign: 'center' },
+
+  // Bottom sheet (Review modal + Ask modal)
+  bottomSheet:       { backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, zIndex: 9999, elevation: 15 },
+  bottomSheetHandle: { width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  bottomSheetTitle:  { fontSize: 17, fontWeight: '700', color: '#111', textAlign: 'center' },
+  reviewInput:       { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 14, fontSize: 14, color: '#111', minHeight: 100, backgroundColor: '#F9FAFB' },
+  sheetBtn:          { paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  sheetBtnText:      { fontSize: 15, fontWeight: '700' },
 
   // Hero
   heroWrap:          { width: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#1A1A2E' },
@@ -955,8 +1356,10 @@ const s = StyleSheet.create({
   waBtnText:         { fontSize: 13, fontWeight: '700', color: '#128C7E' },
   highlights:        { fontSize: 13, color: '#8A8A8A', fontStyle: 'italic', marginBottom: 10 },
   description:       { fontSize: 13, color: '#111111', lineHeight: 20, marginBottom: 12 },
-  mapPlaceholder:    { height: 120, backgroundColor: '#F7F7F8', borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-  mapPlaceholderText:{ color: '#9CA3AF', fontSize: 14 },
+  mapPlaceholder:    { height: 130, backgroundColor: '#F7F7F8', borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
+  mapImage:          { width: '100%', height: '100%' },
+  mapOverlayBadge:   { position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.92)', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB' },
+  mapOverlayText:    { fontSize: 11, color: '#1F2937', fontWeight: '700' },
   addressRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E5E7EB' },
   addressMain:       { fontSize: 13, fontWeight: '600', color: '#111111' },
   addressSub:        { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
@@ -1025,4 +1428,20 @@ const s = StyleSheet.create({
   referralCodeBox:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: 14, borderWidth: 1.5, borderColor: '#D32323', gap: 8, marginBottom: 6 },
   referralCodeText:  { fontSize: 22, fontWeight: '800', color: '#D32323', letterSpacing: 3 },
   referralHint:      { fontSize: 11, color: '#8A8A8A', textAlign: 'center' },
+
+  // Feed social + fidelidade
+  feedCard:          { marginTop: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, backgroundColor: '#FFFFFF' },
+  feedHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  feedTitle:         { fontSize: 14, fontWeight: '700', color: '#111111' },
+  feedPostBtn:       { fontSize: 12, color: '#D32323', fontWeight: '700' },
+  feedEmpty:         { fontSize: 12, color: '#6B7280', lineHeight: 18 },
+  feedItem:          { paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  feedItemText:      { fontSize: 13, color: '#111111', lineHeight: 18 },
+  feedItemMeta:      { fontSize: 11, color: '#8A8A8A', marginTop: 4 },
+  loyaltyCard:       { marginTop: 12, borderRadius: 12, padding: 14, backgroundColor: '#FFF7E8', borderWidth: 1, borderColor: '#F5D18C' },
+  loyaltyTitle:      { fontSize: 13, fontWeight: '700', color: '#7A4A00' },
+  loyaltyPoints:     { fontSize: 24, fontWeight: '800', color: '#111111', marginTop: 2 },
+  loyaltyTier:       { fontSize: 12, color: '#7A4A00', fontWeight: '700', marginTop: 2 },
+  loyaltyRedeemBtn:  { marginTop: 10, backgroundColor: '#D32323', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  loyaltyRedeemText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 });

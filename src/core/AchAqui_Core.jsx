@@ -228,6 +228,8 @@ export const CATEGORIES = [
   { id: 'delivery',    label: 'Delivery',     icon: 'delivery'    },
   { id: 'hotels',      label: 'Hotéis',       icon: 'hotel'       },
   { id: 'shopping',    label: 'Compras',      icon: 'payment'     },
+  { id: 'bank',        label: 'Banco',        icon: 'payment'     },
+  { id: 'atm',         label: 'ATM',          icon: 'payment'     },
   { id: 'health',      label: 'Saúde',        icon: 'certified'   },
   { id: 'services',    label: 'Serviços',     icon: 'professional'},
   { id: 'more',        label: 'Mais',         icon: 'chevronRight'},
@@ -235,6 +237,8 @@ export const CATEGORIES = [
 
 export const ALL_CATEGORIES = [
   { section: 'Popular', items: [
+    { id: 'bank',       label: 'Banco',             icon: 'payment'      },
+    { id: 'atm',        label: 'ATM',               icon: 'payment'      },
     { id: 'accountants', label: 'Contabilistas',     icon: 'payment'      },
     { id: 'handyman',    label: 'Faz-tudo',          icon: 'professional' },
     { id: 'electricians',label: 'Eletricistas',      icon: 'certified'    },
@@ -277,6 +281,8 @@ export const ALL_CATEGORIES = [
     { id: 'education',     label: 'Educação',              icon: 'certified'    },
     { id: 'pets',          label: 'Animais de Estimação',  icon: 'heart'        },
     { id: 'financial',     label: 'Serviços Financeiros',  icon: 'payment'      },
+    { id: 'bank',          label: 'Banco',                 icon: 'payment'      },
+    { id: 'atm',           label: 'ATM',                   icon: 'payment'      },
     { id: 'localflavor',   label: 'Tesouros Locais',       icon: 'star'         },
     { id: 'public',        label: 'Serviços Públicos',     icon: 'info'         },
     { id: 'massmedia',     label: 'Meios de Comunicação',  icon: 'web'          },
@@ -302,7 +308,7 @@ export const CATEGORY_TO_BUSINESS_TYPES = {
   homeservices: ['service'], localservices: ['service'], eventplanning: ['service','entertainment'],
   arts: ['entertainment'], active: ['sports','health'], professional: ['professional','service'],
   automotive: ['automotive'], hotelsTravel: ['accommodation'], education: ['education'],
-  pets: ['service'], financial: ['finance'], localflavor: ['food','entertainment'],
+  pets: ['service'], financial: ['finance'], bank: ['finance'], atm: ['finance'], localflavor: ['food','entertainment'],
   public: ['service'], massmedia: ['tech'], religious: ['service'],
   accountants: ['professional','finance'], handyman: ['service'], electricians: ['service'],
 };

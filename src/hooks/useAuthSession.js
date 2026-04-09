@@ -50,11 +50,21 @@ export function useAuthSession() {
     [session?.accessToken],
   );
 
+  const jwtPayload = useMemo(
+    () => parseJwtPayload(session?.accessToken),
+    [session?.accessToken],
+  );
+
   const user = session?.user
     ? {
         ...session.user,
         role: session.user.role || roleFromToken || 'CLIENT',
       }
+    : null;
+
+  const effectiveRole = user?.role || roleFromToken;
+  const primaryStaffRole = Array.isArray(user?.staffRoles)
+    ? (user.staffRoles.find((r) => r?.module === 'HT' || r?.role?.startsWith?.('HT_')) || user.staffRoles[0])
     : null;
 
   const saveSession = useCallback(async (nextSession) => {
@@ -73,9 +83,13 @@ export function useAuthSession() {
     user,
     accessToken: session?.accessToken || null,
     refreshToken: session?.refreshToken || null,
-    isOwner: user?.role === 'OWNER',
-    isAdmin: user?.role === 'ADMIN',
-    isClient: user?.role === 'CLIENT',
+    isOwner: effectiveRole === 'OWNER',
+    isAdmin: effectiveRole === 'ADMIN',
+    isClient: effectiveRole === 'CLIENT',
+    isStaff: user?.role === 'STAFF',
+    staffRole: parseJwtPayload(session?.accessToken)?.staffRole ?? null,
+    staffBusinessId: parseJwtPayload(session?.accessToken)?.businessId ?? null,
+    staffId: parseJwtPayload(session?.accessToken)?.staffId ?? null,
     loading,
     saveSession,
     reloadSession: loadSession,

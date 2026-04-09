@@ -305,10 +305,17 @@ function ReceiptModal({ visible, receipt, onClose }) {
         </View>
 
         <ScrollView contentContainerStyle={fS.receiptBody}>
-          {/* Cabeçalho */}
+          {/* Cabeçalho fiscal */}
           <View style={fS.receiptBusiness}>
             <Text style={fS.receiptBusinessName}>{receipt.business?.name}</Text>
-            <Text style={fS.receiptNum}>Nº {receipt.receiptNumber}</Text>
+            {receipt.business?.address && (
+              <Text style={fS.receiptMeta}>{receipt.business.address}</Text>
+            )}
+            {receipt.business?.vatNumber && (
+              <Text style={fS.receiptMeta}>NIF: {receipt.business.vatNumber}</Text>
+            )}
+            <View style={fS.receiptDivider} />
+            <Text style={fS.receiptNum}>Recibo Nº {receipt.receiptNumber}</Text>
             <Text style={fS.receiptDate}>Emitido: {fmtDate(receipt.issuedAt)}</Text>
           </View>
 
@@ -316,7 +323,13 @@ function ReceiptModal({ visible, receipt, onClose }) {
           <View style={fS.receiptSection}>
             <Text style={fS.receiptSectionTitle}>Hóspede</Text>
             <Text style={fS.receiptLine}>{receipt.guest?.name}</Text>
+            {receipt.guest?.phone && <Text style={fS.receiptMeta}>Tel: {receipt.guest.phone}</Text>}
             {receipt.guest?.email && <Text style={fS.receiptMeta}>{receipt.guest.email}</Text>}
+            {receipt.guest?.documentNumber && (
+              <Text style={fS.receiptMeta}>
+                {receipt.guest.documentType || 'Doc'}: {receipt.guest.documentNumber}
+              </Text>
+            )}
           </View>
 
           <View style={fS.receiptSection}>
@@ -344,7 +357,9 @@ function ReceiptModal({ visible, receipt, onClose }) {
           <View style={fS.receiptTotals}>
             <View style={fS.receiptTotalRow}>
               <Text style={fS.receiptTotalLabel}>TOTAL PAGO</Text>
-              <Text style={fS.receiptTotalVal}>{fmtMoney(receipt.summary?.total)}</Text>
+              <Text style={fS.receiptTotalVal}>
+                {fmtMoney(receipt.summary?.total ?? receipt.items?.reduce((s,i) => s + (i.amount || 0), 0))}
+              </Text>
             </View>
             <View style={fS.receiptTotalRow}>
               <Text style={fS.receiptMeta}>
@@ -356,7 +371,12 @@ function ReceiptModal({ visible, receipt, onClose }) {
             </View>
           </View>
 
-          <Text style={fS.receiptFooter}>Obrigado pela sua preferência</Text>
+          <View style={fS.receiptFiscalFooter}>
+            <Text style={fS.receiptFooter}>Obrigado pela sua preferência</Text>
+            <Text style={fS.receiptFiscalNote}>
+              {"Este documento não substitui fatura fiscal.\nPara emissão de fatura contacte o estabelecimento."}
+            </Text>
+          </View>
         </ScrollView>
       </View>
     </Modal>
@@ -509,16 +529,35 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
                 <Text style={fS.summaryLabel}>Total</Text>
                 <Text style={fS.summaryVal}>{fmtMoney(data?.summary?.totalPrice)}</Text>
               </View>
-              {(data?.summary?.depositPaid > 0) && (
-                <View style={fS.summaryRow}>
-                  <Text style={fS.summaryLabel}>Já pago</Text>
-                  <Text style={[fS.summaryVal, { color: '#22A06B' }]}>−{fmtMoney(data?.summary?.depositPaid)}</Text>
+              {isPaid ? (
+                /* Pago: mostrar o valor efectivamente pago */
+                <View style={[fS.summaryRow, { backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10, marginTop: 4 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[fS.summaryLabel, { color: '#16A34A' }]}>Total Pago</Text>
+                    {data?.booking?.paymentMethod && (
+                      <Text style={{ fontSize: 11, color: '#16A34A', marginTop: 2 }}>
+                        {PAYMENT_METHODS.find(m => m.key === data.booking.paymentMethod)?.label || data.booking.paymentMethod}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[fS.summaryVal, { color: '#16A34A', fontWeight: '800' }]}>
+                    {fmtMoney(data?.summary?.totalPrice)}
+                  </Text>
                 </View>
+              ) : (
+                <>
+                  {(data?.summary?.depositPaid > 0) && (
+                    <View style={fS.summaryRow}>
+                      <Text style={fS.summaryLabel}>Já pago</Text>
+                      <Text style={[fS.summaryVal, { color: '#22A06B' }]}>−{fmtMoney(data?.summary?.depositPaid)}</Text>
+                    </View>
+                  )}
+                  <View style={[fS.summaryRow, fS.summaryBalance]}>
+                    <Text style={fS.balanceLabel}>Saldo em dívida</Text>
+                    <Text style={fS.balanceVal}>{fmtMoney(data?.summary?.balance)}</Text>
+                  </View>
+                </>
               )}
-              <View style={[fS.summaryRow, fS.summaryBalance]}>
-                <Text style={fS.balanceLabel}>Saldo em dívida</Text>
-                <Text style={fS.balanceVal}>{fmtMoney(data?.summary?.balance)}</Text>
-              </View>
             </View>
 
             {/* ── Acções ── */}
@@ -529,8 +568,38 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
               </TouchableOpacity>
             )}
 
-            {receipt && (
-              <TouchableOpacity style={fS.receiptBtn} onPress={() => setShowReceipt(true)}>
+            {(receipt || isPaid) && (
+              <TouchableOpacity style={fS.receiptBtn} onPress={() => {
+                // Se não há receipt em memória mas a reserva está paga,
+                // gerar recibo a partir dos dados do folio
+                if (!receipt && isPaid && data) {
+                  const generatedReceipt = {
+                    receiptNumber: `REC-${booking?.id?.slice(-8)?.toUpperCase() || Date.now()}`,
+                    issuedAt:      new Date().toISOString(),
+                    business:      { name: booking?.businessName || '—' },
+                    guest:         { name: data.booking?.guestName },
+                    stay: {
+                      room:      data.booking?.room,
+                      startDate: data.booking?.startDate,
+                      endDate:   data.booking?.endDate,
+                      nights:    nights(data.booking?.startDate, data.booking?.endDate),
+                    },
+                    items: (data.items || []).map(i => ({
+                      description: i.description,
+                      quantity:    i.quantity,
+                      unitPrice:   i.unitPrice,
+                      amount:      i.amount,
+                    })),
+                    summary: {
+                      total:         data.summary?.totalPrice,
+                      paymentMethod: data.booking?.paymentMethod,
+                      paymentStatus: data.booking?.paymentStatus,
+                    },
+                  };
+                  setReceipt(generatedReceipt);
+                }
+                setShowReceipt(true);
+              }}>
                 <Icon name="briefcase" size={16} color={COLORS.blue} strokeWidth={2} />
                 <Text style={fS.receiptBtnText}>Ver Recibo</Text>
               </TouchableOpacity>
@@ -654,5 +723,8 @@ const fS = StyleSheet.create({
   receiptTotalRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   receiptTotalLabel:   { fontSize: 15, fontWeight: '800', color: '#111' },
   receiptTotalVal:     { fontSize: 20, fontWeight: '800', color: '#111', letterSpacing: -0.5 },
-  receiptFooter:       { textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 32, fontStyle: 'italic' },
+  receiptFooter:       { textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 8, fontStyle: 'italic' },
+  receiptFiscalFooter: { marginTop: 24, alignItems: 'center' },
+  receiptFiscalNote:   { textAlign: 'center', fontSize: 10, color: '#bbb', marginTop: 6, lineHeight: 15 },
+  receiptDivider:      { height: 1, backgroundColor: '#E5E7EB', marginVertical: 8 },
 });

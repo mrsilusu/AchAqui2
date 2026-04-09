@@ -5,6 +5,5 @@ import { SocialService } from './social.service';
 @Module({
   controllers: [SocialController],
   providers: [SocialService],
-  exports: [SocialService],
 })
 export class SocialModule {}

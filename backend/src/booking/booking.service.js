@@ -286,6 +286,28 @@ var BookingService = function () {
                             }
                             roomBookingData = __assign(__assign({}, bookingData), { guestName: (_d = dto.guestName) !== null && _d !== void 0 ? _d : user.name, guestPhone: (_e = dto.guestPhone) !== null && _e !== void 0 ? _e : null, adults: (_f = dto.adults) !== null && _f !== void 0 ? _f : 1, children: (_g = dto.children) !== null && _g !== void 0 ? _g : 0, rooms: (_h = dto.rooms) !== null && _h !== void 0 ? _h : 1, totalPrice: calculatedPrice, notes: (_k = dto.notes) !== null && _k !== void 0 ? _k : null, roomTypeId: (_l = dto.roomTypeId) !== null && _l !== void 0 ? _l : null });
                             if (!(bookingType === create_booking_dto_1.BookingTypeDto.ROOM)) return [3 /*break*/, 4];
+                            // Validar disponibilidade antes de criar reserva
+                            if (dto.roomTypeId) {
+                                // Regra 1+2: contar quartos físicos e reservas activas sobrepostas
+                                var physicalRooms = await this.prisma.htRoom.count({
+                                    where: { roomTypeId: dto.roomTypeId, businessId: dto.businessId }
+                                });
+                                if (physicalRooms === 0) {
+                                    throw new common_1.BadRequestException('Este tipo de quarto não tem quartos físicos disponíveis.');
+                                }
+                                // Regra 2: contar reservas activas sobrepostas para este roomType
+                                var overlapping = await this.prisma.htRoomBooking.count({
+                                    where: {
+                                        roomTypeId: dto.roomTypeId,
+                                        status: { in: [client_1.HtBookingStatus.PENDING, client_1.HtBookingStatus.CONFIRMED, client_1.HtBookingStatus.CHECKED_IN] },
+                                        startDate: { lt: endDate },
+                                        endDate:   { gt: startDate },
+                                    }
+                                });
+                                if (overlapping >= physicalRooms) {
+                                    throw new common_1.BadRequestException('Não há quartos disponíveis para as datas seleccionadas.');
+                                }
+                            }
                             return [4 /*yield*/, this.prisma.htRoomBooking.create({
                                     data: roomBookingData,
                                     include: {

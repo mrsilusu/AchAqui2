@@ -22,6 +22,12 @@ export class AuthController {
     return this.authService.signIn(signInDto);
   }
 
+  @Post('staff-pin-login')
+  @Public()
+  staffPinLogin(@Body() body: { businessId: string; pin: string }) {
+    return this.authService.staffPinLogin(body);
+  }
+
   @Post('refresh')
   @Public()
   refresh(@Body() refreshTokenDto: RefreshTokenDto) {
@@ -53,5 +59,19 @@ export class AuthController {
     @Body() body: UpdateOwnerSettingsDto,
   ) {
     return this.authService.updateSettings(req.user.userId, body);
+  }
+
+  @Patch('profile')
+  updateProfile(
+    @Req() req: { user: { userId: string } },
+    @Body() body: { name: string },
+  ) {
+    return this.authService.updateProfile(req.user.userId, body);
+  }
+
+  @Post('forgot-password')
+  @Public()
+  forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email ?? '');
   }
 }

@@ -38,6 +38,7 @@ enum UserRole {
   ADMIN
   OWNER
   CLIENT
+  STAFF
 }
 
 // [TENANT] Roles de staff por módulo numa única enum.
@@ -176,6 +177,7 @@ enum AuditAction {
   HT_BOOKING_CHECKED_IN
   HT_BOOKING_CHECKED_OUT
   HT_BOOKING_NO_SHOW
+  HT_BOOKING_REVERT_NO_SHOW
   HT_BOOKING_MODIFIED
   HT_FOLIO_ITEM_ADDED
   HT_FOLIO_ITEM_REMOVED
@@ -197,6 +199,16 @@ enum AuditAction {
 }
 
 // =============================================================================
+// ENUMS — INTERACÇÕES SOCIAIS
+// =============================================================================
+
+enum InteractionType {
+  BOOKMARK  // utilizador guardou o negócio
+  FOLLOW    // utilizador segue o negócio
+  CHECKIN   // utilizador fez check-in físico
+}
+
+// =============================================================================
 // MODELOS CORE (sem prefixo — infraestrutura partilhada)
 // =============================================================================
 
@@ -206,24 +218,27 @@ model User {
   password      String
   role          UserRole
   name          String
+  isSuspended   Boolean              @default(false)
+  suspendedAt   DateTime?
+  suspensionReason String?
   // Core relations
   businesses    Business[]
   refreshTokens RefreshToken[]
   notifications Notification[]
+  deviceTokens  DeviceToken[]
   claimRequests ClaimRequest[]
+  // Interacções sociais
+  interactions  UserBusinessInteraction[]
+  feedPosts     BusinessFeedPost[]
+  loyaltyLedger LoyaltyLedger[]
+  // Avaliações & Q&A
+  reviews       Review[]
+  questions     BusinessQuestion[]
   // PMS / módulos
   htBookings    HtRoomBooking[]
-  htStaffProfile HtStaff[]
+  htStaffProfiles HtStaff[]
   staffRoles    CoreBusinessStaff[]
   auditActions  CoreAuditLog[]
-  // Social
-  follows       Follow[]
-  checkIns      CheckIn[]
-  reviews       Review[]
-  reviewHelpful ReviewHelpful[]
-  questions     Question[]
-  questionHelpful QuestionHelpful[]
-  bookmarks     Bookmark[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 }
@@ -244,6 +259,13 @@ model Business {
   claimedAt      DateTime?
   source         BusinessSource         @default(MANUAL)
   googlePlaceId  String?                @unique
+  // Interacções sociais
+  interactions   UserBusinessInteraction[]
+  feedPosts      BusinessFeedPost[]
+  loyaltyLedger  LoyaltyLedger[]
+  // Avaliações & Q&A
+  reviews        Review[]
+  questions      BusinessQuestion[]
   // Core relations
   operatingHours OperatingHour[]
   notifications  Notification[]
@@ -259,16 +281,10 @@ model Business {
   htRooms        HtRoom[]
   htBookings     HtRoomBooking[]
   htGuests       HtGuestProfile[]
-  htFolioItems   HtFolioItem[]
   htStaff        HtStaff[]
+  htFolioItems   HtFolioItem[]
   // DI — Dining (reservas de mesa já existentes)
   diBookings     DiTableBooking[]
-  // Social
-  follows        Follow[]
-  checkIns       CheckIn[]
-  reviews        Review[]
-  questions      Question[]
-  bookmarks      Bookmark[]
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 }
@@ -415,6 +431,150 @@ model DataUpdateSuggestion {
 }
 
 // =============================================================================
+// INTERACÇÕES SOCIAIS — Bookmark, Follow, Check-in
+// Many-to-Many entre User e Business com tipo e deduplicação nativa
+// =============================================================================
+
+model UserBusinessInteraction {
+  id         String          @id @default(uuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type       InteractionType
+  // date só preenchida para CHECKIN (YYYY-MM-DD) — limita 1 check-in por dia
+  date       String?
+  createdAt  DateTime        @default(now())
+
+  // Previne duplicados:
+  // BOOKMARK/FOLLOW: unique por userId + businessId + type
+  // CHECKIN:         unique por userId + businessId + type + date
+  @@unique([userId, businessId, type, date])
+  @@index([userId, type])       // "todos os bookmarks do user X"
+  @@index([businessId, type])   // "todos os seguidores do negócio Y"
+}
+
+// Feed social do negócio para descoberta e prova social.
+model BusinessFeedPost {
+  id         String    @id @default(uuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  content    String
+  mediaUrl   String?
+  isPinned   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([businessId, createdAt])
+  @@map("business_feed_posts")
+}
+
+// Ledger de pontos de fidelidade para auditoria e saldo acumulado por negócio.
+model LoyaltyLedger {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pointsDelta Int
+  reason     String
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, businessId, createdAt])
+  @@index([businessId, createdAt])
+  @@map("loyalty_ledger")
+}
+
+// =============================================================================
+// AVALIAÇÕES — Reviews + Helpful + Resposta do proprietário
+// =============================================================================
+
+model Review {
+  id             String          @id @default(uuid())
+  businessId     String
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating         Int             // 1-5
+  comment        String
+  helpfulCount   Int             @default(0)
+  ownerReply     String?
+  ownerReplyDate DateTime?
+  helpful        ReviewHelpful[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([userId, businessId])
+  @@index([businessId, createdAt])
+  @@map("reviews")
+}
+
+// Um utilizador só pode marcar "útil" uma vez por avaliação
+model ReviewHelpful {
+  id       String @id @default(uuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@unique([reviewId, userId])
+  @@map("review_helpful")
+}
+
+// =============================================================================
+// Q&A — Perguntas & Respostas
+// =============================================================================
+
+model BusinessQuestion {
+  id           String            @id @default(uuid())
+  businessId   String
+  business     Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String?
+  answeredAt   DateTime?
+  helpfulCount Int               @default(0)
+  helpful      QuestionHelpful[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([businessId, createdAt])
+  @@map("business_questions")
+}
+
+// Um utilizador só pode votar uma vez por pergunta
+model QuestionHelpful {
+  id         String           @id @default(uuid())
+  questionId String
+  question   BusinessQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId     String
+
+  @@unique([questionId, userId])
+  @@map("question_helpful")
+}
+
+// Registo de tokens para push (Expo/FCM), compatível com múltiplos devices por utilizador.
+model DeviceToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String
+  provider   String    @default("expo")
+  platform   String?
+  appVersion String?
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, token])
+  @@index([provider, updatedAt])
+  @@map("device_tokens")
+}
+
+// =============================================================================
 // MÓDULO HT — HOTELARIA / PMS
 // Todas as tabelas com prefixo ht_
 // =============================================================================
@@ -437,6 +597,7 @@ model HtPmsConfig {
   includesBreakfast   Boolean  @default(false)
   petsAllowed         Boolean  @default(false)
   instantConfirm      Boolean  @default(false)
+  noShowPenalty       Float    @default(0)   // penalização em Kz (0 = sem penalização)
   // iCal — canal manager
   icalExportToken     String?  // token secreto para URL de exportação
   icalImportUrl       String?  // URL do Booking.com / Airbnb
@@ -444,6 +605,7 @@ model HtPmsConfig {
   vatNumber           String?  // NIF do estabelecimento (AGT)
   invoicePrefix       String?  // ex: "ACH-HTL"
   invoiceSequence     Int      @default(0)
+    overbookingBuffer   Int      @default(100) // % da capacidade vendável (100 = real, 90 = buffer, 105 = overbooking)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -497,6 +659,8 @@ model HtRoom {
   updatedAt  DateTime             @updatedAt
 
   @@unique([businessId, number])
+  @@index([businessId, status])          // dashboard + auto-assign CLEAN
+  @@index([roomTypeId, status])           // overlap check por tipo
   @@map("ht_rooms")
 }
 
@@ -515,6 +679,8 @@ model HtGuestProfile {
   // [GDPR] Dados de identificação — encriptados em repouso (AES-256)
   documentType   String?         // "BI" | "Passaporte" | "DIRE"
   documentNumber String?         // encriptado
+  companyName    String?
+  nif            String?
   nationality    String?
   dateOfBirth    DateTime?       // encriptado
   address        String?
@@ -529,7 +695,51 @@ model HtGuestProfile {
   updatedAt      DateTime        @updatedAt
 
   @@unique([businessId, documentNumber])
+  @@index([businessId, nif])
   @@map("ht_guest_profiles")
+}
+
+model HtStaff {
+  id                 String               @id @default(uuid())
+  businessId         String
+  business           Business             @relation(fields: [businessId], references: [id])
+  userId             String?
+  user               User?                @relation(fields: [userId], references: [id])
+  coreStaffId        String?              @unique
+  fullName           String
+  phone              String?
+  email              String?
+  position           String?
+  department         HtStaffDepartment
+  photoUrl           String?
+  documentType       String?
+  documentNumber     String?
+  shift              HtShift              @default(ROTATING)
+  workDays           Int[]                @default([1, 2, 3, 4, 5])
+  startTime          String?
+  endTime            String?
+  assignedFloors     Int[]                @default([])
+  maxRoomsPerDay     Int?
+  pinHash            String?
+  canCancelBookings  Boolean              @default(false)
+  canApplyDiscounts  Boolean              @default(false)
+  canViewFinancials  Boolean              @default(false)
+  employmentStart    DateTime?
+  employmentEnd      DateTime?
+  isActive           Boolean              @default(true)
+  emergencyName      String?
+  emergencyPhone     String?
+  notes              String?
+  addedById          String?
+  updatedById        String?
+  housekeepingTasks  HtHousekeepingTask[] @relation("HtStaffTasks")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([businessId, documentNumber])
+  @@index([businessId, department])
+  @@index([businessId, isActive])
+  @@map("ht_staff")
 }
 
 // Reserva de quarto.
@@ -569,8 +779,11 @@ model HtRoomBooking {
   voucherCode     String?
   // Timestamps operacionais — [AUDIT] registados também no CoreAuditLog
   confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
   checkedInAt     DateTime?
   checkedOutAt    DateTime?
+  originalEndDate DateTime?         // data prevista de saída antes de checkout antecipado
   noShowAt        DateTime?
   // [ACID] optimistic locking para alterações concorrentes
   version         Int              @default(0)
@@ -578,6 +791,13 @@ model HtRoomBooking {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  // Índices para queries de disponibilidade e dashboard
+  @@index([businessId, status])
+  @@index([roomTypeId, status, startDate, endDate])  // overlap check
+  @@index([roomId, status])                           // auto-assign + conflito extend
+  @@index([businessId, startDate])                    // arrivals
+  @@index([businessId, endDate])                      // departures
+  @@index([userId, createdAt])                        // histórico do cliente
   @@map("ht_room_bookings")
 }
 
@@ -606,6 +826,7 @@ model HtFolioItem {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  @@index([bookingId, removedAt])   // getFolio query
   @@map("ht_folio_items")
 }
 
@@ -615,7 +836,7 @@ model HtHousekeepingTask {
   roomId        String
   room          HtRoom                 @relation(fields: [roomId], references: [id])
   assignedToId  String?
-  assignedStaff HtStaff?              @relation(fields: [assignedToId], references: [id])
+  assignedTo    HtStaff?               @relation("HtStaffTasks", fields: [assignedToId], references: [id])
   priority      HtHousekeepingPriority @default(NORMAL)
   startedAt     DateTime?
   completedAt   DateTime?
@@ -626,67 +847,6 @@ model HtHousekeepingTask {
   updatedAt     DateTime               @updatedAt
 
   @@map("ht_housekeeping_tasks")
-}
-
-// Perfil operacional do staff hoteleiro.
-// Separado do CoreBusinessStaff (autorizações) — este modelo guarda dados operacionais.
-// [TENANT]  businessId em todas as queries.
-// [GDPR]    documentNumber nunca no audit log.
-// [SECURITY] pinHash = bcrypt — nunca exposto na API.
-model HtStaff {
-  id                  String             @id @default(uuid())
-  // [TENANT]
-  businessId          String
-  business            Business           @relation(fields: [businessId], references: [id])
-  // Ligação opcional a um utilizador da app
-  userId              String?
-  user                User?              @relation(fields: [userId], references: [id])
-  // Ligação opcional ao registo de autorização (CoreBusinessStaff)
-  coreStaffId         String?            @unique
-  // Dados pessoais
-  fullName            String
-  phone               String?
-  email               String?
-  position            String?            // "Rececionista Chefe", "Camareira Sénior"
-  department          HtStaffDepartment
-  photoUrl            String?
-  // [GDPR] Identificação
-  documentType        String?            // "BI" | "Passaporte" | "DIRE"
-  documentNumber      String?
-  // Horário
-  shift               HtShift            @default(ROTATING)
-  workDays            Int[]              @default([1, 2, 3, 4, 5])
-  startTime           String?            // "08:00"
-  endTime             String?            // "16:00"
-  // Housekeeping
-  assignedFloors      Int[]              @default([])
-  maxRoomsPerDay      Int?
-  // [SECURITY] PIN de acesso ao PMS — bcrypt hash, nunca devolvido pela API
-  pinHash             String?
-  // Permissões operacionais granulares
-  canCancelBookings   Boolean            @default(false)
-  canApplyDiscounts   Boolean            @default(false)
-  canViewFinancials   Boolean            @default(false)
-  // Vínculo laboral
-  employmentStart     DateTime?
-  employmentEnd       DateTime?
-  isActive            Boolean            @default(true)
-  // Contacto de emergência
-  emergencyName       String?
-  emergencyPhone      String?
-  notes               String?
-  // Relações inversas
-  housekeepingTasks   HtHousekeepingTask[]
-  // [AUDIT] rastreio de quem criou / atualizou
-  addedById           String?
-  updatedById         String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-
-  @@unique([businessId, documentNumber])
-  @@index([businessId, department])
-  @@index([businessId, isActive])
-  @@map("ht_staff")
 }
 
 // =============================================================================
@@ -718,125 +878,4 @@ model DiTableBooking {
 // HE — Health               → tabelas: he_appointments, he_practitioners
 // ED — Education            → tabelas: ed_courses, ed_enrollments, ed_sessions
 // PS — Professional Services→ tabelas: ps_appointments, ps_quotes, ps_projects
-
-// =============================================================================
-// MÓDULO SOCIAL — Follow, CheckIn, Review, Q&A, Bookmark
-// =============================================================================
-
-/// Seguir um negócio — um utilizador pode seguir um negócio uma vez.
-model Follow {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id])
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, businessId])
-  @@map("social_follows")
-}
-
-/// Check-in num negócio — máximo 1 por utilizador por dia.
-model CheckIn {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id])
-  date       String   // "YYYY-MM-DD" — simplifica o unique diário
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, businessId, date])
-  @@map("social_checkins")
-}
-
-/// Bookmark sincronizado com a conta — cache offline no AsyncStorage.
-model Bookmark {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id])
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, businessId])
-  @@map("social_bookmarks")
-}
-
-/// Avaliação de um negócio — um utilizador pode avaliar um negócio uma vez.
-model Review {
-  id                String          @id @default(uuid())
-  userId            String
-  user              User            @relation(fields: [userId], references: [id])
-  businessId        String
-  business          Business        @relation(fields: [businessId], references: [id])
-  rating            Int             // 1-5
-  comment           String
-  photos            String[]        @default([])
-  ownerResponse     String?
-  ownerResponseDate DateTime?
-  helpfulCount      Int             @default(0)
-  helpful           ReviewHelpful[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-
-  @@unique([userId, businessId])
-  @@map("social_reviews")
-}
-
-/// Marcar avaliação como útil — um utilizador só pode marcar uma vez.
-model ReviewHelpful {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  reviewId  String
-  review    Review   @relation(fields: [reviewId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@unique([userId, reviewId])
-  @@map("social_review_helpful")
-}
-
-/// Pergunta sobre um negócio.
-model Question {
-  id          String            @id @default(uuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id])
-  businessId  String
-  business    Business          @relation(fields: [businessId], references: [id])
-  content     String
-  helpfulCount Int              @default(0)
-  answer      QuestionAnswer?
-  helpful     QuestionHelpful[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-
-  @@map("social_questions")
-}
-
-/// Resposta do dono a uma pergunta — uma pergunta tem no máximo uma resposta.
-model QuestionAnswer {
-  id         String   @id @default(uuid())
-  questionId String   @unique
-  question   Question @relation(fields: [questionId], references: [id])
-  authorId   String   // OWNER userId
-  content    String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("social_question_answers")
-}
-
-/// Marcar pergunta como útil.
-model QuestionHelpful {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id])
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, questionId])
-  @@map("social_question_helpful")
-}
 

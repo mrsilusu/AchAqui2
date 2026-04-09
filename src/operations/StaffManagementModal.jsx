@@ -1,500 +1,508 @@
-// =============================================================================
-// StaffManagementModal.jsx — Gestão do Staff Hoteleiro
-// Props:
-//   businessId  — ID do negócio (tenant)
-//   accessToken — JWT do owner
-//   onClose     — fecha o modal
-// =============================================================================
-
+/**
+ * StaffManagementModal
+ * Lista completa do staff com filtros, criação e acesso ao perfil individual.
+ *
+ * Props:
+ *   visible       boolean
+ *   businessId    string
+ *   accessToken   string
+ *   onClose       () => void
+ *   onOpenProfile (staff) => void   — abre StaffProfileSheet
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Modal, TextInput, Alert, ActivityIndicator, Switch,
+  Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
+// ─── Constantes ──────────────────────────────────────────────────────────────
 const DEPARTMENTS = [
-  { value: 'RECEPTION',    label: 'Receção' },
-  { value: 'HOUSEKEEPING', label: 'Housekeeping' },
-  { value: 'MAINTENANCE',  label: 'Manutenção' },
-  { value: 'MANAGEMENT',   label: 'Gestão' },
-  { value: 'SECURITY',     label: 'Segurança' },
-  { value: 'RESTAURANT',   label: 'Restaurante' },
+  { key: 'RECEPTION',    label: 'Receção' },
+  { key: 'HOUSEKEEPING', label: 'Limpeza' },
+  { key: 'MAINTENANCE',  label: 'Manutenção' },
+  { key: 'MANAGEMENT',   label: 'Gestão' },
+  { key: 'SECURITY',     label: 'Segurança' },
+  { key: 'RESTAURANT',   label: 'Restaurante' },
 ];
 
-const SHIFTS = [
-  { value: 'MORNING',   label: 'Manhã' },
-  { value: 'AFTERNOON', label: 'Tarde' },
-  { value: 'NIGHT',     label: 'Noite' },
-  { value: 'ROTATING',  label: 'Rotativo' },
-  { value: 'FLEXIBLE',  label: 'Flexível' },
+const FILTERS = [
+  { key: 'all',       label: 'Todos' },
+  { key: 'active',    label: 'Ativos' },
+  { key: 'suspended', label: 'Suspensos' },
 ];
 
-const DEPT_COLORS = {
-  RECEPTION:    { color: '#1565C0', bg: '#EFF6FF' },
-  HOUSEKEEPING: { color: '#22A06B', bg: '#F0FDF4' },
-  MAINTENANCE:  { color: '#D97706', bg: '#FFFBEB' },
-  MANAGEMENT:   { color: '#7C3AED', bg: '#F5F3FF' },
-  SECURITY:     { color: '#DC2626', bg: '#FEF2F2' },
-  RESTAURANT:   { color: '#D97706', bg: '#FFF7ED' },
+const COLORS = {
+  primary:  '#1565C0',
+  danger:   '#DC2626',
+  success:  '#22A06B',
+  warning:  '#D97706',
+  bg:       '#F8FAFC',
+  card:     '#FFFFFF',
+  border:   '#E2E8F0',
+  text:     '#1E293B',
+  muted:    '#64748B',
+  white:    '#FFFFFF',
 };
 
-function getDeptLabel(dept) {
-  return DEPARTMENTS.find(d => d.value === dept)?.label || dept;
-}
-function getShiftLabel(shift) {
-  return SHIFTS.find(s => s.value === shift)?.label || shift;
-}
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function StaffManagementModal({ visible, businessId, accessToken, onClose, onOpenProfile }) {
+  const [staffList, setStaffList]         = useState([]);
+  const [loading, setLoading]             = useState(false);
+  const [filter, setFilter]               = useState('all');
+  const [deptFilter, setDeptFilter]       = useState('');
+  const [showCreate, setShowCreate]       = useState(false);
+  const [creatingAccountId, setCreatingAccountId] = useState(null);
+  const [showCreateAccountModal, setShowCreateAccountModal] = useState(false);
+  const [accountTargetStaff, setAccountTargetStaff] = useState(null);
+  const [accountPassword, setAccountPassword] = useState('');
 
-// ─── Formulário de staff ──────────────────────────────────────────────────────
-function StaffForm({ initial, businessId, onSave, onCancel }) {
-  const [fullName,           setFullName]          = useState(initial?.fullName           || '');
-  const [department,         setDepartment]        = useState(initial?.department         || 'RECEPTION');
-  const [position,           setPosition]          = useState(initial?.position           || '');
-  const [phone,              setPhone]             = useState(initial?.phone              || '');
-  const [email,              setEmail]             = useState(initial?.email              || '');
-  const [shift,              setShift]             = useState(initial?.shift              || 'ROTATING');
-  const [pin,                setPin]               = useState('');
-  const [canCancel,          setCanCancel]         = useState(initial?.canCancelBookings  || false);
-  const [canDiscount,        setCanDiscount]       = useState(initial?.canApplyDiscounts  || false);
-  const [canFinancials,      setCanFinancials]     = useState(initial?.canViewFinancials  || false);
-  const [emergencyName,      setEmergencyName]     = useState(initial?.emergencyName      || '');
-  const [emergencyPhone,     setEmergencyPhone]    = useState(initial?.emergencyPhone     || '');
-  const [notes,              setNotes]             = useState(initial?.notes              || '');
-  const [loading,            setLoading]           = useState(false);
-
-  async function handleSave() {
-    if (!fullName.trim()) { Alert.alert('Erro', 'Nome obrigatório.'); return; }
-    if (pin && (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin))) {
-      Alert.alert('Erro', 'PIN deve ter entre 4 e 8 dígitos numéricos.');
-      return;
-    }
-    setLoading(true);
-    try {
-      const payload = {
-        fullName:           fullName.trim(),
-        department,
-        position:           position.trim() || undefined,
-        phone:              phone.trim()    || undefined,
-        email:              email.trim()    || undefined,
-        shift,
-        pin:                pin             || undefined,
-        canCancelBookings:  canCancel,
-        canApplyDiscounts:  canDiscount,
-        canViewFinancials:  canFinancials,
-        emergencyName:      emergencyName.trim() || undefined,
-        emergencyPhone:     emergencyPhone.trim()|| undefined,
-        notes:              notes.trim()    || undefined,
-      };
-      if (!initial) payload.businessId = businessId;
-      await onSave(payload);
-    } catch (e) {
-      Alert.alert('Erro', e?.message || 'Não foi possível guardar.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <ScrollView style={sS.formScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <Text style={sS.formTitle}>{initial ? 'Editar Funcionário' : 'Novo Funcionário'}</Text>
-
-      <Text style={sS.label}>Nome completo *</Text>
-      <TextInput style={sS.input} value={fullName} onChangeText={setFullName}
-        placeholder="Ex: Ana Silva" placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.label}>Cargo / Função</Text>
-      <TextInput style={sS.input} value={position} onChangeText={setPosition}
-        placeholder="Ex: Rececionista Chefe" placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.label}>Departamento *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {DEPARTMENTS.map(d => (
-          <TouchableOpacity key={d.value} style={[sS.chip, department === d.value && sS.chipActive]}
-            onPress={() => setDepartment(d.value)}>
-            <Text style={[sS.chipText, department === d.value && sS.chipTextActive]}>{d.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <Text style={sS.label}>Turno</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {SHIFTS.map(s => (
-          <TouchableOpacity key={s.value} style={[sS.chip, shift === s.value && sS.chipActive]}
-            onPress={() => setShift(s.value)}>
-            <Text style={[sS.chipText, shift === s.value && sS.chipTextActive]}>{s.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <Text style={sS.label}>Telefone</Text>
-      <TextInput style={sS.input} value={phone} onChangeText={setPhone}
-        keyboardType="phone-pad" placeholder="+244 9XX XXX XXX" placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.label}>Email</Text>
-      <TextInput style={sS.input} value={email} onChangeText={setEmail}
-        keyboardType="email-address" autoCapitalize="none"
-        placeholder="staff@hotel.ao" placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.label}>PIN de acesso PMS (4–8 dígitos)</Text>
-      <TextInput style={sS.input} value={pin} onChangeText={setPin}
-        keyboardType="numeric" secureTextEntry maxLength={8}
-        placeholder={initial ? '••••  (deixar vazio para manter)' : '1234'}
-        placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.sectionLabel}>Permissões</Text>
-      <View style={sS.permRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={sS.permLabel}>Cancelar reservas</Text>
-          <Text style={sS.permSub}>Pode cancelar reservas confirmadas</Text>
-        </View>
-        <Switch value={canCancel} onValueChange={setCanCancel}
-          trackColor={{ false: '#D1D5DB', true: COLORS.blue + '80' }}
-          thumbColor={canCancel ? COLORS.blue : '#F9FAFB'} />
-      </View>
-      <View style={sS.permRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={sS.permLabel}>Aplicar descontos</Text>
-          <Text style={sS.permSub}>Pode lançar descontos no fólio</Text>
-        </View>
-        <Switch value={canDiscount} onValueChange={setCanDiscount}
-          trackColor={{ false: '#D1D5DB', true: COLORS.blue + '80' }}
-          thumbColor={canDiscount ? COLORS.blue : '#F9FAFB'} />
-      </View>
-      <View style={sS.permRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={sS.permLabel}>Ver financeiro</Text>
-          <Text style={sS.permSub}>Pode consultar receita e totais</Text>
-        </View>
-        <Switch value={canFinancials} onValueChange={setCanFinancials}
-          trackColor={{ false: '#D1D5DB', true: COLORS.blue + '80' }}
-          thumbColor={canFinancials ? COLORS.blue : '#F9FAFB'} />
-      </View>
-
-      <Text style={sS.sectionLabel}>Contacto de emergência</Text>
-      <TextInput style={sS.input} value={emergencyName} onChangeText={setEmergencyName}
-        placeholder="Nome do contacto" placeholderTextColor="#9CA3AF" />
-      <TextInput style={[sS.input, { marginBottom: 4 }]} value={emergencyPhone} onChangeText={setEmergencyPhone}
-        keyboardType="phone-pad" placeholder="Telefone de emergência" placeholderTextColor="#9CA3AF" />
-
-      <Text style={sS.label}>Notas internas</Text>
-      <TextInput style={[sS.input, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]}
-        value={notes} onChangeText={setNotes} multiline
-        placeholder="Observações internas..." placeholderTextColor="#9CA3AF" />
-
-      <View style={sS.formBtns}>
-        <TouchableOpacity style={sS.cancelBtn} onPress={onCancel} disabled={loading}>
-          <Text style={sS.cancelBtnText}>Cancelar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[sS.saveBtn, loading && { opacity: 0.6 }]}
-          onPress={handleSave} disabled={loading}>
-          {loading
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={sS.saveBtnText}>Guardar</Text>}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-}
-
-// ─── Card de staff ────────────────────────────────────────────────────────────
-function StaffCard({ member, onEdit, onToggle }) {
-  const dc = DEPT_COLORS[member.department] || { color: '#6B7280', bg: '#F9FAFB' };
-  return (
-    <View style={[sS.card, !member.isActive && sS.cardInactive]}>
-      <View style={sS.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={sS.cardName}>{member.fullName}</Text>
-          {member.position
-            ? <Text style={sS.cardPosition}>{member.position}</Text>
-            : null}
-        </View>
-        <View style={[sS.deptBadge, { backgroundColor: dc.bg }]}>
-          <Text style={[sS.deptBadgeText, { color: dc.color }]}>
-            {getDeptLabel(member.department)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={sS.cardMeta}>
-        <View style={sS.cardMetaItem}>
-          <Icon name="clock" size={12} color="#6B7280" strokeWidth={2} />
-          <Text style={sS.cardMetaText}>{getShiftLabel(member.shift)}</Text>
-        </View>
-        {member.phone
-          ? <View style={sS.cardMetaItem}>
-              <Icon name="phone" size={12} color="#6B7280" strokeWidth={2} />
-              <Text style={sS.cardMetaText}>{member.phone}</Text>
-            </View>
-          : null}
-        {!member.isActive
-          ? <View style={[sS.cardMetaItem, { backgroundColor: '#FEF2F2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }]}>
-              <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '600' }}>Suspenso</Text>
-            </View>
-          : null}
-      </View>
-
-      {(member.canCancelBookings || member.canApplyDiscounts || member.canViewFinancials) && (
-        <View style={sS.permChips}>
-          {member.canCancelBookings  && <View style={sS.permChip}><Text style={sS.permChipText}>Cancelamentos</Text></View>}
-          {member.canApplyDiscounts  && <View style={sS.permChip}><Text style={sS.permChipText}>Descontos</Text></View>}
-          {member.canViewFinancials  && <View style={sS.permChip}><Text style={sS.permChipText}>Financeiro</Text></View>}
-        </View>
-      )}
-
-      <View style={sS.cardActions}>
-        <TouchableOpacity style={sS.editBtn} onPress={() => onEdit(member)}>
-          <Icon name="edit" size={14} color={COLORS.blue} strokeWidth={2} />
-          <Text style={sS.editBtnText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[sS.toggleBtn, member.isActive ? sS.suspendBtn : sS.activateBtn]}
-          onPress={() => onToggle(member)}>
-          <Text style={[sS.toggleBtnText, { color: member.isActive ? '#DC2626' : '#22A06B' }]}>
-            {member.isActive ? 'Suspender' : 'Reativar'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-// ─── Modal principal ──────────────────────────────────────────────────────────
-export function StaffManagementModal({ businessId, accessToken, onClose }) {
-  const [staff,       setStaff]      = useState([]);
-  const [loading,     setLoading]    = useState(true);
-  const [showForm,    setShowForm]   = useState(false);
-  const [editTarget,  setEditTarget] = useState(null); // null = criar novo
-  const [showInactive, setShowInactive] = useState(false);
+  // Form state
+  const [form, setForm] = useState({
+    fullName: '', email: '', phone: '', department: 'RECEPTION',
+    pin: '', documentType: '', documentNumber: '', employmentStart: '',
+    notes: '', createAppAccount: true, accountPassword: '',
+  });
+  const [saving, setSaving] = useState(false);
 
   const loadStaff = useCallback(async () => {
+    if (!businessId || !accessToken) return;
     setLoading(true);
     try {
-      const res = await backendApi.getHtStaff(businessId, accessToken, showInactive);
-      setStaff(Array.isArray(res) ? res : res?.data || []);
+      const res = await backendApi.getHtStaff(businessId, accessToken);
+      setStaffList(Array.isArray(res) ? res : []);
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível carregar o staff.');
+      Alert.alert('Erro', e?.message || 'Não foi possível carregar o staff.');
     } finally {
       setLoading(false);
     }
-  }, [businessId, accessToken, showInactive]);
+  }, [businessId, accessToken]);
 
-  useEffect(() => { loadStaff(); }, [loadStaff]);
+  useEffect(() => {
+    if (visible) loadStaff();
+  }, [visible, loadStaff]);
 
-  async function handleSave(payload) {
-    if (editTarget) {
-      await backendApi.htUpdateStaff(editTarget.id, payload, accessToken);
-    } else {
-      await backendApi.htCreateStaff(payload, accessToken);
+  // Filtered list
+  const filtered = staffList.filter((s) => {
+    if (filter === 'active'    && !s.isActive) return false;
+    if (filter === 'suspended' &&  s.isActive) return false;
+    if (deptFilter && s.department !== deptFilter) return false;
+    return true;
+  });
+
+  const deptLabel = (key) => DEPARTMENTS.find((d) => d.key === key)?.label ?? key;
+
+  const handleCreateAccount = useCallback(async () => {
+    if (!accountTargetStaff?.id || creatingAccountId) return;
+    const pass = String(accountPassword || '').trim();
+    if (pass.length < 6) {
+      Alert.alert('Password inválida', 'A password deve ter no mínimo 6 caracteres.');
+      return;
     }
-    setShowForm(false);
-    setEditTarget(null);
-    await loadStaff();
-  }
+    setCreatingAccountId(accountTargetStaff.id);
+    try {
+      const res = await backendApi.htCreateStaffAccount(
+        accountTargetStaff.id,
+        businessId,
+        { password: pass },
+        accessToken,
+      );
+      Alert.alert(
+        res.isNew ? 'Conta criada' : 'Conta actualizada',
+        `${res.fullName} pode agora entrar na app com o email:\n${res.email}`,
+      );
+      setShowCreateAccountModal(false);
+      setAccountTargetStaff(null);
+      setAccountPassword('');
+      await loadStaff();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível criar a conta.');
+    } finally {
+      setCreatingAccountId(null);
+    }
+  }, [accountTargetStaff, accountPassword, creatingAccountId, businessId, accessToken, loadStaff]);
 
-  async function handleToggle(member) {
-    const action = member.isActive ? 'suspender' : 'reativar';
-    Alert.alert(
-      member.isActive ? 'Suspender funcionário' : 'Reativar funcionário',
-      `Tem a certeza que deseja ${action} ${member.fullName}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: member.isActive ? 'Suspender' : 'Reativar',
-          style: member.isActive ? 'destructive' : 'default',
-          onPress: async () => {
-            try {
-              if (member.isActive) {
-                await backendApi.htSuspendStaff(member.id, accessToken);
-              } else {
-                await backendApi.htReactivateStaff(member.id, accessToken);
-              }
-              await loadStaff();
-            } catch (e) {
-              Alert.alert('Erro', e?.message || 'Operação falhou.');
-            }
-          },
-        },
-      ],
-    );
-  }
+  const handleCreate = async () => {
+    const fullName = form.fullName.trim();
+    const email    = form.email.trim().toLowerCase();
+    if (fullName.length < 2) { Alert.alert('Erro', 'Nome inválido.'); return; }
+    if (!email.includes('@'))  { Alert.alert('Erro', 'Email inválido.'); return; }
+    if (form.pin && !/^\d{4,8}$/.test(form.pin)) {
+      Alert.alert('Erro', 'PIN deve ter 4–8 dígitos.');
+      return;
+    }
+    if (form.createAppAccount && String(form.accountPassword || '').trim().length < 6) {
+      Alert.alert('Erro', 'A password da conta App deve ter no mínimo 6 caracteres.');
+      return;
+    }
 
-  function openEdit(member) {
-    setEditTarget(member);
-    setShowForm(true);
-  }
+    setSaving(true);
+    try {
+      await backendApi.htCreateStaff({
+        businessId,
+        fullName,
+        email,
+        phone:          form.phone.trim() || undefined,
+        department:     form.department,
+        pin:            form.pin || undefined,
+        documentType:   form.documentType.trim() || undefined,
+        documentNumber: form.documentNumber.trim() || undefined,
+        employmentStart: form.employmentStart.trim() || undefined,
+        notes:          form.notes.trim() || undefined,
+        createAppAccount: !!form.createAppAccount,
+        accountPassword: form.createAppAccount ? String(form.accountPassword || '').trim() : undefined,
+      }, accessToken);
 
-  function openCreate() {
-    setEditTarget(null);
-    setShowForm(true);
-  }
-
-  // ── Contagens por departamento ──────────────────────────────────────────────
-  const byDept = DEPARTMENTS.reduce((acc, d) => {
-    acc[d.value] = staff.filter(m => m.department === d.value && m.isActive).length;
-    return acc;
-  }, {});
+      setForm({ fullName: '', email: '', phone: '', department: 'RECEPTION',
+          pin: '', documentType: '', documentNumber: '', employmentStart: '', notes: '',
+          createAppAccount: true, accountPassword: '' });
+      setShowCreate(false);
+      await loadStaff();
+    } catch (e) {
+      Alert.alert('Erro ao criar', e?.message || 'Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet">
-      <View style={sS.container}>
-        {/* Header */}
-        <View style={sS.header}>
-          <TouchableOpacity onPress={onClose} style={sS.backBtn}>
-            <Icon name="chevronLeft" size={22} color={COLORS.blue} strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={sS.headerTitle}>Gestão do Staff</Text>
-            <Text style={sS.headerSub}>{staff.filter(m => m.isActive).length} activos</Text>
-          </View>
-          <TouchableOpacity style={sS.addBtn} onPress={openCreate}>
-            <Icon name="plus" size={18} color="#fff" strokeWidth={2.5} />
-          </TouchableOpacity>
-        </View>
-
-        {showForm ? (
-          <StaffForm
-            initial={editTarget}
-            businessId={businessId}
-            onSave={handleSave}
-            onCancel={() => { setShowForm(false); setEditTarget(null); }}
-          />
-        ) : (
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 40 }}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Resumo por departamento */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={sS.deptRow}>
-              {DEPARTMENTS.filter(d => byDept[d.value] > 0).map(d => {
-                const dc = DEPT_COLORS[d.value] || { color: '#6B7280', bg: '#F9FAFB' };
-                return (
-                  <View key={d.value} style={[sS.deptSummary, { backgroundColor: dc.bg }]}>
-                    <Text style={[sS.deptSummaryCount, { color: dc.color }]}>{byDept[d.value]}</Text>
-                    <Text style={[sS.deptSummaryLabel, { color: dc.color }]}>{d.label}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-
-            {/* Toggle incluir suspensos */}
-            <TouchableOpacity style={sS.inactiveToggle}
-              onPress={() => setShowInactive(v => !v)}>
-              <Icon name={showInactive ? 'eyeOff' : 'eye'} size={14} color={COLORS.blue} strokeWidth={2} />
-              <Text style={sS.inactiveToggleText}>
-                {showInactive ? 'Ocultar suspensos' : 'Mostrar suspensos'}
-              </Text>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={s.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={s.sheet}>
+          {/* HEADER */}
+          <View style={s.headerRow}>
+            <Text style={s.title}>Gestão do Staff</Text>
+            <TouchableOpacity onPress={onClose} style={s.closeBtn}>
+              <Text style={s.closeBtnText}>✕</Text>
             </TouchableOpacity>
+          </View>
 
-            {loading ? (
-              <ActivityIndicator size="large" color={COLORS.blue} style={{ marginTop: 48 }} />
-            ) : staff.length === 0 ? (
-              <View style={sS.empty}>
-                <Icon name="users" size={40} color="#D1D5DB" strokeWidth={1.5} />
-                <Text style={sS.emptyText}>Sem funcionários registados</Text>
-                <TouchableOpacity style={sS.emptyBtn} onPress={openCreate}>
-                  <Text style={sS.emptyBtnText}>Adicionar primeiro funcionário</Text>
+          {/* FILTROS DE STATUS */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterBar}>
+            {FILTERS.map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[s.filterChip, filter === f.key && s.filterChipActive]}
+                onPress={() => setFilter(f.key)}
+              >
+                <Text style={[s.filterChipText, filter === f.key && s.filterChipTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <View style={{ width: 12 }} />
+            {DEPARTMENTS.map((d) => (
+              <TouchableOpacity
+                key={d.key}
+                style={[s.filterChip, deptFilter === d.key && s.filterChipDept]}
+                onPress={() => setDeptFilter(deptFilter === d.key ? '' : d.key)}
+              >
+                <Text style={[s.filterChipText, deptFilter === d.key && s.filterChipTextActive]}>
+                  {d.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* LISTA */}
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} size="large" />
+          ) : (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+              {filtered.length === 0 && (
+                <View style={s.emptyBox}>
+                  <Text style={s.emptyText}>Nenhum funcionário encontrado.</Text>
+                </View>
+              )}
+
+              {filtered.map((staff) => (
+                <TouchableOpacity
+                  key={staff.id}
+                  style={s.staffCard}
+                  onPress={() => onOpenProfile && onOpenProfile(staff)}
+                  activeOpacity={0.85}
+                >
+                  <View style={s.staffCardLeft}>
+                    <View style={[s.avatar, !staff.isActive && s.avatarSuspended]}>
+                      <Text style={s.avatarText}>
+                        {(staff.fullName || '?').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={s.staffName} numberOfLines={1}>{staff.fullName}</Text>
+                        {!staff.isActive && (
+                          <View style={s.suspendedBadge}>
+                            <Text style={s.suspendedBadgeText}>SUSPENSO</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={s.staffEmail} numberOfLines={1}>{staff.email}</Text>
+                      <Text style={s.staffDept}>{deptLabel(staff.department)}</Text>
+                      {!staff.userId && staff.isActive && (
+                        <TouchableOpacity
+                          style={s.createAccountBtn}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            setAccountTargetStaff(staff);
+                            setAccountPassword('');
+                            setShowCreateAccountModal(true);
+                          }}
+                          disabled={creatingAccountId === staff.id}
+                        >
+                          {creatingAccountId === staff.id
+                            ? <ActivityIndicator size="small" color={COLORS.primary} />
+                            : <Text style={s.createAccountBtnText}>📲 Criar conta App</Text>
+                          }
+                        </TouchableOpacity>
+                      )}
+                      {staff.userId && (
+                        <Text style={s.hasAccountText}>✓ Tem conta na app</Text>
+                      )}
+                    </View>
+                  </View>
+                  <Text style={s.chevron}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* BOTÃO CRIAR */}
+          {!showCreate ? (
+            <TouchableOpacity style={s.addBtn} onPress={() => setShowCreate(true)}>
+              <Text style={s.addBtnText}>+ Novo Funcionário</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.createForm}>
+              <Text style={s.createTitle}>Novo Funcionário</Text>
+              <TextInput style={s.input} placeholder="Nome completo *" placeholderTextColor={COLORS.muted} value={form.fullName}
+                onChangeText={(v) => setForm((f) => ({ ...f, fullName: v }))} />
+              <TextInput style={s.input} placeholder="Email *" placeholderTextColor={COLORS.muted} value={form.email}
+                keyboardType="email-address" autoCapitalize="none"
+                onChangeText={(v) => setForm((f) => ({ ...f, email: v }))} />
+              <TextInput style={s.input} placeholder="Telemóvel" placeholderTextColor={COLORS.muted} value={form.phone}
+                keyboardType="phone-pad"
+                onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} />
+
+              <Text style={s.fieldLabel}>Departamento</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                {DEPARTMENTS.map((d) => (
+                  <TouchableOpacity
+                    key={d.key}
+                    style={[s.deptChip, form.department === d.key && s.deptChipActive]}
+                    onPress={() => setForm((f) => ({ ...f, department: d.key }))}
+                  >
+                    <Text style={[s.deptChipText, form.department === d.key && s.deptChipTextActive]}>
+                      {d.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" placeholderTextColor={COLORS.muted} value={form.pin}
+                keyboardType="numeric" secureTextEntry maxLength={8}
+                onChangeText={(v) => setForm((f) => ({ ...f, pin: v.replace(/\D/g, '') }))} />
+              <View style={s.accountNowRow}>
+                <TouchableOpacity
+                  style={[s.checkbox, form.createAppAccount && s.checkboxActive]}
+                  onPress={() => setForm((f) => ({ ...f, createAppAccount: !f.createAppAccount }))}
+                >
+                  {form.createAppAccount ? <Text style={s.checkboxTick}>✓</Text> : null}
+                </TouchableOpacity>
+                <Text style={s.fieldLabel}>Criar conta App agora</Text>
+              </View>
+              {form.createAppAccount && (
+                <TextInput
+                  style={s.input}
+                  placeholder="Password da conta App (mín. 6)"
+                  placeholderTextColor={COLORS.muted}
+                  value={form.accountPassword}
+                  secureTextEntry
+                  onChangeText={(v) => setForm((f) => ({ ...f, accountPassword: v }))}
+                />
+              )}
+              <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" placeholderTextColor={COLORS.muted} value={form.documentType}
+                onChangeText={(v) => setForm((f) => ({ ...f, documentType: v }))} />
+              <TextInput style={s.input} placeholder="Nº documento" placeholderTextColor={COLORS.muted} value={form.documentNumber}
+                onChangeText={(v) => setForm((f) => ({ ...f, documentNumber: v }))} />
+              <TextInput style={s.input} placeholder="Início de emprego (AAAA-MM-DD)" placeholderTextColor={COLORS.muted} value={form.employmentStart}
+                onChangeText={(v) => setForm((f) => ({ ...f, employmentStart: v }))} />
+              <TextInput style={[s.input, { height: 72, textAlignVertical: 'top' }]}
+                placeholder="Notas" placeholderTextColor={COLORS.muted} multiline value={form.notes}
+                onChangeText={(v) => setForm((f) => ({ ...f, notes: v }))} />
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <TouchableOpacity style={[s.formBtn, s.cancelBtn]} onPress={() => setShowCreate(false)}>
+                  <Text style={s.cancelBtnText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.formBtn, s.saveBtn]} onPress={handleCreate} disabled={saving}>
+                  {saving
+                    ? <ActivityIndicator color={COLORS.white} size="small" />
+                    : <Text style={s.saveBtnText}>Criar</Text>
+                  }
                 </TouchableOpacity>
               </View>
-            ) : (
-              <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-                {staff.map(m => (
-                  <StaffCard
-                    key={m.id}
-                    member={m}
-                    onEdit={openEdit}
-                    onToggle={handleToggle}
-                  />
-                ))}
-              </View>
-            )}
-          </ScrollView>
-        )}
-      </View>
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+
+      <Modal
+        visible={showCreateAccountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !creatingAccountId && setShowCreateAccountModal(false)}
+      >
+        <View style={s.accountOverlay}>
+          <View style={s.accountCard}>
+            <Text style={s.accountTitle}>Criar conta App</Text>
+            <Text style={s.accountText}>
+              Defina a password para {accountTargetStaff?.fullName || 'este staff'} entrar por Email + Password.
+            </Text>
+            <TextInput
+              style={s.input}
+              placeholder="Password (mín. 6)"
+              placeholderTextColor={COLORS.muted}
+              value={accountPassword}
+              secureTextEntry
+              onChangeText={setAccountPassword}
+            />
+            <View style={s.accountActions}>
+              <TouchableOpacity
+                style={[s.formBtn, s.cancelBtn]}
+                onPress={() => {
+                  if (creatingAccountId) return;
+                  setShowCreateAccountModal(false);
+                  setAccountTargetStaff(null);
+                  setAccountPassword('');
+                }}
+              >
+                <Text style={s.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.formBtn, s.saveBtn, creatingAccountId && { opacity: 0.7 }]}
+                onPress={handleCreateAccount}
+                disabled={!!creatingAccountId}
+              >
+                {creatingAccountId
+                  ? <ActivityIndicator size="small" color={COLORS.white} />
+                  : <Text style={s.saveBtnText}>Criar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const sS = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#F8F9FA' },
-  header:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-                      paddingVertical: 14, backgroundColor: '#fff',
-                      borderBottomWidth: 1, borderBottomColor: '#EBEBEB' },
-  backBtn:          { padding: 4, marginRight: 8 },
-  headerTitle:      { fontSize: 16, fontWeight: '800', color: '#111' },
-  headerSub:        { fontSize: 12, color: '#8A8A8A', marginTop: 1 },
-  addBtn:           { backgroundColor: COLORS.blue, width: 36, height: 36, borderRadius: 18,
-                      alignItems: 'center', justifyContent: 'center' },
+// ─── Styles ──────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: COLORS.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    maxHeight: '92%', flex: 1,
+  },
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  title:        { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  closeBtn:     { padding: 6 },
+  closeBtnText: { fontSize: 18, color: COLORS.muted },
 
-  // Departamentos summary
-  deptRow:          { paddingHorizontal: 16, paddingVertical: 12 },
-  deptSummary:      { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8,
-                      borderRadius: 10, marginRight: 8, minWidth: 70 },
-  deptSummaryCount: { fontSize: 20, fontWeight: '800' },
-  deptSummaryLabel: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  filterBar:    { paddingHorizontal: 16, paddingVertical: 10, flexGrow: 0 },
+  filterChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
+    marginRight: 6,
+  },
+  filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterChipDept:   { backgroundColor: '#F0FDF4', borderColor: COLORS.success },
+  filterChipText:       { fontSize: 13, color: COLORS.muted },
+  filterChipTextActive: { color: COLORS.white, fontWeight: '600' },
 
-  inactiveToggle:   { flexDirection: 'row', alignItems: 'center', gap: 6,
-                      paddingHorizontal: 16, paddingBottom: 8 },
-  inactiveToggleText: { fontSize: 13, color: COLORS.blue, fontWeight: '600' },
+  emptyBox:  { alignItems: 'center', marginTop: 32 },
+  emptyText: { fontSize: 15, color: COLORS.muted },
 
-  // Cards
-  card:             { backgroundColor: '#fff', borderRadius: 12, padding: 14,
-                      marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.04,
-                      shadowOffset: { width: 0, height: 2 }, shadowRadius: 4, elevation: 2 },
-  cardInactive:     { opacity: 0.6 },
-  cardHeader:       { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  cardName:         { fontSize: 15, fontWeight: '700', color: '#111' },
-  cardPosition:     { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  deptBadge:        { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  deptBadgeText:    { fontSize: 11, fontWeight: '700' },
-  cardMeta:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  cardMetaItem:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cardMetaText:     { fontSize: 12, color: '#6B7280' },
-  permChips:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  permChip:         { backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  permChipText:     { fontSize: 11, color: '#1565C0', fontWeight: '600' },
-  cardActions:      { flexDirection: 'row', gap: 8, marginTop: 4 },
-  editBtn:          { flexDirection: 'row', alignItems: 'center', gap: 4,
-                      paddingHorizontal: 12, paddingVertical: 7,
-                      borderWidth: 1, borderColor: COLORS.blue + '40', borderRadius: 8 },
-  editBtnText:      { fontSize: 13, color: COLORS.blue, fontWeight: '600' },
-  toggleBtn:        { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1 },
-  suspendBtn:       { borderColor: '#DC262630' },
-  activateBtn:      { borderColor: '#22A06B30' },
-  toggleBtnText:    { fontSize: 13, fontWeight: '600' },
+  staffCard: {
+    backgroundColor: COLORS.card, borderRadius: 12, padding: 14, marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  staffCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarSuspended: { backgroundColor: '#9CA3AF' },
+  avatarText:      { color: COLORS.white, fontWeight: '700', fontSize: 18 },
+  staffName:       { fontSize: 15, fontWeight: '600', color: COLORS.text, flex: 1 },
+  staffEmail:      { fontSize: 12, color: COLORS.muted, marginTop: 1 },
+  staffDept:       { fontSize: 12, color: COLORS.primary, marginTop: 2, fontWeight: '500' },
+  suspendedBadge: {
+    backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  suspendedBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.danger },
+  createAccountBtn: {
+    marginTop: 6, backgroundColor: '#EFF6FF', borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start',
+  },
+  createAccountBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
+  hasAccountText: { fontSize: 11, color: '#16A34A', marginTop: 4, fontWeight: '500' },
+  accountNowRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 1,
+    borderColor: COLORS.border, backgroundColor: COLORS.card,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkboxTick: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  chevron: { fontSize: 22, color: COLORS.muted },
 
-  // Empty
-  empty:            { alignItems: 'center', paddingTop: 60 },
-  emptyText:        { fontSize: 15, color: '#9CA3AF', marginTop: 12, marginBottom: 20 },
-  emptyBtn:         { backgroundColor: COLORS.blue, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  emptyBtnText:     { color: '#fff', fontWeight: '700', fontSize: 14 },
+  addBtn: {
+    margin: 16, padding: 16, backgroundColor: COLORS.primary, borderRadius: 12,
+    alignItems: 'center',
+  },
+  addBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 16 },
 
-  // Form
-  formScroll:       { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
-  formTitle:        { fontSize: 17, fontWeight: '800', color: '#111', marginBottom: 18 },
-  label:            { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
-  sectionLabel:     { fontSize: 14, fontWeight: '700', color: '#111', marginTop: 18, marginBottom: 10 },
-  input:            { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-                      borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
-                      fontSize: 14, color: '#111', marginBottom: 12 },
-  chip:             { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                      borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff', marginRight: 8 },
-  chipActive:       { borderColor: COLORS.blue, backgroundColor: COLORS.blue + '15' },
-  chipText:         { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  chipTextActive:   { color: COLORS.blue },
-  permRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  permLabel:        { fontSize: 14, fontWeight: '600', color: '#111' },
-  permSub:          { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  formBtns:         { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 40 },
-  cancelBtn:        { flex: 1, paddingVertical: 13, borderRadius: 10,
-                      borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' },
-  cancelBtnText:    { fontSize: 15, fontWeight: '600', color: '#374151' },
-  saveBtn:          { flex: 1, paddingVertical: 13, borderRadius: 10,
-                      backgroundColor: COLORS.blue, alignItems: 'center' },
-  saveBtnText:      { fontSize: 15, fontWeight: '700', color: '#fff' },
+  createForm:  { padding: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
+  createTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
+  fieldLabel:  { fontSize: 13, color: COLORS.muted, marginBottom: 4, marginTop: 2 },
+  input: {
+    backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: COLORS.text, marginBottom: 8,
+  },
+  deptChip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, marginRight: 6,
+    backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
+  },
+  deptChipActive:    { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  deptChipText:      { fontSize: 13, color: COLORS.muted },
+  deptChipTextActive: { color: COLORS.white, fontWeight: '600' },
+
+  formBtn:    { flex: 1, padding: 14, borderRadius: 10, alignItems: 'center' },
+  cancelBtn:  { backgroundColor: COLORS.border },
+  saveBtn:    { backgroundColor: COLORS.primary },
+  cancelBtnText: { color: COLORS.muted,  fontWeight: '600', fontSize: 15 },
+  saveBtnText:   { color: COLORS.white,  fontWeight: '700', fontSize: 15 },
+  accountOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  accountCard: {
+    width: '100%', backgroundColor: COLORS.bg, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, padding: 16,
+  },
+  accountTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+  accountText: { fontSize: 13, color: COLORS.muted, marginBottom: 10 },
+  accountActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
 });

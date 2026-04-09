@@ -5,15 +5,18 @@ import { HtDashboardService }  from './ht-dashboard.service';
 import { HtFolioService }      from './ht-folio.service';
 import { HtRoomsController }   from './ht-rooms.controller';
 import { HtRoomsService }      from './ht-rooms.service';
+import { HtGuestController }   from './ht-guest.controller';
+import { HtGuestService }      from './ht-guest.service';
 import { HtStaffController }   from './ht-staff.controller';
 import { HtStaffService }      from './ht-staff.service';
+import { HtIcalService }       from './ht-ical.service';
 import { EventsModule }        from '../events/events.module';
 import { PrismaModule }        from '../prisma/prisma.module';
 
 @Module({
   imports:     [PrismaModule, EventsModule],
-  controllers: [HtBookingController, HtRoomsController, HtStaffController],
-  providers:   [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtStaffService],
-  exports:     [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtStaffService],
+  controllers: [HtBookingController, HtRoomsController, HtGuestController, HtStaffController],
+  providers:   [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService],
+  exports:     [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService],
 })
 export class HtBookingModule {}

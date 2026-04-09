@@ -27,6 +27,10 @@ export function AuthModal({ visible, onClose, onSuccess, initialTab = 'login', i
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
+  const [showForgot, setShowForgot]       = useState(false);
+  const [forgotEmail, setForgotEmail]     = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotDone, setForgotDone]       = useState(false);
 
   const slideY = useRef(new Animated.Value(600)).current;
 
@@ -51,9 +55,24 @@ export function AuthModal({ visible, onClose, onSuccess, initialTab = 'login', i
   const resetForm = () => {
     setName(''); setEmail(''); setPassword('');
     setError(''); setShowPass(false);
+    setShowForgot(false); setForgotEmail(''); setForgotDone(false);
   };
 
   const switchTab = (t) => { setTab(t); resetForm(); };
+
+  const handleForgot = async () => {
+    if (!forgotEmail.trim()) { setError('Introduza o seu email.'); return; }
+    setError('');
+    setForgotLoading(true);
+    try {
+      await backendApi.forgotPassword(forgotEmail.trim());
+      setForgotDone(true);
+    } catch {
+      setError('Não foi possível enviar o email. Tente novamente.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError('');
@@ -124,6 +143,64 @@ export function AuthModal({ visible, onClose, onSuccess, initialTab = 'login', i
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
+            {/* ── Vista de recuperação de senha ── */}
+            {showForgot ? (
+              <View>
+                <TouchableOpacity onPress={() => { setShowForgot(false); setForgotDone(false); setError(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 }}>
+                  <Icon name="back" size={16} color={COLORS.grayText} strokeWidth={2} />
+                  <Text style={{ fontSize: 13, color: COLORS.grayText }}>Voltar ao login</Text>
+                </TouchableOpacity>
+
+                {forgotDone ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                    <Text style={{ fontSize: 32, marginBottom: 12 }}>📧</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText, marginBottom: 8 }}>Email enviado!</Text>
+                    <Text style={{ fontSize: 13, color: COLORS.grayText, textAlign: 'center', lineHeight: 20 }}>
+                      Se existir uma conta com este email, receberás um link para redefinir a senha. Verifica a caixa de entrada.
+                    </Text>
+                    <TouchableOpacity style={[s.submitBtn, { marginTop: 24 }]} onPress={() => { setShowForgot(false); setForgotDone(false); }}>
+                      <Text style={s.submitTxt}>Voltar ao login</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.darkText, marginBottom: 6 }}>Recuperar senha</Text>
+                    <Text style={{ fontSize: 13, color: COLORS.grayText, marginBottom: 20, lineHeight: 18 }}>
+                      Introduz o teu email e enviaremos um link para redefinires a senha.
+                    </Text>
+                    <View style={s.field}>
+                      <Text style={s.label}>Email</Text>
+                      <TextInput
+                        style={s.input}
+                        placeholder="email@exemplo.com"
+                        placeholderTextColor={COLORS.grayText}
+                        value={forgotEmail}
+                        onChangeText={setForgotEmail}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                    {!!error && (
+                      <View style={s.errorBox}>
+                        <Icon name="info" size={14} color="#B00020" strokeWidth={2} />
+                        <Text style={s.errorText}>{error}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={[s.submitBtn, forgotLoading && s.submitBtnDisabled]}
+                      onPress={handleForgot}
+                      disabled={forgotLoading}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={s.submitTxt}>{forgotLoading ? 'A enviar...' : 'Enviar link'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <View style={{ height: 32 }} />
+              </View>
+            ) : (
+              <View>
             {/* Selector de papel — só no registo */}
             {tab === 'register' && (
               <View style={s.roleRow}>
@@ -219,7 +296,7 @@ export function AuthModal({ visible, onClose, onSuccess, initialTab = 'login', i
             {tab === 'login' && (
               <TouchableOpacity
                 style={s.forgotBtn}
-                onPress={() => Alert.alert('Recuperar senha', 'Enviaremos um email para redefinir a sua senha. Funcionalidade disponível em breve.')}
+                onPress={() => { setForgotEmail(email); setError(''); setShowForgot(true); }}
               >
                 <Text style={s.forgotTxt}>Esqueceu a senha?</Text>
               </TouchableOpacity>
@@ -239,6 +316,8 @@ export function AuthModal({ visible, onClose, onSuccess, initialTab = 'login', i
             </TouchableOpacity>
 
             <View style={{ height: 32 }} />
+            </View>
+            )}
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>

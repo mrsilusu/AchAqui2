@@ -3,7 +3,50 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Activi
 import { COLORS, Icon } from '../../core/AchAqui_Core';
 import { apiRequest } from '../../lib/backendApi';
 
-const STEPS = { CHOOSE: 'CHOOSE', PASTE: 'PASTE', PREVIEW: 'PREVIEW', LOADING: 'LOADING', RESULT: 'RESULT' };
+const STEPS = { CHOOSE: 'CHOOSE', PASTE: 'PASTE', PREVIEW: 'PREVIEW', LOADING: 'LOADING', RESULT: 'RESULT', API: 'API' };
+
+
+const PROVINCIAS = [
+  { id: 'luanda',     label: 'Luanda',     coords: '-8.8368,13.2343'  },
+  { id: 'benguela',   label: 'Benguela',   coords: '-12.5763,13.4055' },
+  { id: 'huambo',     label: 'Huambo',     coords: '-12.7756,15.7390' },
+  { id: 'lubango',    label: 'Lubango',    coords: '-14.9167,13.5000' },
+  { id: 'malanje',    label: 'Malanje',    coords: '-9.5400,16.3400'  },
+  { id: 'cabinda',    label: 'Cabinda',    coords: '-5.5500,12.2000'  },
+  { id: 'soyo',       label: 'Soyo',       coords: '-6.1333,12.3667'  },
+  { id: 'uige',       label: 'Uíge',       coords: '-7.6167,15.0500'  },
+  { id: 'saurimo',    label: 'Saurimo',    coords: '-9.6600,20.3900'  },
+  { id: 'menongue',   label: 'Menongue',   coords: '-14.6567,17.6900' },
+  { id: 'ondjiva',    label: 'Ondjiva',    coords: '-17.0667,15.7333' },
+  { id: 'sumbe',      label: 'Sumbe',      coords: '-11.2000,13.8500' },
+  { id: 'ndalatando', label: 'Ndalatando', coords: '-9.3000,14.9167'  },
+  { id: 'caxito',     label: 'Caxito',     coords: '-8.5667,15.1000'  },
+  { id: 'kuito',      label: 'Kuito',      coords: '-12.3833,16.9333' },
+  { id: 'lobito',     label: 'Lobito',     coords: '-12.3500,13.5500' },
+  { id: 'namibe',     label: 'Namibe',     coords: '-15.1961,12.1522' },
+  { id: 'luena',      label: 'Luena',      coords: '-11.7833,19.9167' },
+];
+
+const IMPORT_CATEGORIES = [
+  { id: 'hoteis',        label: 'Hotéis & Alojamento',    query: 'hotéis'               },
+  { id: 'restaurantes',  label: 'Restaurantes',            query: 'restaurantes'         },
+  { id: 'cafes',         label: 'Cafés & Pastelarias',     query: 'cafés pastelarias'    },
+  { id: 'bares',         label: 'Bares & Nightlife',       query: 'bares discotecas'     },
+  { id: 'saloes',        label: 'Salões de Beleza',        query: 'salões beleza'        },
+  { id: 'spas',          label: 'Spas & Massagens',        query: 'spas massagens'       },
+  { id: 'clinicas',      label: 'Clínicas & Hospitais',    query: 'clínicas hospitais'   },
+  { id: 'farmacias',     label: 'Farmácias',               query: 'farmácias'            },
+  { id: 'academias',     label: 'Academias & Ginásios',    query: 'academias ginásios'   },
+  { id: 'supermercados', label: 'Supermercados',           query: 'supermercados'        },
+  { id: 'lojas',         label: 'Lojas & Comércio',        query: 'lojas comércio'       },
+  { id: 'escolas',       label: 'Escolas & Colégios',      query: 'escolas colégios'     },
+  { id: 'bancos',        label: 'Bancos & Financeiros',    query: 'bancos seguros'       },
+  { id: 'oficinas',      label: 'Oficinas & Auto',         query: 'oficinas mecânicos'   },
+  { id: 'profissionais', label: 'Serviços Profissionais',  query: 'advogados consultores'},
+  { id: 'domesticos',    label: 'Serviços Domésticos',     query: 'eletricistas lavandarias'},
+  { id: 'eventos',       label: 'Eventos & Catering',      query: 'espaços eventos'      },
+  { id: 'veterinarios',  label: 'Veterinários & Pets',     query: 'veterinários pet shop'},
+];
 
 export function ImportModal({ visible, onClose, accessToken }) {
   const [step, setStep] = useState(STEPS.CHOOSE);
@@ -12,8 +55,13 @@ export function ImportModal({ visible, onClose, accessToken }) {
   const [preview, setPreview] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [apiQuery, setApiQuery] = useState('');
+  const [apiLimit, setApiLimit] = useState('100');
+  const [apiLoading, setApiLoading] = useState(false);
+  const [selectedProvincia, setSelectedProvincia] = useState(PROVINCIAS[0]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
-  function reset() { setStep(STEPS.CHOOSE); setFormat(null); setContent(''); setPreview([]); setResult(null); setError(''); }
+  function reset() { setStep(STEPS.CHOOSE); setFormat(null); setContent(''); setPreview([]); setResult(null); setError(''); setApiQuery(''); setApiLimit('100'); setSelectedCategory(null); }
   function handleClose() { reset(); onClose(); }
 
   function handlePreview() {
@@ -40,6 +88,21 @@ export function ImportModal({ visible, onClose, accessToken }) {
     } catch { setError('Formato inválido.'); }
   }
 
+  async function handleApiImport() {
+    if (!apiQuery.trim()) return;
+    setApiLoading(true); setError('');
+    try {
+      const data = await apiRequest('/admin/import/outscraper', {
+        method: 'POST',
+        body: { query: apiQuery.trim(), limit: parseInt(apiLimit, 10) || 100, coordinates: selectedProvincia.coords, language: 'pt', region: 'ao' },
+        accessToken,
+      });
+      setResult(data); setStep(STEPS.RESULT);
+    } catch (err) {
+      setError(err?.message || 'Erro. Verifica OUTSCRAPER_API_KEY no servidor.');
+    } finally { setApiLoading(false); }
+  }
+
   async function handleImport() {
     setStep(STEPS.LOADING);
     try {
@@ -60,11 +123,11 @@ export function ImportModal({ visible, onClose, accessToken }) {
   return (
     <View style={s.overlay}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => { if (step === STEPS.CHOOSE || step === STEPS.RESULT) handleClose(); else if (step === STEPS.PASTE) setStep(STEPS.CHOOSE); else if (step === STEPS.PREVIEW) setStep(STEPS.PASTE); }}>
+        <TouchableOpacity style={s.backBtn} onPress={() => { if (step === STEPS.CHOOSE || step === STEPS.RESULT) handleClose(); else if (step === STEPS.PASTE || step === STEPS.API) setStep(STEPS.CHOOSE); else if (step === STEPS.PREVIEW) setStep(STEPS.PASTE); }}>
           <Icon name={step === STEPS.CHOOSE || step === STEPS.RESULT ? 'x' : 'arrowLeft'} size={20} color={COLORS.darkText} strokeWidth={2} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>
-          {step === STEPS.CHOOSE && 'Importar negócios'}{step === STEPS.PASTE && `Colar ${format?.toUpperCase()}`}{step === STEPS.PREVIEW && 'Preview'}{step === STEPS.LOADING && 'A importar...'}{step === STEPS.RESULT && 'Relatório'}
+          {step === STEPS.CHOOSE && 'Importar negócios'}{step === STEPS.PASTE && `Colar ${format?.toUpperCase()}`}{step === STEPS.PREVIEW && 'Preview'}{step === STEPS.API && 'API Directa'}{step === STEPS.LOADING && 'A importar...'}{step === STEPS.RESULT && 'Relatório'}
         </Text>
         <View style={{ width: 36 }} />
       </View>
@@ -82,6 +145,14 @@ export function ImportModal({ visible, onClose, accessToken }) {
               <Text style={s.formatIcon}>{'{ }'}</Text>
               <View style={{ flex: 1 }}><Text style={s.formatTitle}>JSON</Text><Text style={s.formatSub}>Exporta do Outscraper como JSON e cola o conteúdo</Text></View>
               <Icon name="arrowRight" size={18} color={COLORS.red} strokeWidth={2} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.formatCard, { borderWidth: 2, borderColor: '#1565C0' }]} activeOpacity={0.7} onPress={() => setStep(STEPS.API)}>
+              <Text style={s.formatIcon}>🔌</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.formatTitle}>API Directa</Text>
+                <Text style={s.formatSub}>Importa directamente do Google Maps sem exportar ficheiros</Text>
+              </View>
+              <Icon name="arrowRight" size={18} color='#1565C0' strokeWidth={2} />
             </TouchableOpacity>
             <View style={s.infoBox}><Text style={s.infoBoxText}>💡 O sistema detecta duplicados pelo Google Place ID. Negócios com dono recebem sugestão em vez de serem sobrescritos.</Text></View>
           </View>
@@ -113,6 +184,109 @@ export function ImportModal({ visible, onClose, accessToken }) {
                 <Icon name="upload" size={16} color={COLORS.white} strokeWidth={2} />
                 <Text style={s.primaryBtnText}>Importar tudo</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        {step === STEPS.API && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Importar via API</Text>
+            <Text style={s.sectionSub}>Selecciona a província e categoria. A query é gerada automaticamente com as coordenadas correctas.</Text>
+
+            {/* Seletor de Província */}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.darkText, marginBottom: 8 }}>📍 Província:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
+                {PROVINCIAS.map(p => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: selectedProvincia.id === p.id ? '#1565C0' : '#F0F4F8',
+                      borderWidth: 1.5, borderColor: selectedProvincia.id === p.id ? '#1565C0' : '#CBD5E1' }}
+                    onPress={() => {
+                      setSelectedProvincia(p);
+                      if (selectedCategory) setApiQuery(selectedCategory.query + ' ' + p.label + ' Angola');
+                    }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700',
+                      color: selectedProvincia.id === p.id ? '#fff' : COLORS.darkText }}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Seletor de Categoria */}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.darkText, marginBottom: 8 }}>🏢 Categoria:</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {IMPORT_CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                    backgroundColor: selectedCategory?.id === cat.id ? '#1565C0' : '#EFF6FF',
+                    borderWidth: 1, borderColor: selectedCategory?.id === cat.id ? '#1565C0' : '#BFDBFE' }}
+                  onPress={() => {
+                    setSelectedCategory(cat);
+                    setApiQuery(cat.query + ' ' + selectedProvincia.label + ' Angola');
+                  }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600',
+                    color: selectedCategory?.id === cat.id ? '#fff' : '#1565C0' }}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Query gerada */}
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 }}>
+              Query gerada (editável):
+            </Text>
+            <TextInput
+              style={[s.pasteArea, { minHeight: 50, paddingVertical: 12 }]}
+              placeholder="Selecciona categoria e província acima, ou escreve aqui..."
+              placeholderTextColor={COLORS.grayText}
+              value={apiQuery} onChangeText={setApiQuery}
+              autoCapitalize="none" autoCorrect={false}
+            />
+
+            {/* Preview */}
+            {apiQuery.trim() && (
+              <View style={[s.infoBox, { marginBottom: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                <Text style={{ fontSize: 11, color: '#1565C0', fontWeight: '600' }}>
+                  🔍 Vai importar: "{apiQuery.trim()}" · Coords: {selectedProvincia.label} · Limite: {apiLimit}
+                </Text>
+              </View>
+            )}
+
+            {/* Limite */}
+            <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.grayText, marginBottom: 6 }}>
+              Limite de resultados:
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+              {['20','50','100','200','500'].map(n => (
+                <TouchableOpacity key={n}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center',
+                    backgroundColor: apiLimit === n ? '#1565C0' : '#F7F7F8',
+                    borderWidth: 1, borderColor: apiLimit === n ? '#1565C0' : '#E5E7EB' }}
+                  onPress={() => setApiLimit(n)}>
+                  <Text style={{ fontSize: 13, fontWeight: '700',
+                    color: apiLimit === n ? '#fff' : COLORS.darkText }}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {error ? <Text style={s.errorText}>{error}</Text> : null}
+            <TouchableOpacity
+              style={[s.primaryBtn, { backgroundColor: '#1565C0' },
+                (!apiQuery.trim() || apiLoading) && s.primaryBtnDisabled]}
+              onPress={handleApiImport} disabled={!apiQuery.trim() || apiLoading} activeOpacity={0.8}>
+              {apiLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><Icon name="upload" size={16} color="#fff" strokeWidth={2} /><Text style={s.primaryBtnText}>Importar agora</Text></>}
+            </TouchableOpacity>
+            <View style={[s.infoBox, { marginTop: 14 }]}>
+              <Text style={s.infoBoxText}>
+                💡 Cada importação pode demorar 5-15 segundos. O Outscraper cobra por resultado — usa limites menores para testar.
+              </Text>
             </View>
           </View>
         )}

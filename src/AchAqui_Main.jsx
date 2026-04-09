@@ -20,7 +20,7 @@ import React, {
 } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView,
-  SafeAreaView, StyleSheet, Animated, Alert,
+  SafeAreaView, StyleSheet, Animated, Alert, Linking,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,6 +36,7 @@ import { useOperationalLayer }  from './hooks/useOperationalLayer';
 import { OperationalLayerRenderer } from './shared/Modals/OperationalLayerRenderer';
 import { OwnerModule }          from './modules/Owner/OwnerModule';
 import { AdminModule }          from './modules/Admin/AdminModule';
+import { StaffHospitalityView } from './operations/StaffHospitalityView';
 import { HomeModuleFull }       from './modules/Home/HomeModule';
 import { AdvancedFiltersModal } from './modules/Home/AdvancedFiltersModal';
 import { AuthModal } from './modules/Auth/AuthModal';
@@ -166,107 +167,256 @@ const MOCK_BUSINESSES_INITIAL = [
   },
 ];
 
-// ─── Cálculo dinâmico de estado de abertura ───────────────────────────────────
-// Lê metadata.workingHours (formato real do DB: {domingo:["Encerrado"], sábado:["12:30-23:30"], ...})
-// e calcula isOpen / statusText com base na hora ACTUAL do dispositivo.
-// Isto corrige negócios importados com isOpen estático (calculado na hora de importação).
-const WH_DAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
-const WH_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const WH_CLOSED_WORDS = ['encerrado', 'fechado', 'closed'];
+const HOURS_DAY_KEY_MAP = {
+  monday: 'monday',
+  mon: 'monday',
+  segunda: 'monday',
+  'segunda-feira': 'monday',
+  tuesday: 'tuesday',
+  tue: 'tuesday',
+  tues: 'tuesday',
+  terca: 'tuesday',
+  'terca-feira': 'tuesday',
+  'terça': 'tuesday',
+  'terça-feira': 'tuesday',
+  wednesday: 'wednesday',
+  wed: 'wednesday',
+  quarta: 'wednesday',
+  'quarta-feira': 'wednesday',
+  thursday: 'thursday',
+  thu: 'thursday',
+  thurs: 'thursday',
+  quinta: 'thursday',
+  'quinta-feira': 'thursday',
+  friday: 'friday',
+  fri: 'friday',
+  sexta: 'friday',
+  'sexta-feira': 'friday',
+  saturday: 'saturday',
+  sat: 'saturday',
+  sabado: 'saturday',
+  'sábado': 'saturday',
+  sunday: 'sunday',
+  sun: 'sunday',
+  domingo: 'sunday',
+};
 
-function parseHoursEntry(str) {
-  if (!str) return null;
-  const lower = str.toLowerCase().trim();
+const ORDERED_HOURS_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-  if (WH_CLOSED_WORDS.some(w => lower.includes(w))) return null; // fechado
+function normalizeHoursDayLabel(label) {
+  if (typeof label !== 'string') return null;
+  const normalized = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return HOURS_DAY_KEY_MAP[normalized] || null;
+}
 
-  if (lower.includes('24 hora') || lower.includes('24h') || lower.includes('24 hour')) {
-    return { open: '00:00', close: '23:59' };
+function extractHoursValue(raw) {
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const value = extractHoursValue(item);
+      if (value) return value;
+    }
+    return null;
   }
 
-  // "12:30-23:30" ou "12:30–23:30"
-  const m = str.replace(/[\u2013\u2014]/g, '-').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
-  if (m) return { open: `${m[1].padStart(2,'0')}:${m[2]}`, close: `${m[3].padStart(2,'0')}:${m[4]}` };
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    return value || null;
+  }
 
-  // "9h-18h"
-  const h = str.match(/(\d{1,2})h\s*[-–]\s*(\d{1,2})h/);
-  if (h) return { open: `${h[1].padStart(2,'0')}:00`, close: `${h[2].padStart(2,'0')}:00` };
+  if (typeof raw === 'number' || typeof raw === 'boolean') {
+    return String(raw);
+  }
 
-  return null; // formato desconhecido → não sabe
+  return null;
+}
+
+function parseHourToken(raw) {
+  const token = String(raw || '').trim().toLowerCase();
+  if (!token) return null;
+
+  const twelveHour = token.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (twelveHour) {
+    let hours = parseInt(twelveHour[1], 10);
+    const minutes = parseInt(twelveHour[2] || '0', 10);
+    const meridiem = twelveHour[3].toLowerCase();
+    if (hours === 12) hours = 0;
+    if (meridiem === 'pm') hours += 12;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  const twentyFourHour = token.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (twentyFourHour) {
+    const hours = parseInt(twentyFourHour[1], 10);
+    const minutes = parseInt(twentyFourHour[2] || '0', 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+
+  const hFormat = token.match(/^(\d{1,2})h(?:(\d{2}))?$/);
+  if (hFormat) {
+    const hours = parseInt(hFormat[1], 10);
+    const minutes = parseInt(hFormat[2] || '0', 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+
+  return null;
+}
+
+function parseHoursEntry(raw) {
+  const value = extractHoursValue(raw);
+  if (!value) return null;
+
+  const lowered = value.toLowerCase();
+  if (['closed', 'fechado', 'encerrado', 'fechado temporariamente'].some((word) => lowered.includes(word))) {
+    return null;
+  }
+
+  if (['24 hours', '24h', '24 horas', 'open 24', 'aberto 24 horas'].some((word) => lowered.includes(word))) {
+    return { open: '00:00', close: '23:59', is24h: true };
+  }
+
+  const parts = value.split(/\s*[\-–]\s*/);
+  if (parts.length < 2) return null;
+
+  const open = parseHourToken(parts[0]);
+  const close = parseHourToken(parts[1]);
+  if (!open || !close) return null;
+  return { open, close };
+}
+
+function toMinutes(hhmm) {
+  const [hours, minutes] = String(hhmm).split(':').map((value) => parseInt(value, 10));
+  return (hours * 60) + minutes;
+}
+
+function buildHoursSchedule(meta) {
+  const normalizedHours = meta?.hours;
+  if (normalizedHours && typeof normalizedHours === 'object' && !Array.isArray(normalizedHours)) {
+    const schedule = {};
+    for (const [label, value] of Object.entries(normalizedHours)) {
+      const day = normalizeHoursDayLabel(label);
+      if (!day || !value || typeof value !== 'object') continue;
+      const open = parseHourToken(value.open);
+      const close = parseHourToken(value.close);
+      if (!open || !close) continue;
+      schedule[day] = { open, close, is24h: Boolean(value.is24h) };
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  const rawHours = meta?.working_hours ?? meta?.workingHours ?? meta?.hours_raw;
+  if (!rawHours) return null;
+
+  const schedule = {};
+
+  if (typeof rawHours === 'object' && !Array.isArray(rawHours)) {
+    for (const [label, value] of Object.entries(rawHours)) {
+      const day = normalizeHoursDayLabel(label);
+      if (!day) continue;
+      const parsed = parseHoursEntry(value);
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  if (Array.isArray(rawHours)) {
+    for (const chunk of rawHours) {
+      const text = extractHoursValue(chunk);
+      if (!text) continue;
+      const separatorIndex = text.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      const day = normalizeHoursDayLabel(text.slice(0, separatorIndex));
+      if (!day) continue;
+      const parsed = parseHoursEntry(text.slice(separatorIndex + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+  }
+
+  if (typeof rawHours === 'string') {
+    const dictRegex = /'([^']+)'\s*:\s*'([^']*)'/g;
+    let match = null;
+    while ((match = dictRegex.exec(rawHours)) !== null) {
+      const day = normalizeHoursDayLabel(match[1]);
+      if (!day) continue;
+      const parsed = parseHoursEntry(match[2]);
+      if (parsed) schedule[day] = parsed;
+    }
+    if (Object.keys(schedule).length > 0) return schedule;
+
+    for (const chunk of rawHours.split(';').map((item) => item.trim()).filter(Boolean)) {
+      const separatorIndex = chunk.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      const day = normalizeHoursDayLabel(chunk.slice(0, separatorIndex));
+      if (!day) continue;
+      const parsed = parseHoursEntry(chunk.slice(separatorIndex + 1));
+      if (parsed) schedule[day] = parsed;
+    }
+  }
+
+  return Object.keys(schedule).length > 0 ? schedule : null;
 }
 
 function computeIsOpenFromMeta(meta) {
-  const wh = meta?.workingHours;
-
-  // Sem horário estruturado — usa valor estático guardado no metadata ou assume aberto
-  if (!wh || typeof wh !== 'object' || Array.isArray(wh)) {
-    return { isOpen: meta?.isOpen ?? true, statusText: meta?.statusText || 'Aberto' };
+  if (!meta || typeof meta !== 'object') return { isOpen: null, statusText: null };
+  if (meta.status === 'CLOSED_TEMPORARILY') {
+    return { isOpen: false, statusText: 'Fechado temporariamente' };
   }
+
+  const schedule = buildHoursSchedule(meta);
+  if (!schedule) return { isOpen: null, statusText: null };
 
   const now = new Date();
-  const todayIdx  = now.getDay(); // 0=Dom … 6=Sáb
-  const todayKey  = WH_DAYS[todayIdx];
-  const todayEntry = wh[todayKey];
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const dayIndex = (now.getDay() + 6) % 7;
+  const today = ORDERED_HOURS_DAYS[dayIndex];
+  const todayHours = schedule[today];
 
-  // Dia não presente no horário — desconhecido, assume aberto
-  if (todayEntry === undefined) {
-    return { isOpen: true, statusText: 'Aberto' };
-  }
+  if (todayHours) {
+    const openMinutes = toMinutes(todayHours.open);
+    let closeMinutes = toMinutes(todayHours.close);
+    const wrapsPastMidnight = closeMinutes <= openMinutes;
+    if (wrapsPastMidnight) closeMinutes += 24 * 60;
+    const comparableCurrentMinutes = wrapsPastMidnight && currentMinutes < openMinutes
+      ? currentMinutes + 24 * 60
+      : currentMinutes;
+    const isOpenNow = comparableCurrentMinutes >= openMinutes && comparableCurrentMinutes < closeMinutes;
 
-  const hoursStr = Array.isArray(todayEntry) ? String(todayEntry[0] ?? '') : String(todayEntry ?? '');
-  const hours = parseHoursEntry(hoursStr);
-
-  if (hours === null) {
-    // Fechado hoje — procura próxima abertura
-    for (let i = 1; i <= 7; i++) {
-      const nextIdx   = (todayIdx + i) % 7;
-      const nextEntry = wh[WH_DAYS[nextIdx]];
-      if (nextEntry !== undefined) {
-        const nextStr = Array.isArray(nextEntry) ? String(nextEntry[0] ?? '') : String(nextEntry ?? '');
-        const nextH   = parseHoursEntry(nextStr);
-        if (nextH) {
-          const label = i === 1 ? `amanhã às ${nextH.open}` : `${WH_LABELS[nextIdx]} às ${nextH.open}`;
-          return { isOpen: false, statusText: `Abre ${label}` };
-        }
+    if (isOpenNow) {
+      const remaining = closeMinutes - comparableCurrentMinutes;
+      if (remaining <= 30) {
+        return { isOpen: true, statusText: `Fecha em ${Math.max(0, Math.floor(remaining))} min` };
       }
+      return { isOpen: true, statusText: `Aberto ate ${todayHours.close}` };
     }
-    return { isOpen: false, statusText: 'Fechado hoje' };
-  }
 
-  if (!hours) {
-    // Formato desconhecido → assume aberto, mostra o texto original
-    return { isOpen: true, statusText: hoursStr || 'Aberto' };
-  }
-
-  // Verifica hora actual vs. intervalo
-  const nowMin   = now.getHours() * 60 + now.getMinutes();
-  const openMin  = parseInt(hours.open.split(':')[0])  * 60 + parseInt(hours.open.split(':')[1]);
-  const closeMin = parseInt(hours.close.split(':')[0]) * 60 + parseInt(hours.close.split(':')[1]);
-
-  if (nowMin >= openMin && nowMin < closeMin) {
-    const minsLeft = closeMin - nowMin;
-    return {
-      isOpen: true,
-      statusText: minsLeft <= 60 ? `Fecha em ${minsLeft} min` : `Aberto até ${hours.close}`,
-    };
-  }
-
-  if (nowMin < openMin) {
-    return { isOpen: false, statusText: `Abre às ${hours.open}` };
-  }
-
-  // Passou o horário — procura próxima abertura
-  for (let i = 1; i <= 7; i++) {
-    const nextIdx   = (todayIdx + i) % 7;
-    const nextEntry = wh[WH_DAYS[nextIdx]];
-    if (nextEntry !== undefined) {
-      const nextStr = Array.isArray(nextEntry) ? String(nextEntry[0] ?? '') : String(nextEntry ?? '');
-      const nextH   = parseHoursEntry(nextStr);
-      if (nextH) {
-        const label = i === 1 ? `amanhã às ${nextH.open}` : `${WH_LABELS[nextIdx]} às ${nextH.open}`;
-        return { isOpen: false, statusText: `Abre ${label}` };
-      }
+    if (comparableCurrentMinutes < openMinutes) {
+      return { isOpen: false, statusText: `Abre as ${todayHours.open}` };
     }
+  }
+
+  const dayLabel = {
+    monday: 'Seg',
+    tuesday: 'Ter',
+    wednesday: 'Qua',
+    thursday: 'Qui',
+    friday: 'Sex',
+    saturday: 'Sab',
+    sunday: 'Dom',
+  };
+
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const nextIndex = (dayIndex + offset) % 7;
+    const day = ORDERED_HOURS_DAYS[nextIndex];
+    const hours = schedule[day];
+    if (!hours) continue;
+    if (offset === 1) {
+      return { isOpen: false, statusText: `Abre amanha as ${hours.open}` };
+    }
+    return { isOpen: false, statusText: `Abre ${dayLabel[day]} as ${hours.open}` };
   }
 
   return { isOpen: false, statusText: 'Fechado' };
@@ -282,6 +432,33 @@ function normalizeBusiness(rawBusiness) {
 
   // Se vem da API, metadata contém os campos ricos guardados pelo bootstrap
   const meta = rawBusiness.metadata || {};
+  const hoursState = computeIsOpenFromMeta(meta);
+  const financeText = [
+    rawBusiness.name,
+    rawBusiness.category,
+    rawBusiness.description,
+    meta.category,
+    meta.subcategory,
+    meta.description,
+    base.name,
+    base.category,
+  ].filter(Boolean).join(' ').toLowerCase();
+  const existingSubCategoryIds = [
+    ...(Array.isArray(meta.subCategoryIds) ? meta.subCategoryIds : []),
+    ...(Array.isArray(rawBusiness.subCategoryIds) ? rawBusiness.subCategoryIds : []),
+    ...(Array.isArray(base.subCategoryIds) ? base.subCategoryIds : []),
+  ];
+  const isAtmBusiness = existingSubCategoryIds.includes('atm')
+    || /\batm\b|multicaixa|caixa electr[oó]nic|caixa eletr[oó]nic|terminal de levantamento/.test(financeText);
+  const isBankBusiness = !isAtmBusiness && (
+    existingSubCategoryIds.includes('bank')
+    || /\bbank\b|\bbanco\b|banc[oá]rio|ag[eê]ncia banc[aá]ria/.test(financeText)
+  );
+  const normalizedSubCategoryIds = Array.from(new Set([
+    ...existingSubCategoryIds,
+    ...(isAtmBusiness ? ['financial', 'atm'] : []),
+    ...(isBankBusiness ? ['financial', 'bank'] : []),
+  ]));
 
   return {
     ...base,
@@ -289,9 +466,9 @@ function normalizeBusiness(rawBusiness) {
     name: rawBusiness.name || base.name || 'Negócio',
     category: rawBusiness.category || meta.category || base.category || 'Serviços',
     subcategory: meta.subcategory || rawBusiness.category || base.subcategory || 'Serviços',
-    businessType: rawBusiness.businessType || meta.businessType || base.businessType || '',
-    primaryCategoryId: rawBusiness.primaryCategoryId || meta.primaryCategoryId || base.primaryCategoryId || '',
-    subCategoryIds: rawBusiness.subCategoryIds || meta.subCategoryIds || base.subCategoryIds || [],
+    businessType: meta.businessType || rawBusiness.businessType || base.businessType || '',
+    primaryCategoryId: meta.primaryCategoryId || rawBusiness.primaryCategoryId || base.primaryCategoryId || '',
+    subCategoryIds: normalizedSubCategoryIds,
     icon: base.icon || meta.icon || '🏢',
     rating: base.rating || meta.rating || 4.8,
     reviews: base.reviews || meta.reviews || 0,
@@ -301,46 +478,69 @@ function normalizeBusiness(rawBusiness) {
     isVerified: true,
     modules: base.modules || meta.modules || (() => {
       const cat = (rawBusiness.category || meta.category || '').toLowerCase();
-      const pid = base.primaryCategoryId || meta.primaryCategoryId || '';
-      const subs = base.subCategoryIds || meta.subCategoryIds || [];
-      const isHotel  = pid === 'hotelsTravel' || subs.includes('hotelsTravel') ||
-        cat.includes('hotel') || cat.includes('hostel') || cat.includes('pousada') || cat.includes('resort');
-      const isFood   = pid === 'restaurants' || cat.includes('restaur') || cat.includes('café') || cat.includes('bar');
-      const isBeauty = cat.includes('beleza') || cat.includes('sal\u00e3o') || cat.includes('spa') || cat.includes('beauty');
-      const isHealth = cat.includes('sa\u00fade') || cat.includes('cl\u00ednica') || cat.includes('m\u00e9dic') || cat.includes('health');
+      const pid = meta.primaryCategoryId || base.primaryCategoryId || rawBusiness.primaryCategoryId || '';
+      const subs = (meta.subCategoryIds || base.subCategoryIds || rawBusiness.subCategoryIds || []);
+      const c = (s) => cat.includes(s);
+      const pis = (id) => pid === id || subs.includes(id);
+      const isHotel     = pis('hotelsTravel') || c('hotel') || c('hostel') || c('pousada') || c('resort') || c('lodging') || c('motel');
+      const isFood      = pis('restaurants')  || c('restaur') || c('meal') || c('fast_food') || c('pizza');
+      const isCoffee    = pis('coffee')       || c('café') || c('cafe') || c('pastelaria') || c('padaria') || c('cafetaria');
+      const isBar       = pis('bars')         || c('bar') || c('night_club') || c('pub') || c('discoteca');
+      const isSpa       = pis('spas')         || c('spa') || c('massag') || c('wellness');
+      const isBeauty    = pis('beautysalons') || c('beleza') || c('salão') || c('salon') || c('beauty') || c('hair') || c('nail') || c('barber') || c('barbearia');
+      const isHealth    = pis('health')       || c('saúde') || c('clínica') || c('clinic') || c('médic') || c('hospital') || c('doctor') || c('pharmacy') || c('farmácia') || c('dentist');
+      const isSports    = pis('active')       || c('gym') || c('fitness') || c('sport') || c('swimming') || c('yoga') || c('pilates') || c('academia');
+      const isRetail    = pis('shopping')     || c('supermarket') || c('supermercado') || c('grocery') || c('mercado') || c('loja');
+      const isEdu       = pis('education')    || c('school') || c('escola') || c('colégio') || c('universit') || c('training');
+      const isFinancial = pis('financial')    || c('bank') || c('banco') || c('financ') || c('insurance') || c('seguro') || c('contabilid');
+      const isAuto      = pis('automotive')   || c('car_repair') || c('oficina') || c('mecânico') || c('gas_station') || c('posto de gasolina');
+      const isHome      = pis('homeservices') || c('electrician') || c('eletricista') || c('plumber') || c('laundry') || c('lavandaria') || c('cleaning');
+      const isEvents    = pis('eventplanning')|| c('event_venue') || c('catering') || c('wedding') || c('espaço de eventos');
+      const isPets      = pis('pets')         || c('veterinary') || c('veterinário') || c('pet_store') || c('pet shop');
+      const isPro       = pis('professional') || c('lawyer') || c('advogado') || c('architect') || c('consultant') || c('photographer');
+      const isDelivery  = pis('delivery')     || c('courier') || c('logistics');
+      const isAny = isHotel||isFood||isCoffee||isBar||isSpa||isBeauty||isHealth||isSports||isRetail||isEdu||isFinancial||isAuto||isHome||isEvents||isPets||isPro||isDelivery;
       return {
-        ...(isHotel  && { accommodation: true }),
-        ...(isFood   && { gastronomy: true }),
-        ...(isBeauty && { beauty: true }),
-        ...(isHealth && { health: true }),
-        ...(!isHotel && !isFood && !isBeauty && !isHealth && { professional: true }),
+        ...(isHotel    && { accommodation: true }),
+        ...((isFood||isCoffee||isBar) && { gastronomy: true }),
+        ...((isBeauty||isSpa) && { beauty: true }),
+        ...(isHealth   && { health: true }),
+        ...(isSports   && { health: true }),
+        ...(isRetail   && { retail: true }),
+        ...(isEdu      && { education: true }),
+        ...(isDelivery && { delivery: true }),
+        ...(!isAny     && { professional: true }),
       };
     })(),
-    address: base.address || meta.address || rawBusiness.description || 'Endereço não informado',
+    description: typeof rawBusiness.description === 'string' ? rawBusiness.description : (meta.description || meta.about || ''),
+    address: base.address || meta.address || meta.full_address || meta.street || 'Endereço não informado',
     neighborhood: base.neighborhood || meta.neighborhood || '',
     phone: base.phone || meta.phone || '',
     website: base.website || meta.website || '',
     promo: base.promo || meta.promo || null,
-    distance: base.distance || meta.distance || 0,
-    distanceText: base.distanceText || meta.distanceText || '—',
-    // isOpen e statusText calculados dinamicamente a partir de meta.workingHours
-    // (usando a hora actual do dispositivo), corrigindo valores estáticos do import.
-    ...(() => {
-      const computed = computeIsOpenFromMeta(meta);
-      return {
-        isOpen:     base.isOpen     ?? computed.isOpen,
-        statusText: base.statusText || computed.statusText,
-      };
-    })(),
+    distance: 0,
+    distanceText: '—',
+    isOpen:     hoursState.isOpen ?? base.isOpen ?? meta.isOpen ?? true,
+    statusText: hoursState.statusText || base.statusText || meta.statusText || 'Aberto',
     isPublic: true,
-    latitude: rawBusiness.latitude ?? base.latitude ?? -8.8388,
-    longitude: rawBusiness.longitude ?? base.longitude ?? 13.2344,
+    latitude: Number(rawBusiness.latitude) || Number(base.latitude) || -8.8388,
+    longitude: Number(rawBusiness.longitude) || Number(base.longitude) || 13.2344,
     photos: base.photos?.length ? base.photos : (meta.photos || []),
     amenities: base.amenities?.length ? base.amenities : (meta.amenities || []),
     deals: base.deals?.length ? base.deals : (meta.deals || []),
     popularDishes: base.popularDishes?.length ? base.popularDishes : (meta.popularDishes || []),
-    roomTypes: (rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || []),
+    roomTypes: ((rawBusiness.htRoomTypes?.length ? rawBusiness.htRoomTypes : null) || (rawBusiness.roomTypes?.length ? rawBusiness.roomTypes : null) || (base.roomTypes?.length ? base.roomTypes : null) || (meta.roomTypes || [])).map(rt => ({
+      ...rt,
+      physicalRoomsCount: rt._count?.rooms ?? rt.physicalRoomsCount ?? rt.totalRooms ?? 1,
+    })),
     metadata: meta,
+    feedSlot: rawBusiness.feedSlot || null,
+    rankingScore: Number.isFinite(rawBusiness.rankingScore) ? Number(rawBusiness.rankingScore) : null,
+    position: Number.isFinite(rawBusiness.position) ? Number(rawBusiness.position) : null,
+    hasActiveStatus: !!(rawBusiness.hasActiveStatus ?? meta.hasActiveStatus ?? base.hasActiveStatus),
+    isNew: !!(rawBusiness.isNew ?? meta.isNew),
+    hasPromo: !!(rawBusiness.hasPromo ?? meta.hasPromo ?? base.promo ?? meta.promo),
+    isSponsored: !!(rawBusiness.isSponsored ?? meta.isSponsored ?? meta.isPatrocinado ?? base.isPremium ?? meta.isPremium),
     owner: rawBusiness.owner || null,
   };
 }
@@ -379,82 +579,15 @@ function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets,
 function AppContent() {
   const insets = useSafeAreaInsets();
   const authSession = useAuthSession();
+  const isStaff = authSession.isStaff ?? false;
+  const staffRole = authSession.staffRole ?? null;
+  const staffBusinessId = authSession.staffBusinessId ?? null;
   const liveSync = useLiveSync({
     user: authSession.user,
     accessToken: authSession.accessToken,
   });
   const [profileData, setProfileData] = useState(null);
   const [ownerDashboardData, setOwnerDashboardData] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadProfileData = async () => {
-      if (!authSession.accessToken) {
-        setProfileData(null);
-        return;
-      }
-
-      try {
-        const response = await backendApi.getMe(authSession.accessToken);
-        if (!cancelled) {
-          setProfileData(response || null);
-        }
-      } catch (error) {
-        console.error('[Profile][API_FAIL]', {
-          reason: error?.type || 'unknown',
-          status: error?.status || null,
-          url: error?.url || null,
-          message: error?.message || 'Falha ao carregar perfil.',
-        });
-
-        if (!cancelled) {
-          setProfileData(null);
-        }
-      }
-    };
-
-    loadProfileData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession.accessToken, authSession.user?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadOwnerDashboard = async () => {
-      if (!authSession.accessToken || !authSession.isOwner) {
-        setOwnerDashboardData(null);
-        return;
-      }
-
-      try {
-        const response = await backendApi.getOwnerDashboard(authSession.accessToken);
-        if (!cancelled) {
-          setOwnerDashboardData(response || null);
-        }
-      } catch (error) {
-        console.error('[OwnerDashboard][API_FAIL]', {
-          reason: error?.type || 'unknown',
-          status: error?.status || null,
-          url: error?.url || null,
-          message: error?.message || 'Falha ao carregar dashboard do dono.',
-        });
-
-        if (!cancelled) {
-          setOwnerDashboardData(null);
-        }
-      }
-    };
-
-    loadOwnerDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession.accessToken, authSession.isOwner]);
 
   const userProfile = useMemo(() => {
     const createdAt = profileData?.createdAt
@@ -518,9 +651,61 @@ function AppContent() {
     }
   }, [authSession.accessToken, authSession.isOwner, liveSync]);
 
+  const handleHomeRefresh = useCallback(async () => {
+    setHomeRefreshing(true);
+    try {
+      if (userLocation?.latitude && userLocation?.longitude) {
+        const [feedRes, allRes] = await Promise.all([
+          backendApi.getHybridHomeFeed({
+            lat: userLocation.latitude,
+            lng: userLocation.longitude,
+            radiusKm: 20,
+            limit: 15,
+          }).catch(() => null),
+          backendApi.getBusinesses(),
+        ]);
+
+        const feedItems = Array.isArray(feedRes?.items) ? feedRes.items : [];
+        if (feedItems.length > 0) {
+          const fromFeed = feedItems
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .map((biz, idx) => {
+              const raw = feedItems[idx] || {};
+              return {
+                ...biz,
+                recommendationScore: Number(raw.rankingScore || biz.recommendationScore || 0),
+                recommendationReason: raw.feedSlot || biz.recommendationReason || 'Feed híbrido',
+              };
+            });
+
+          const feedIds = new Set(fromFeed.map((b) => b.id));
+          const fromApi = (Array.isArray(allRes) ? allRes : [])
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .filter((b) => !feedIds.has(b.id));
+
+          const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
+          const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
+          setBusinesses([...fromFeed, ...fromApi, ...mocksFallback]);
+          return;
+        }
+      }
+
+      const response = await backendApi.getBusinesses();
+      const fromApi = (Array.isArray(response) ? response : [])
+        .map(normalizeBusiness).filter(Boolean);
+      const apiIds = new Set(fromApi.map(b => b.id));
+      setBusinesses([...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]);
+      filters.refreshShuffle?.();
+    } catch {}
+    finally { setHomeRefreshing(false); }
+  }, [filters, userLocation?.latitude, userLocation?.longitude]);
+
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
+  const [isStartupLoading, setIsStartupLoading] = useState(true);
 
   // ── Reservas de quartos partilhadas (dono ↔ cliente) ──────────────────────
   // Deriva directamente de liveSync.bookings (actualizado pelo Supabase Realtime).
@@ -567,12 +752,16 @@ function AppContent() {
   }, []);
   const fallbackNotifications = [{id:'n1',title:'Nova oferta!',message:'Pizzaria Bela Vista: 20% OFF',time:'5 min atrás',read:false},{id:'n2',title:'Reserva confirmada',message:'Personal Trainer amanhã às 10h',time:'1h atrás',read:false}];
   const notifications = authSession.user ? liveSync.notifications : fallbackNotifications;
-  const [locationPermission, setLocationPermission] = useState('denied');
+  const [locationPermission, setLocationPermission] = useState('loading');
   const [userLocation, setUserLocation] = useState(null); // { latitude, longitude }
+  const [isLocationBootstrapLoading, setIsLocationBootstrapLoading] = useState(true);
+  const locationPermissionRequestedRef = React.useRef(false);
   // ── Navegação ──────────────────────────────────────────────────────────────
   const [isBusinessMode, setIsBusinessMode]   = useState(false);
+  const [isStaffMode, setIsStaffMode]         = useState(false);
   const [activeNavTab, setActiveNavTab]         = useState('home');
   const [activeBusinessTab, setActiveBusinessTab] = useState('dashboard');
+  const [adminSessionBackup, setAdminSessionBackup] = useState(null);
 
   // ── Business detail ────────────────────────────────────────────────────────
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
@@ -584,6 +773,7 @@ function AppContent() {
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
   const filters = useBusinessFilters(businesses, isBusinessMode);
+  const [homeRefreshing, setHomeRefreshing] = useState(false);
   const meta    = useMetaAnimation({ showDetail });
   const layer   = useOperationalLayer(); // Nível 2 — módulos operacionais
 
@@ -631,9 +821,24 @@ function AppContent() {
   const handleAuthSuccess = useCallback(async (session) => {
     setShowAuthModal(false);
     await authSession.saveSession(session);
+    const hasHtStaffAssignment = Array.isArray(session?.user?.staffRoles)
+      && session.user.staffRoles.some((r) => r?.module === 'HT' || String(r?.role || '').startsWith('HT_'));
+    // Verificar também os claims do JWT (cobre fallback sem coreBusinessStaff)
+    let jwtHasStaffClaims = false;
+    try {
+      const jwtPayload = session?.accessToken
+        ? JSON.parse(atob(session.accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+        : null;
+      jwtHasStaffClaims = !!(jwtPayload?.staffRole && jwtPayload?.businessId);
+    } catch { /* token inválido ou não-JWT */ }
     if (session?.user?.role === 'OWNER') {
       setIsBusinessMode(true);
       setActiveBusinessTab('dashboard');
+    }
+    if (session?.user?.role === 'STAFF' || hasHtStaffAssignment || jwtHasStaffClaims) {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
+      setIsStaffMode(true);
     }
   }, [authSession]);
 
@@ -644,10 +849,54 @@ function AppContent() {
       }
     } finally {
       await authSession.saveSession(null);
+      setAdminSessionBackup(null);
       setIsBusinessMode(false);
+      setIsStaffMode(false);
       setActiveNavTab('home');
     }
   }, [authSession]);
+
+  const handleImpersonationSession = useCallback(async (impersonationSession) => {
+    if (!impersonationSession?.accessToken || !impersonationSession?.user) {
+      Alert.alert('Erro', 'Sessão de impersonação inválida.');
+      return;
+    }
+
+    if (authSession.user?.role !== 'ADMIN' || !authSession.accessToken) {
+      Alert.alert('Sessão inválida', 'Só um administrador autenticado pode iniciar impersonação.');
+      return;
+    }
+
+    setAdminSessionBackup({
+      accessToken: authSession.accessToken,
+      refreshToken: authSession.refreshToken,
+      user: authSession.user,
+    });
+
+    await authSession.saveSession({
+      accessToken: impersonationSession.accessToken,
+      refreshToken: impersonationSession.refreshToken || null,
+      user: impersonationSession.user,
+      impersonation: impersonationSession.impersonation || { active: true },
+    });
+
+    setIsBusinessMode(true);
+    setActiveBusinessTab('dashboard');
+    setActiveNavTab('home');
+  }, [authSession]);
+
+  const handleExitOwnerMode = useCallback(async () => {
+    if (authSession.session?.impersonation?.active && adminSessionBackup) {
+      await authSession.saveSession(adminSessionBackup);
+      setAdminSessionBackup(null);
+      setIsBusinessMode(false);
+      setActiveNavTab('home');
+      return;
+    }
+
+    setIsBusinessMode(false);
+    setActiveNavTab('home');
+  }, [adminSessionBackup, authSession]);
 
     const handleBusinessPress = useCallback((b) => {
     meta.swipeProgress.setValue(0);
@@ -664,7 +913,7 @@ function AppContent() {
     }).catch(() => {});
   }, [meta.swipeProgress]);
 
-  // Haversine -- distância em km entre dois pontos GPS
+  // Haversine -- distância em linha recta (crow-flies) entre dois pontos GPS
   const haversineKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -673,85 +922,331 @@ function AppContent() {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
+  const formatDistanceText = (km) => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`);
+
+  // Ref que rastreia a localização actual (acessível de dentro de closures assíncronas)
+  const userLocationRef = React.useRef(null);
+  const roadDistanceSyncRef = React.useRef({ key: '', requestId: 0 });
+
+  // Distância estimada para cards: haversine * 1.35 (aproxima estrada em malha urbana)
+  const applyEstimatedDistances = (arr, loc) => {
+    if (!loc) return arr;
+    return arr.map(b => {
+      const lat = Number(b.latitude);
+      const lng = Number(b.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return b;
+      const km = haversineKm(loc.latitude, loc.longitude, lat, lng) * 1.35;
+      const distanceText = formatDistanceText(km);
+      return { ...b, distance: km, distanceText };
+    });
+  };
+
+  // Distância real de estrada para vários cards via OSRM Table API (em lotes)
+  const fetchRoadDistancesMap = async (loc, candidates) => {
+    const result = new Map();
+    const chunkSize = 20;
+    for (let i = 0; i < candidates.length; i += chunkSize) {
+      const chunk = candidates.slice(i, i + chunkSize);
+      const coords = [`${loc.longitude},${loc.latitude}`, ...chunk.map(c => `${c.lng},${c.lat}`)].join(';');
+      const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data?.code !== 'Ok' || !Array.isArray(data?.distances?.[0])) continue;
+        chunk.forEach((c, idx) => {
+          const meters = Number(data.distances[0][idx + 1]);
+          if (Number.isFinite(meters) && meters > 0) result.set(c.id, meters / 1000);
+        });
+      } catch {
+        // Falha silenciosa por lote; mantém distância estimada
+      }
+    }
+    return result;
+  };
+
+  // Ref para guardar a subscription do watch -- permite parar e reiniciar
+  const locationWatchRef = React.useRef(null);
+  const hybridFeedLoadedRef = React.useRef(false);
+
   const requestLocationPermission = async () => {
+    if (locationPermissionRequestedRef.current) return;
+    locationPermissionRequestedRef.current = true;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
       if (status === 'granted') {
+        // Posição imediata
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        // Iniciar watch se ainda não está activo
+        if (!locationWatchRef.current) {
+          locationWatchRef.current = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+            (l) => setUserLocation({ latitude: l.coords.latitude, longitude: l.coords.longitude })
+          );
+        }
       }
     } catch {
       setLocationPermission('denied');
+    } finally {
+      setIsLocationBootstrapLoading(false);
     }
   };
-
-  // Pedir localização ao arrancar
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
-        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-      }
+  // Chamada explícita pelo utilizador (ícone de localização na search bar).
+  // Não usa a guarda do ref — força sempre o pedido ao SO.
+  // Se a permissão foi negada definitivamente abre as Definições do dispositivo.
+  const handleLocationIconPress = useCallback(async () => {
+    locationPermissionRequestedRef.current = false; // libertar guarda
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
-    })();
+      if (status === 'granted') {
+        locationPermissionRequestedRef.current = true;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        if (!locationWatchRef.current) {
+          locationWatchRef.current = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+            (l) => setUserLocation({ latitude: l.coords.latitude, longitude: l.coords.longitude })
+          );
+        }
+      } else {
+        Alert.alert(
+          'Localização desactivada',
+          'Para ver negócios perto de si, active a localização nas definições do dispositivo.',
+          [
+            { text: 'Agora não', style: 'cancel' },
+            { text: 'Abrir Definições', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+    } catch {
+      setLocationPermission('denied');
+    } finally {
+      setIsLocationBootstrapLoading(false);
+    }
+  }, []);
+
+  // Localização: pede permissão ao arrancar + watch contínuo para actualizar com deslocação
+  useEffect(() => {
+    let subscription = null;
+
+    const startLocation = async () => {
+      try {
+        // Verificar permissão actual
+        let { status } = await Location.getForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          setLocationPermission(status);
+          await requestLocationPermission();
+          return;
+        }
+
+        locationPermissionRequestedRef.current = true;
+        setLocationPermission(status);
+
+        // Posição inicial imediata
+        const initial = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }).catch(() => null);
+        if (initial) {
+          setUserLocation({
+            latitude:  initial.coords.latitude,
+            longitude: initial.coords.longitude,
+          });
+        }
+
+        // Watch contínuo — actualiza distâncias conforme o utilizador se desloca
+        // distanceInterval: 50m -- só dispara se o utilizador andar mais de 50 metros
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy:         Location.Accuracy.Balanced,
+            distanceInterval: 50,    // metros mínimos entre updates
+            timeInterval:     30000, // máximo a cada 30 segundos
+          },
+          (loc) => {
+            setUserLocation({
+              latitude:  loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+          }
+        );
+        locationWatchRef.current = subscription;
+      } catch {
+        setLocationPermission('denied');
+      } finally {
+        setIsLocationBootstrapLoading(false);
+      }
+    };
+
+    startLocation();
+
+    // Cleanup: parar o watch quando o componente desmonta
+    return () => {
+      if (subscription) subscription.remove();
+    };
   }, []);
 
     useEffect(() => {
     AsyncStorage.getItem('bookmarks').then(s => s && setBookmarkedIds(JSON.parse(s))).catch(() => {});
   }, []);
 
-  // Recalcular distâncias quando a localização do utilizador muda
+  // Recalcular distâncias sempre que a localização muda; manter ref actualizada
+  useEffect(() => {
+    userLocationRef.current = userLocation;
+    if (!userLocation) return;
+    setBusinesses(prev => applyEstimatedDistances(prev, userLocation));
+
+    // Reverse geocode to update the search location label (only if user hasn't typed a custom location)
+    Location.reverseGeocodeAsync(userLocation)
+      .then(results => {
+        if (!results?.length) return;
+        const r = results[0];
+        const parts = [r.district || r.subregion, r.city || r.region].filter(Boolean);
+        const label = parts.join(', ');
+        if (label) filters.setSearchWhere(prev => prev === '' || prev === 'Talatona, Luanda' ? label : prev);
+      })
+      .catch(() => {});
+  }, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Upgrade assíncrono dos cards para distância real de estrada via OSRM.
+  // Corre após ter localização + lista de negócios e evita requests repetidos.
   useEffect(() => {
     if (!userLocation) return;
-    setBusinesses(prev => prev.map(b => {
-      if (!b.latitude || !b.longitude) return b;
-      const km = haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude);
-      const distanceText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
-      return { ...b, distance: km, distanceText };
-    }));
-  }, [userLocation]);
+    const candidates = businesses
+      .map((b) => ({ id: b.id, lat: Number(b.latitude), lng: Number(b.longitude) }))
+      .filter((b) => b.id && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+    if (!candidates.length) return;
 
+    const locKey = `${userLocation.latitude.toFixed(4)},${userLocation.longitude.toFixed(4)}`;
+    const bizKey = candidates.map((b) => `${b.id}:${b.lat.toFixed(4)},${b.lng.toFixed(4)}`).join('|');
+    const key = `${locKey}|${bizKey}`;
+    if (roadDistanceSyncRef.current.key === key) return;
+
+    roadDistanceSyncRef.current.key = key;
+    const requestId = roadDistanceSyncRef.current.requestId + 1;
+    roadDistanceSyncRef.current.requestId = requestId;
+
+    (async () => {
+      const map = await fetchRoadDistancesMap(userLocation, candidates);
+      if (!map.size) return;
+      if (roadDistanceSyncRef.current.requestId !== requestId) return;
+      setBusinesses(prev => prev.map((b) => {
+        const km = map.get(b.id);
+        if (!Number.isFinite(km)) return b;
+        return { ...b, distance: km, distanceText: formatDistanceText(km) };
+      }));
+    })();
+  }, [businesses, userLocation]);
+
+  useEffect(() => {
+    if (!userLocation?.latitude || !userLocation?.longitude) return;
+    if (isStartupLoading) return;
+    if (hybridFeedLoadedRef.current) return;
+    hybridFeedLoadedRef.current = true;
+    handleHomeRefresh();
+  }, [userLocation?.latitude, userLocation?.longitude, isStartupLoading, handleHomeRefresh]);
+
+  // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
     let cancelled = false;
 
-    const loadBusinesses = async () => {
+    const startup = async () => {
       try {
-        const response = await backendApi.getBusinesses();
-        const fromApi = (Array.isArray(response) ? response : [])
+        const [meRes, dashRes, bizRes, recRes, hybridRes] = await Promise.all([
+          authSession.accessToken
+            ? backendApi.getMe(authSession.accessToken)
+            : Promise.resolve(null),
+          authSession.accessToken && authSession.isOwner
+            ? backendApi.getOwnerDashboard(authSession.accessToken)
+            : Promise.resolve(null),
+          backendApi.getBusinesses(),
+          authSession.accessToken
+            ? backendApi.getRecommendations(40, authSession.accessToken).catch(() => [])
+            : Promise.resolve([]),
+          userLocation?.latitude && userLocation?.longitude
+            ? backendApi.getHybridHomeFeed({
+                lat: userLocation.latitude,
+                lng: userLocation.longitude,
+                radiusKm: 20,
+                limit: 15,
+              }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        if (cancelled) return;
+
+        setProfileData(meRes || null);
+        setOwnerDashboardData(authSession.isOwner ? (dashRes || null) : null);
+
+        const hybridItems = Array.isArray(hybridRes?.items) ? hybridRes.items : [];
+        if (hybridItems.length > 0) {
+          const fromFeed = hybridItems
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .map((biz, idx) => {
+              const raw = hybridItems[idx] || {};
+              return {
+                ...biz,
+                recommendationScore: Number(raw.rankingScore || biz.recommendationScore || 0),
+                recommendationReason: raw.feedSlot || biz.recommendationReason || 'Feed híbrido',
+              };
+            });
+
+          const feedIds = new Set(fromFeed.map((b) => b.id));
+          const fromApi = (Array.isArray(bizRes) ? bizRes : [])
+            .map(normalizeBusiness)
+            .filter(Boolean)
+            .filter((b) => !feedIds.has(b.id));
+
+          const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
+          const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
+          setBusinesses(applyEstimatedDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current));
+          return;
+        }
+
+        const fromApi = (Array.isArray(bizRes) ? bizRes : [])
           .map(normalizeBusiness)
           .filter(Boolean);
-
-        // Negócios da API têm prioridade; mocks preenchem os que não existem na API
+        const recMap = new Map((Array.isArray(recRes) ? recRes : []).map(r => [r.id, r]));
         const apiIds = new Set(fromApi.map(b => b.id));
-        const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
-        const merged = [...fromApi, ...mocksNotInApi];
-
-        if (!cancelled) {
-          setBusinesses(merged);
-        }
+        const merged = [...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]
+          .map((biz) => {
+            const rec = recMap.get(biz.id);
+            return rec
+              ? { ...biz, recommendationScore: rec.recommendationScore, recommendationReason: rec.reason }
+              : biz;
+          })
+          .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
+        setBusinesses(applyEstimatedDistances(merged, userLocationRef.current));
       } catch (error) {
-        console.error('[Businesses][API_FAIL]', {
+        console.error('[Startup][API_FAIL]', {
           reason: error?.type || 'unknown',
           status: error?.status || null,
           url: error?.url || null,
-          message: error?.message || 'Falha ao carregar negócios da API.',
+          message: error?.message || 'Falha no startup.',
         });
-
-        // Em caso de falha total, mostrar os mocks completos
         if (!cancelled) {
+          setProfileData(null);
+          setOwnerDashboardData(null);
           setBusinesses(MOCK_BUSINESSES_INITIAL);
         }
+      } finally {
+        if (!cancelled) setIsStartupLoading(false);
       }
     };
 
-    loadBusinesses();
+    startup();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authSession.accessToken, userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
+    if (!authSession.accessToken) return;
+    backendApi.syncOfflineMutations(authSession.accessToken).catch(() => {});
+  }, [authSession.accessToken]);
 
   const handleTabPress = useCallback((tabId) => {
     if (tabId === 'exitbusiness') { setIsBusinessMode(false); setActiveNavTab('home'); return; }
@@ -760,20 +1255,30 @@ function AppContent() {
   }, [isBusinessMode]);
 
   const handleToggleOwnerMode = useCallback(() => {
-    if (!authSession.isOwner) {
-      Alert.alert('Acesso restrito', 'Apenas utilizadores com perfil OWNER podem entrar no modo Dono.');
+    if (authSession.isOwner) {
+      setIsBusinessMode((current) => !current);
       return;
     }
-
-    setIsBusinessMode((current) => !current);
-  }, [authSession.isOwner]);
+    // Staff pode entrar no módulo PMS via este botão
+    if (authSession.isStaff) {
+      setIsBusinessMode(true);
+      setActiveBusinessTab('dashboard');
+      setIsStaffMode(true);
+      return;
+    }
+    Alert.alert('Acesso restrito', 'Apenas utilizadores com perfil OWNER podem entrar no modo Dono.');
+  }, [authSession.isOwner, authSession.isStaff]);
 
   useEffect(() => {
-    if (!authSession.isOwner && isBusinessMode) {
+    if (authSession.loading) return;
+    if (!authSession.isOwner && !authSession.isStaff && isBusinessMode) {
       setIsBusinessMode(false);
       setActiveNavTab('home');
     }
-  }, [authSession.isOwner, isBusinessMode]);
+    if (!authSession.isStaff && isStaffMode) {
+      setIsStaffMode(false);
+    }
+  }, [authSession.loading, authSession.isOwner, authSession.isStaff, isBusinessMode, isStaffMode]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -786,9 +1291,22 @@ function AppContent() {
           {authSession.isAdmin && (
             <AdminModule
               accessToken={authSession.accessToken}
+              onImpersonationSession={handleImpersonationSession}
               onExit={() => {}}
               onLogout={handleLogout}
               insets={insets}
+            />
+          )}
+
+          {/* Staff */}
+          {isStaff && isBusinessMode && staffBusinessId && (
+            <StaffHospitalityView
+              businesses={businesses}
+              businessId={staffBusinessId}
+              staffRole={staffRole}
+              accessToken={authSession.accessToken}
+              liveBookings={liveSync.bookings}
+              onLogout={handleLogout}
             />
           )}
 
@@ -810,7 +1328,7 @@ function AppContent() {
               onOpenAppLayer={meta.openAppLayer}
               isBusinessMode={isBusinessMode}
               locationPermission={locationPermission}
-              onRequestLocation={requestLocationPermission}
+              onRequestLocation={handleLocationIconPress}
               onOpenSortModal={() => filters.setShowSortModal(true)}
               onOpenFilters={() => filters.setShowAdvancedFilters(true)}
               insets={insets}
@@ -819,11 +1337,14 @@ function AppContent() {
               liveBookings={liveSync.bookings}
               onOpenAuth={handleOpenAuth}
               onLogout={handleLogout}
+              onRefresh={handleHomeRefresh}
+              refreshing={homeRefreshing}
+              isLoading={isStartupLoading || isLocationBootstrapLoading}
             />
           )}
 
           {/* Dono */}
-          {isBusinessMode && !authSession.isAdmin && (
+          {isBusinessMode && !isStaff && !authSession.isAdmin && (
             <OwnerModule
               businesses={businesses}
               activeBusinessTab={activeBusinessTab}
@@ -831,7 +1352,7 @@ function AppContent() {
               insets={insets}
               onUpdateBusiness={updateOwnerBiz}
               onSyncPromoDeals={syncPromoDeals}
-              onExitOwnerMode={() => { setIsBusinessMode(false); setActiveNavTab('home'); }}
+              onExitOwnerMode={handleExitOwnerMode}
               onViewBusiness={handleBusinessPress}
               liveBookings={liveSync.bookings}
               liveNotifications={notifications}
@@ -848,7 +1369,7 @@ function AppContent() {
             />
           )}
 
-          {!authSession.isAdmin && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
+          {!authSession.isAdmin && !isStaff && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
         </View>
       </Animated.View>
 
@@ -968,11 +1489,13 @@ function AppContent() {
             onToggleBookmark={toggleBookmark}
             swipeProgress={meta.swipeProgress}
             layer={layer}
+            userLocation={userLocation}
             authSession={{
               accessToken: authSession.accessToken,
               userId: authSession.user?.id,
               role: authSession.user?.role,
             }}
+            onOpenAuth={handleOpenAuth}
             onClose={() => {
               // Fecha também a layer operacional se estiver activa
               if (layer.activeLayer) layer.closeImmediate();
@@ -987,7 +1510,7 @@ function AppContent() {
 
       {/* ── NÍVEL 2: MÓDULOS OPERACIONAIS ─────────────────────────────── */}
       {/* Sobrepõe o BusinessDetailModal (Nível 1) — absoluteFill completo  */}
-      {showDetail && selectedBusiness && layer.activeLayer && (
+      {showDetail && selectedBusiness && layer.activeLayer && authSession.accessToken && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <OperationalLayerRenderer
             layer={layer}
@@ -1001,6 +1524,23 @@ function AppContent() {
             onOwnerRoomBookingsChange={setOwnerRoomBookings}
             liveBusiness={businesses.find(b => b.id === layer.activeBusiness?.id) || layer.activeBusiness}
           />
+        </View>
+      )}
+
+      {locationPermission === 'undetermined' && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
+          <View style={{ width: '100%', maxWidth: 360, backgroundColor: COLORS.white, borderRadius: 16, padding: 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText, marginBottom: 10 }}>
+              O AchAqui precisa da tua localização para mostrar negócios perto de ti
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.red, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+              onPress={requestLocationPermission}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '700' }}>Permitir localização</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>

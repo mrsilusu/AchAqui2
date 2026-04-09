@@ -1,40 +1,195 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
-import { User, UserRole } from '@prisma/client';
+import { AppModule, HtStaffDepartment, StaffRole, User, UserRole } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {}
 
+  // In-memory store for password-reset tokens { tokenHash -> { userId, expiresAt } }
+  private readonly resetTokens = new Map<string, { userId: string; expiresAt: Date }>();
+
   private readonly refreshTokenExpiresIn = '7d';
+
+  private isSuspensionColumnMissing(error: unknown): boolean {
+    if (!(error instanceof PrismaClientKnownRequestError)) return false;
+    if (error.code === 'P2022' || error.code === 'P2021') return true;
+    if (error.code === 'P2010') {
+      const message = String((error.meta as { message?: string } | undefined)?.message ?? '');
+      return (
+        message.includes('isSuspended') ||
+        message.includes('suspendedAt') ||
+        message.includes('suspensionReason')
+      );
+    }
+    return false;
+  }
+
+  private async findUserByEmailSafe(email: string) {
+    try {
+      return await this.prisma.user.findUnique({ where: { email } });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      const fallback = await this.prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          role: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return fallback ? ({ ...fallback, isSuspended: false } as User & { isSuspended: boolean }) : null;
+    }
+  }
+
+  private async findUserByIdSafe(id: string) {
+    try {
+      return await this.prisma.user.findUnique({ where: { id } });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      const fallback = await this.prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          role: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return fallback ? ({ ...fallback, isSuspended: false } as User & { isSuspended: boolean }) : null;
+    }
+  }
 
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  private async getActiveStaffRoles(userId: string): Promise<Array<{ businessId: string; module: AppModule | null; role: StaffRole }>> {
+    const rows = await this.prisma.coreBusinessStaff.findMany({
+      where: { userId, revokedAt: null },
+      select: { businessId: true, module: true, role: true },
+    });
+    return rows.map((row) => ({ businessId: row.businessId, module: row.module, role: row.role }));
+  }
+
+  private async getPrimaryHtStaffContext(userId: string): Promise<{
+    businessId: string;
+    staffRole: StaffRole;
+    staffId: string;
+  } | null> {
+    // 1ª tentativa: coreBusinessStaff (tabela unificada)
+    const assignment = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        userId,
+        revokedAt: null,
+        OR: [{ module: AppModule.HT }, { role: { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { businessId: true, role: true },
+    });
+
+    if (assignment) {
+      const htStaff = await this.prisma.htStaff.findFirst({
+        where: { userId, businessId: assignment.businessId, isActive: true },
+        select: { id: true },
+      });
+      if (htStaff?.id) {
+        return {
+          businessId: assignment.businessId,
+          staffRole: assignment.role,
+          staffId: htStaff.id,
+        };
+      }
+    }
+
+    // 2ª tentativa (fallback legado): ht_staff sem entrada em coreBusinessStaff
+    const htStaffDirect = await this.prisma.htStaff.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, businessId: true, department: true },
+    });
+
+    if (!htStaffDirect) return null;
+
+    const inferredRole: StaffRole =
+      htStaffDirect.department === HtStaffDepartment.RECEPTION
+        ? StaffRole.HT_RECEPTIONIST
+        : htStaffDirect.department === HtStaffDepartment.MANAGEMENT
+          ? StaffRole.HT_MANAGER
+          : StaffRole.HT_HOUSEKEEPER;
+
+    return {
+      businessId: htStaffDirect.businessId,
+      staffRole: inferredRole,
+      staffId: htStaffDirect.id,
+    };
+  }
+
   private async createAccessToken(user: User) {
+    const staffRoles = await this.getActiveStaffRoles(user.id);
+    const primaryHtContext = await this.getPrimaryHtStaffContext(user.id);
     return this.jwtService.signAsync(
       {
         sub: user.id,
         email: user.email,
         role: user.role,
+        staffRoles,
+        ...(primaryHtContext && {
+          staffRole: primaryHtContext.staffRole,
+          businessId: primaryHtContext.businessId,
+          staffId: primaryHtContext.staffId,
+        }),
       },
       {
         secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
         expiresIn: '1d',
+      },
+    );
+  }
+
+  private async createStaffAccessToken(params: {
+    userId: string;
+    email: string;
+    staffRole?: StaffRole | null;
+    businessId: string;
+    staffId: string;
+  }) {
+    return this.jwtService.signAsync(
+      {
+        sub: params.userId,
+        email: params.email,
+        role: UserRole.STAFF,
+        staffRole: params.staffRole ?? null,
+        businessId: params.businessId,
+        staffId: params.staffId,
+      },
+      {
+        secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
+        expiresIn: '8h',
       },
     );
   }
@@ -72,6 +227,7 @@ export class AuthService {
   private async buildAuthResponse(user: User) {
     const accessToken = await this.createAccessToken(user);
     const refreshToken = await this.createRefreshToken(user);
+    const staffRoles = await this.getActiveStaffRoles(user.id);
 
     return {
       accessToken,
@@ -81,6 +237,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        staffRoles,
       },
     };
   }
@@ -109,9 +266,7 @@ export class AuthService {
   }
 
   async signIn(signInDto: SignInDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: signInDto.email },
-    });
+    const user = await this.findUserByEmailSafe(signInDto.email);
 
     if (!user) {
       throw new UnauthorizedException('Credenciais inválidas.');
@@ -123,7 +278,140 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas.');
     }
 
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa. Contacta o suporte.');
+    }
+
+    if (user.role === UserRole.STAFF) {
+      const htStaff = await this.prisma.htStaff.findFirst({
+        where: {
+          userId: user.id,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          businessId: true,
+        },
+      });
+
+      if (!htStaff) {
+        throw new UnauthorizedException('Conta de staff inactiva.');
+      }
+
+      const coreStaff = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          userId: user.id,
+          module: AppModule.HT,
+          revokedAt: null,
+        },
+        select: {
+          role: true,
+        },
+      });
+
+      const accessToken = await this.createStaffAccessToken({
+        userId: user.id,
+        email: user.email,
+        staffRole: coreStaff?.role ?? null,
+        businessId: htStaff.businessId,
+        staffId: htStaff.id,
+      });
+      const refreshToken = await this.createRefreshToken(user);
+      const staffRoles = await this.getActiveStaffRoles(user.id);
+
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          staffRoles,
+          businessId: htStaff.businessId,
+        },
+      };
+    }
+
     return this.buildAuthResponse(user);
+  }
+
+  async staffPinLogin(body: { businessId: string; pin: string }) {
+    const businessId = String(body?.businessId || '').trim();
+    const pin = String(body?.pin || '').trim();
+
+    if (!businessId) throw new UnauthorizedException('Negócio inválido.');
+    if (!/^\d{4,8}$/.test(pin)) throw new UnauthorizedException('PIN inválido.');
+
+    const staffList = await this.prisma.htStaff.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        pinHash: { not: null },
+      },
+      select: {
+        id: true,
+        userId: true,
+        email: true,
+        fullName: true,
+        department: true,
+        pinHash: true,
+      },
+    });
+
+    let matchedStaff: typeof staffList[number] | null = null;
+    for (const staff of staffList) {
+      if (!staff.pinHash) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await bcrypt.compare(pin, staff.pinHash);
+      if (ok) {
+        matchedStaff = staff;
+        break;
+      }
+    }
+
+    if (!matchedStaff || !matchedStaff.userId) {
+      throw new UnauthorizedException('PIN inválido');
+    }
+
+    const staffRoleRow = await this.prisma.coreBusinessStaff.findFirst({
+      where: {
+        userId: matchedStaff.userId,
+        businessId,
+        module: AppModule.HT,
+        revokedAt: null,
+      },
+      select: { role: true },
+    });
+
+    // Quando não existe entrada em coreBusinessStaff, infere o role a partir do department
+    const staffRole: StaffRole = staffRoleRow?.role ?? (
+      matchedStaff.department === HtStaffDepartment.RECEPTION
+        ? StaffRole.HT_RECEPTIONIST
+        : matchedStaff.department === HtStaffDepartment.MANAGEMENT
+          ? StaffRole.HT_MANAGER
+          : StaffRole.HT_HOUSEKEEPER
+    );
+    const accessToken = await this.createStaffAccessToken({
+      userId: matchedStaff.userId,
+      email: matchedStaff.email,
+      staffRole,
+      businessId,
+      staffId: matchedStaff.id,
+    });
+
+    return {
+      accessToken,
+      staff: {
+        id: matchedStaff.id,
+        userId: matchedStaff.userId,
+        email: matchedStaff.email,
+        fullName: matchedStaff.fullName,
+        department: matchedStaff.department,
+        staffRole,
+        businessId,
+      },
+    };
   }
 
   async refresh(refreshTokenDto: RefreshTokenDto) {
@@ -160,12 +448,14 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
+    const user = await this.findUserByIdSafe(payload.sub);
 
     if (!user) {
       throw new UnauthorizedException('Utilizador não encontrado.');
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa.');
     }
 
     return this.buildAuthResponse(user);
@@ -196,26 +486,55 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        _count: {
-          select: {
-            htBookings: true,
-            notifications: true,
-            businesses: true,
+    let user: any;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isSuspended: true,
+          suspendedAt: true,
+          createdAt: true,
+          _count: {
+            select: {
+              htBookings: true,
+              notifications: true,
+              businesses: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (!this.isSuspensionColumnMissing(error)) throw error;
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          _count: {
+            select: {
+              htBookings: true,
+              notifications: true,
+              businesses: true,
+            },
+          },
+        },
+      });
+      if (user) user.isSuspended = false;
+    }
 
     if (!user) {
       throw new UnauthorizedException('Utilizador não encontrado.');
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Conta suspensa.');
     }
 
     return {
@@ -223,6 +542,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      staffRoles: await this.getActiveStaffRoles(user.id),
       createdAt: user.createdAt,
       stats: {
         bookings: user._count.htBookings,
@@ -259,5 +579,41 @@ export class AuthService {
       message: 'Configurações actualizadas com sucesso.',
       settings: settingsDto,
     };
+  }
+
+  async updateProfile(userId: string, data: { name: string }) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { name: data.name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+    return updated;
+  }
+
+  async forgotPassword(email: string) {
+    // Always return success to avoid user enumeration
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (user) {
+      const rawToken = randomUUID();
+      const tokenHash = this.hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Clean up any expired tokens for this user
+      for (const [hash, entry] of this.resetTokens.entries()) {
+        if (entry.userId === user.id || entry.expiresAt < new Date()) {
+          this.resetTokens.delete(hash);
+        }
+      }
+
+      this.resetTokens.set(tokenHash, { userId: user.id, expiresAt });
+
+      const appUrl = process.env.APP_URL ?? 'https://achaqui.app';
+      const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
+
+      await this.mailService.sendPasswordResetEmail({ to: email, resetLink }).catch(() => {
+        // Silent fail — email service may not be configured in dev
+      });
+    }
+    return { message: 'Se existir uma conta com este email, receberás um link para redefinir a senha.' };
   }
 }
