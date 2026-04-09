@@ -1883,6 +1883,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
         noShowAlertBookings={noShowAlertDismissed ? [] : noShowAlertBookings}
         onDismissNoShowAlert={() => setNoShowAlertDismissed(true)}
+        isLimitedStaffOwnerMode={isLimitedStaffOwnerMode}
       />
     );
   }

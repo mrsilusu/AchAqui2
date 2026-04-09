@@ -186,22 +186,26 @@ export function DashboardPMS({
   roomTypes = [],
   noShowAlertBookings = [],
   onDismissNoShowAlert,
+  isLimitedStaffOwnerMode = false,
 }) {
   const insets = useSafeAreaInsets();
   const isKioskStaff = !!staffToken;
   const isJwtStaff = !!staffRole && !staffToken;
   const isStaffMode = isKioskStaff || isJwtStaff;
   const effectiveAccessToken = staffToken || accessToken || null;
-  const canAccessReception = !isStaffMode
+  // isLimitedStaffOwnerMode=true: staff JWT login — mesma abordagem do HospitalityModule
+  // que usa isLimitedStaffOwnerMode para dar acesso a todas as secções.
+  // Kiosk (PIN) continua a usar canSeeSection com restrição por role.
+  const canAccessReception = isLimitedStaffOwnerMode || !isStaffMode
     || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
       : canSeeSection(staffToken, 'reception'));
-  const canAccessHousekeeping = !isStaffMode
+  const canAccessHousekeeping = isLimitedStaffOwnerMode || !isStaffMode
     || (isJwtStaff ? (staffRole === 'HT_HOUSEKEEPER' || staffRole === 'HT_MANAGER')
       : canSeeSection(staffToken, 'housekeeping'));
-  const canAccessBookingsMgr = !isStaffMode
+  const canAccessBookingsMgr = isLimitedStaffOwnerMode || !isStaffMode
     || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
       : canSeeSection(staffToken, 'bookingsManager'));
-  const canAccessStaff = !isStaffMode
+  const canAccessStaff = (isLimitedStaffOwnerMode && staffRole === 'HT_MANAGER') || !isStaffMode
     || (isJwtStaff ? staffRole === 'HT_MANAGER'
       : canSeeSection(staffToken, 'staffManager'));
 
