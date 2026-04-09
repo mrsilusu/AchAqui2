@@ -32,7 +32,7 @@ export class HtBookingService {
   private async assertAccess(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
     // STAFF: o businessId foi validado e assinado no JWT durante o login
     // Basta confirmar que o businessId pedido coincide com o do JWT
-    if (actorRole === 'STAFF') {
+    if (String(actorRole) === 'STAFF') {
       if (!actorBusinessId || actorBusinessId !== businessId) {
         throw new ForbiddenException('Sem permissão para este estabelecimento.');
       }
@@ -64,7 +64,7 @@ export class HtBookingService {
       ? { in: allowedRoles }
       : { in: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] };
 
-    const staff = await this.prisma.coreBusinessStaff.findFirst({
+    const coreStaff = await this.prisma.coreBusinessStaff.findFirst({
       where: {
         businessId,
         userId,
@@ -79,8 +79,22 @@ export class HtBookingService {
       },
       select: { id: true },
     });
+    if (coreStaff) return true;
 
-    return !!staff;
+    // Fallback: verificar ht_staff directamente (staff sem sincronização em coreBusinessStaff)
+    const htStaff = await this.prisma.htStaff.findFirst({
+      where: { businessId, userId, isActive: true },
+      select: { department: true },
+    });
+    if (!htStaff) return false;
+    if (!allowedRoles?.length) return true;
+
+    const inferredRole = htStaff.department === 'RECEPTION'
+      ? StaffRole.HT_RECEPTIONIST
+      : htStaff.department === 'MANAGEMENT'
+        ? StaffRole.HT_MANAGER
+        : StaffRole.HT_HOUSEKEEPER;
+    return allowedRoles.includes(inferredRole);
   }
 
   // [TENANT] Valida que a reserva pertence ao negócio do utilizador autenticado.
@@ -1203,9 +1217,9 @@ export class HtBookingService {
       return updated;
     }
 
-    // CRIAR RESERVA (owner cria directamente no PMS)
-    async createBooking(dto: CreateHtBookingDto, ownerId: string) {
-      await this.assertOwnership(dto.businessId, ownerId);
+    // CRIAR RESERVA (owner ou recepcionista criam directamente no PMS)
+    async createBooking(dto: CreateHtBookingDto, ownerId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+      await this.assertAccess(dto.businessId, ownerId, actorRole, actorBusinessId);
 
       const roomType = await this.prisma.htRoomType.findFirst({
         where: { id: dto.roomTypeId, businessId: dto.businessId },
@@ -1258,8 +1272,8 @@ export class HtBookingService {
     }
 
     // ACTUALIZAR CONFIGURAÇÃO PMS (overbookingBuffer e outros campos tipados)
-    async updatePmsConfig(businessId: string, ownerId: string, data: { overbookingBuffer?: number }) {
-      await this.assertOwnership(businessId, ownerId);
+    async updatePmsConfig(businessId: string, ownerId: string, data: { overbookingBuffer?: number }, actorRole: string = 'OWNER', actorBusinessId?: string) {
+      await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
       return this.prisma.htPmsConfig.upsert({
         where:  { businessId },
         update: data,

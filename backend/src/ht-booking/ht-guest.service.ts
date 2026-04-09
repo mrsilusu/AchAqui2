@@ -17,18 +17,25 @@ export class HtGuestService {
     return raw.replace(/\s+/g, '').toUpperCase();
   }
 
-  private async assertOwnership(businessId: string, ownerId: string) {
+  private async assertAccess(businessId: string, actorId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    if (String(actorRole) === 'STAFF') {
+      if (!actorBusinessId || actorBusinessId !== businessId) {
+        throw new ForbiddenException('Sem permissão para este estabelecimento.');
+      }
+      return;
+    }
+
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
       select: { id: true, ownerId: true },
     });
     if (!business) throw new ForbiddenException('Sem permissão para este estabelecimento.');
-    if (business.ownerId === ownerId) return;
+    if (business.ownerId === actorId) return;
 
     const staff = await this.prisma.coreBusinessStaff.findFirst({
       where: {
         businessId,
-        userId: ownerId,
+        userId: actorId,
         revokedAt: null,
         OR: [
           { role: StaffRole.GENERAL_MANAGER },
@@ -40,12 +47,19 @@ export class HtGuestService {
       },
       select: { id: true },
     });
-    if (!staff) throw new ForbiddenException('Sem permissão para este estabelecimento.');
+    if (staff) return;
+
+    // Fallback: verificar ht_staff directamente
+    const htStaff = await this.prisma.htStaff.findFirst({
+      where: { businessId, userId: actorId, isActive: true },
+      select: { id: true },
+    });
+    if (!htStaff) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
 
   // ─── Listar hóspedes ──────────────────────────────────────────────────────
-  async list(businessId: string, ownerId: string, search?: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async list(businessId: string, ownerId: string, search?: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const normalizedSearch = this.normalizeDocumentNumber(search);
     return this.prisma.htGuestProfile.findMany({
       where: {
@@ -73,8 +87,8 @@ export class HtGuestService {
   }
 
   // ─── Buscar hóspede por id ────────────────────────────────────────────────
-  async findOne(id: string, businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async findOne(id: string, businessId: string, ownerId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const guest = await this.prisma.htGuestProfile.findFirst({
       where: { id, businessId },
       include: {
@@ -99,8 +113,8 @@ export class HtGuestService {
     companyName?: string; nif?: string;
     nationality?: string; dateOfBirth?: string;
     address?: string; preferences?: string; notes?: string; isVip?: boolean;
-  }) {
-    await this.assertOwnership(businessId, ownerId);
+  }, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const normalizedDocument = this.normalizeDocumentNumber(dto.documentNumber);
     if (!normalizedDocument) {
       throw new BadRequestException('Documento de identificação é obrigatório para criar perfil de hóspede.');
@@ -139,8 +153,8 @@ export class HtGuestService {
     nationality?: string; dateOfBirth?: string;
     address?: string; preferences?: string; notes?: string; isVip?: boolean;
     isBlacklisted?: boolean;
-  }) {
-    await this.assertOwnership(businessId, ownerId);
+  }, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const guest = await this.prisma.htGuestProfile.findFirst({ where: { id, businessId } });
     if (!guest) throw new NotFoundException('Hóspede não encontrado.');
 
@@ -187,8 +201,8 @@ export class HtGuestService {
   }
 
   // ─── Ligar hóspede a uma reserva ─────────────────────────────────────────
-  async linkToBooking(guestId: string, bookingId: string, businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async linkToBooking(guestId: string, bookingId: string, businessId: string, ownerId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
+    await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const guest = await this.prisma.htGuestProfile.findFirst({ where: { id: guestId, businessId } });
     if (!guest) throw new NotFoundException('Hóspede não encontrado.');
     const booking = await this.prisma.htRoomBooking.findFirst({
