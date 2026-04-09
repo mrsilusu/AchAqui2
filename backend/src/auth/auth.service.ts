@@ -283,38 +283,19 @@ export class AuthService {
     }
 
     if (user.role === UserRole.STAFF) {
-      const htStaff = await this.prisma.htStaff.findFirst({
-        where: {
-          userId: user.id,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          businessId: true,
-        },
-      });
+      // getPrimaryHtStaffContext já tem o fallback correcto para staff sem entrada em coreBusinessStaff
+      const staffContext = await this.getPrimaryHtStaffContext(user.id);
 
-      if (!htStaff) {
+      if (!staffContext) {
         throw new UnauthorizedException('Conta de staff inactiva.');
       }
-
-      const coreStaff = await this.prisma.coreBusinessStaff.findFirst({
-        where: {
-          userId: user.id,
-          module: AppModule.HT,
-          revokedAt: null,
-        },
-        select: {
-          role: true,
-        },
-      });
 
       const accessToken = await this.createStaffAccessToken({
         userId: user.id,
         email: user.email,
-        staffRole: coreStaff?.role ?? null,
-        businessId: htStaff.businessId,
-        staffId: htStaff.id,
+        staffRole: staffContext.staffRole,
+        businessId: staffContext.businessId,
+        staffId: staffContext.staffId,
       });
       const refreshToken = await this.createRefreshToken(user);
       const staffRoles = await this.getActiveStaffRoles(user.id);
