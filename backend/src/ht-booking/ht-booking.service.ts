@@ -43,7 +43,7 @@ export class HtBookingService {
     const b = await this.prisma.business.findFirst({
       where: {
         id: businessId,
-        OR: [{ ownerId: actorId }, { ownerId: null, id: businessId }],
+        OR: [{ ownerId: actorId }],
       },
       select: { id: true },
     });
