@@ -17,7 +17,7 @@ import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, ActivityIndicator, Alert, Switch, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import backendApi from '../lib/backendApi';
+import { backendApi } from '../lib/backendApi';
 
 const DEPARTMENTS = {
   RECEPTION:    'Receção',

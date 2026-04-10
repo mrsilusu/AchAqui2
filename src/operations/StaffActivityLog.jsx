@@ -14,7 +14,7 @@ import {
   Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView,
   ActivityIndicator, Alert,
 } from 'react-native';
-import backendApi from '../lib/backendApi';
+import { backendApi } from '../lib/backendApi';
 
 const COLORS = {
   primary: '#1565C0', bg: '#F8FAFC', card: '#FFFFFF',
