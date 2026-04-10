@@ -167,13 +167,16 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    // STAFF: o businessId no JWT foi assinado pelo servidor no login
-    // Validação de tenant é feita ao nível dos services
-    if (
-      String(userRole) === 'STAFF' &&
-      request.user?.businessId
-    ) {
-      return true;
+    if (String(userRole) === 'STAFF' && jwtBusinessId) {
+      // Sem @StaffAccess no endpoint -> qualquer staff com businessId passa
+      if (!staffAccess) return true;
+      // Com @StaffAccess -> validar role do JWT contra roles permitidos
+      return this.hasStaffAccess(
+        userId,
+        jwtBusinessId,
+        staffAccess.module,
+        staffAccess.roles,
+      );
     }
 
     throw new ForbiddenException('Sem permissão para esta ação.');
