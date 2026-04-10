@@ -124,7 +124,7 @@ export class HtGuestService {
     });
     if (exists) throw new BadRequestException('Número de documento já registado para outro hóspede neste estabelecimento.');
 
-    return this.prisma.htGuestProfile.create({
+    const created = await this.prisma.htGuestProfile.create({
       data: {
         businessId,
         fullName:       dto.fullName,
@@ -142,6 +142,20 @@ export class HtGuestService {
         isVip:          dto.isVip          ?? false,
       },
     });
+
+    await this.prisma.coreAuditLog.create({
+      data: {
+        businessId,
+        module: 'HT' as any,
+        action: 'HT_GUEST_CREATED' as any,
+        actorId: ownerId,
+        resourceType: 'HtGuestProfile',
+        resourceId: created.id,
+        newData: { fullName: created.fullName, documentNumber: created.documentNumber },
+      },
+    });
+
+    return created;
   }
 
   // ─── Actualizar perfil ────────────────────────────────────────────────────
@@ -156,6 +170,7 @@ export class HtGuestService {
     await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const guest = await this.prisma.htGuestProfile.findFirst({ where: { id, businessId } });
     if (!guest) throw new NotFoundException('Hóspede não encontrado.');
+    const previous = { fullName: guest.fullName, documentNumber: guest.documentNumber };
 
     const normalizedDocument = dto.documentNumber !== undefined
       ? this.normalizeDocumentNumber(dto.documentNumber)
@@ -178,7 +193,7 @@ export class HtGuestService {
       }
     }
 
-    return this.prisma.htGuestProfile.update({
+    const updated = await this.prisma.htGuestProfile.update({
       where: { id },
       data: {
         ...(dto.fullName       !== undefined && { fullName:       dto.fullName }),
@@ -197,6 +212,21 @@ export class HtGuestService {
         ...(dto.isBlacklisted  !== undefined && { isBlacklisted:  dto.isBlacklisted }),
       },
     });
+
+    await this.prisma.coreAuditLog.create({
+      data: {
+        businessId,
+        module: 'HT' as any,
+        action: 'HT_GUEST_UPDATED' as any,
+        actorId: ownerId,
+        resourceType: 'HtGuestProfile',
+        resourceId: id,
+        previousData: previous,
+        newData: { ...dto },
+      },
+    });
+
+    return updated;
   }
 
   // ─── Ligar hóspede a uma reserva ─────────────────────────────────────────
