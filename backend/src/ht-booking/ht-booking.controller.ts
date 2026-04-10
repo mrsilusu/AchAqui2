@@ -8,6 +8,7 @@ import { HtBookingService } from './ht-booking.service';
 import { HtIcalService }    from './ht-ical.service';
 import { HtDashboardService } from './ht-dashboard.service';
 import { HtFolioService, AddFolioItemDto, FinancialCheckoutDto } from './ht-folio.service';
+import { HtAuditService } from './ht-audit.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateHtBookingDto } from './dto/create-booking.dto';
@@ -22,7 +23,40 @@ export class HtBookingController {
     private readonly htDashboardService: HtDashboardService,
     private readonly htFolioService:     HtFolioService,
     private readonly htIcalService:      HtIcalService,
+    private readonly htAuditService:     HtAuditService,
   ) {}
+
+  @Get('audit-log')
+  getAuditLog(
+    @Query('businessId') businessId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('action') action?: string,
+    @Query('actorId') actorId?: string,
+    @Query('resourceType') resourceType?: string,
+    @Query('page') page?: string,
+    @Req() req?: any,
+  ) {
+    const resolvedBusinessId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+    return this.htAuditService.getLog(
+      {
+        businessId: resolvedBusinessId,
+        from,
+        to,
+        action,
+        actorId,
+        resourceType,
+        page: Number(page || 1),
+        limit: 50,
+      },
+      {
+        userId: req.user.userId,
+        userRole: req.user.role,
+        jwtStaffRole: req.user.staffRole,
+        jwtBusinessId: req.user.businessId,
+      },
+    );
+  }
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
   @Get('dashboard')

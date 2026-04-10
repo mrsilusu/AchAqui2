@@ -170,37 +170,116 @@ enum HtShift {
 // =============================================================================
 
 enum AuditAction {
-  // Hotelaria
+  // ─── RESERVAS ────────────────────────────────────────────────────
   HT_BOOKING_CREATED
   HT_BOOKING_CONFIRMED
   HT_BOOKING_CANCELLED
+  HT_BOOKING_MODIFIED
+  HT_BOOKING_REACTIVATED
   HT_BOOKING_CHECKED_IN
   HT_BOOKING_CHECKED_OUT
   HT_BOOKING_NO_SHOW
+  HT_BOOKING_NO_SHOW_REVERTED
+  HT_BOOKING_EXTENDED
+  HT_BOOKING_EARLY_CHECKOUT
+  HT_BOOKING_FORCE_CHECKOUT
+  HT_BOOKING_RETROACTIVE_CHECKOUT
+  HT_BOOKING_UNCONFIRMED_CHECKOUT
+  HT_BOOKING_ROOM_CHANGED
+  HT_BOOKING_STAY_EXPIRED
+
+  // Compat legada
   HT_BOOKING_REVERT_NO_SHOW
-  HT_BOOKING_MODIFIED
+
+  // ─── FOLIO / FINANCEIRO ───────────────────────────────────────────
   HT_FOLIO_ITEM_ADDED
   HT_FOLIO_ITEM_REMOVED
+  HT_FOLIO_ITEM_MODIFIED
   HT_PAYMENT_REGISTERED
+  HT_PAYMENT_PARTIAL
   HT_PAYMENT_REFUNDED
+  HT_PAYMENT_REFUND_PROCESSED
+  HT_DISCOUNT_APPLIED
+  HT_FOLIO_CLOSED
+  HT_INVOICE_ISSUED
+  HT_SHIFT_CLOSED
+
+  // ─── QUARTOS ──────────────────────────────────────────────────────
   HT_ROOM_STATUS_CHANGED
   HT_ROOM_ASSIGNED
   HT_ROOM_REASSIGNED
+  HT_ROOM_BLOCKED
+  HT_ROOM_UNBLOCKED
+  HT_ROOM_ISSUE_REPORTED
+  HT_ROOM_ISSUE_RESOLVED
+  HT_ROOM_INSPECTED
+
+  // ─── HOUSEKEEPING ──────────────────────────────────────────────────
+  HT_HK_TASK_CREATED
+  HT_HK_TASK_ASSIGNED
+  HT_HK_TASK_STARTED
+  HT_HK_TASK_COMPLETED
+  HT_HK_TASK_INSPECTED
+  HT_HK_MINIBAR_REGISTERED
+
+  // Compat legada
+  HT_HOUSEKEEPING_COMPLETED
+  HT_HOUSEKEEPING_INSPECTED
+
+  // ─── HÓSPEDES ──────────────────────────────────────────────────────
+  HT_GUEST_CREATED
+  HT_GUEST_UPDATED
   HT_GUEST_PROFILE_UPDATED
+  HT_GUEST_VIP_MARKED
+  HT_GUEST_BLACKLISTED
+  HT_GUEST_UNBLACKLISTED
+  HT_GUEST_CHECKIN_BLOCKED
+
+  // ─── TARIFAS E PREÇOS ─────────────────────────────────────────────
+  HT_TARIFF_CREATED
+  HT_TARIFF_MODIFIED
+  HT_TARIFF_DELETED
+  HT_PRICE_OVERRIDE
   HT_RATE_CHANGED
-  HT_HOUSEKEEPING_COMPLETED   // camareira marcou quarto limpo
-  HT_HOUSEKEEPING_INSPECTED   // supervisor aprovou quarto
-  HT_GUEST_CREATED            // novo perfil de hóspede
-  HT_GUEST_UPDATED            // dados do hóspede alterados
-  HT_STAFF_LOGIN              // staff fez login no sistema
-  // Dining (exemplo — expande quando o módulo for implementado)
+
+  // ─── NO-SHOW ──────────────────────────────────────────────────────
+  HT_NOSHOW_PENALTY_APPLIED
+  HT_NOSHOW_PENALTY_WAIVED
+
+  // ─── STAFF ─────────────────────────────────────────────────────────
+  CORE_STAFF_ADDED
+  CORE_STAFF_REVOKED
+  CORE_STAFF_REACTIVATED
+  CORE_STAFF_ROLE_CHANGED
+  CORE_STAFF_PIN_RESET
+  CORE_STAFF_PERMISSIONS_CHANGED
+
+  // ─── AUTENTICAÇÃO ─────────────────────────────────────────────────
+  CORE_STAFF_LOGIN
+  CORE_STAFF_LOGOUT
+  CORE_STAFF_LOGIN_FAILED
+  CORE_STAFF_SESSION_EXPIRED
+
+  // Compat legada
+  HT_STAFF_LOGIN
+
+  // ─── CONFIGURAÇÕES ────────────────────────────────────────────────
+  CORE_BUSINESS_SETTINGS_CHANGED
+  CORE_BUSINESS_CLAIMED
+  CORE_POLICY_CHANGED
+
+  // ─── RELATÓRIOS ───────────────────────────────────────────────────
+  HT_REPORT_VIEWED
+  HT_REPORT_EXPORTED
+
+  // ─── CHANNEL MANAGER ──────────────────────────────────────────────
+  HT_ICAL_SYNCED
+  HT_OTA_BOOKING_RECEIVED
+
+  // Dining (existente)
   DI_ORDER_CREATED
   DI_ORDER_CANCELLED
   DI_TABLE_BOOKING_CREATED
-  // Core
-  CORE_STAFF_ADDED
-  CORE_STAFF_REVOKED
-  CORE_BUSINESS_CLAIMED
 }
 
 // =============================================================================

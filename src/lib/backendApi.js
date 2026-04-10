@@ -411,6 +411,14 @@ export const backendApi = {
     if (to) params.append('to', to);
     return apiRequest(`/ht/staff/${staffId}/activity?${params.toString()}`, { accessToken });
   },
+  htGetAuditLog: (businessId, filters = {}, accessToken) => {
+    const params = new URLSearchParams({ businessId });
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v === undefined || v === null || v === '') return;
+      params.append(k, String(v));
+    });
+    return apiRequest(`/ht/audit-log?${params.toString()}`, { accessToken });
+  },
   removeHtStaff: (staffId, businessId, accessToken) =>
     apiRequest(`/ht/staff/${staffId}/suspend?businessId=${encodeURIComponent(businessId)}`, { method: 'PATCH', body: { reason: 'Suspenso pelo owner' }, accessToken }),
   assignHtTask: (taskId, staffId, businessId, accessToken) =>

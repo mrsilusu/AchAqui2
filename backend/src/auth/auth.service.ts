@@ -299,14 +299,21 @@ export class AuthService {
         data: {
           businessId: staffContext.businessId,
           module: 'HT' as any,
-          action: 'HT_STAFF_LOGIN' as any,
+          action: 'CORE_STAFF_LOGIN' as any,
           actorId: user.id,
           resourceType: 'User',
           resourceId: user.id,
           newData: {
             staffRole: staffContext.staffRole,
             loginAt: new Date().toISOString(),
+            _meta: {
+              actorName: user.name,
+              actorEmail: user.email,
+              actorRole: staffContext.staffRole,
+              note: 'Login de staff efectuado com sucesso.',
+            },
           },
+          note: 'Login de staff efectuado com sucesso.',
         },
       }).catch(() => {}); // silent — não bloquear login por falha de audit
 

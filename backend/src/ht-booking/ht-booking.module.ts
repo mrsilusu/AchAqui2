@@ -10,13 +10,14 @@ import { HtGuestService }      from './ht-guest.service';
 import { HtStaffController }   from './ht-staff.controller';
 import { HtStaffService }      from './ht-staff.service';
 import { HtIcalService }       from './ht-ical.service';
+import { HtAuditService }      from './ht-audit.service';
 import { EventsModule }        from '../events/events.module';
 import { PrismaModule }        from '../prisma/prisma.module';
 
 @Module({
   imports:     [PrismaModule, EventsModule],
   controllers: [HtBookingController, HtRoomsController, HtGuestController, HtStaffController],
-  providers:   [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService],
-  exports:     [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService],
+  providers:   [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService, HtAuditService],
+  exports:     [HtBookingService, HtDashboardService, HtFolioService, HtRoomsService, HtGuestService, HtStaffService, HtIcalService, HtAuditService],
 })
 export class HtBookingModule {}

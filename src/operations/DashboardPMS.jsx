@@ -248,6 +248,7 @@ export function DashboardPMS({
   const [selectedStaff, setSelectedStaff]       = useState(null);
   const [showStaffProfile, setShowStaffProfile] = useState(false);
   const [showStaffActivity, setShowStaffActivity] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -637,6 +638,16 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
+              {canAccessBookingsMgr && (
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#334155' }]}
+                onPress={() => setShowAuditLog(true)}
+              >
+                <Icon name="analytics" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Registo de Atividade</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              )}
               {canAccessStaff && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D97706' }]}
@@ -903,6 +914,13 @@ export function DashboardPMS({
         businessId={businessId}
         accessToken={effectiveAccessToken}
         onClose={() => { setShowStaffActivity(false); setShowStaffProfile(true); }}
+      />
+      <StaffActivityLog
+        visible={showAuditLog}
+        staff={null}
+        businessId={businessId}
+        accessToken={effectiveAccessToken}
+        onClose={() => setShowAuditLog(false)}
       />
     </Modal>
   );

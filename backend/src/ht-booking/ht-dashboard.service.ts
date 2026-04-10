@@ -2,10 +2,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { HtStaffDepartment, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { HtAuditService } from './ht-audit.service';
 
 @Injectable()
 export class HtDashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly htAuditService: HtAuditService,
+  ) {}
 
   private async hasBusinessAccess(businessId: string, userId: string, allowedRoles?: StaffRole[]) {
     const business = await this.prisma.business.findUnique({
@@ -368,19 +372,19 @@ export class HtDashboardService {
       return t;
     });
 
-    await this.prisma.coreAuditLog.create({
-      data: {
-        businessId: task.room.business.id,
-        module: 'HT' as any,
-        action: 'HT_HOUSEKEEPING_COMPLETED' as any,
-        actorId: ownerId,
-        resourceType: 'HtHousekeepingTask',
-        resourceId: taskId,
-        newData: {
-          roomId: task.roomId,
-          completedAt: new Date().toISOString(),
-        },
+    await this.htAuditService.log({
+      businessId: task.room.business.id,
+      module: 'HT' as any,
+      action: 'HT_HK_TASK_COMPLETED',
+      actorId: ownerId,
+      resourceType: 'HtHousekeepingTask',
+      resourceId: taskId,
+      resourceName: `Task ${taskId.slice(0, 8)}`,
+      newData: {
+        roomId: task.roomId,
+        completedAt: new Date().toISOString(),
       },
+      note: 'Limpeza concluida e quarto movido para inspecao.',
     });
 
     return updated;
@@ -425,16 +429,17 @@ export class HtDashboardService {
       return inspectedTask;
     });
 
-    await this.prisma.coreAuditLog.create({
-      data: {
-        businessId: room.business.id,
-        module: 'HT' as any,
-        action: 'HT_HOUSEKEEPING_INSPECTED' as any,
-        actorId: ownerId,
-        resourceType: 'HtRoom',
-        resourceId: roomId,
-        newData: { status: 'CLEAN' },
-      },
+    await this.htAuditService.log({
+      businessId: room.business.id,
+      module: 'HT' as any,
+      action: 'HT_HK_TASK_INSPECTED',
+      actorId: ownerId,
+      resourceType: 'HtRoom',
+      resourceId: roomId,
+      resourceName: `Quarto ${room.number}`,
+      previousData: { status: room.status },
+      newData: { status: 'CLEAN' },
+      note: 'Quarto inspecionado e libertado para venda.',
     });
 
     return inspectedTask;

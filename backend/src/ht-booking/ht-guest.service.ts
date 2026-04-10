@@ -6,10 +6,14 @@ import {
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { HtAuditService } from './ht-audit.service';
 
 @Injectable()
 export class HtGuestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly htAuditService: HtAuditService,
+  ) {}
 
   private normalizeDocumentNumber(value?: string | null): string | null {
     const raw = String(value || '').trim();
@@ -143,16 +147,16 @@ export class HtGuestService {
       },
     });
 
-    await this.prisma.coreAuditLog.create({
-      data: {
-        businessId,
-        module: 'HT' as any,
-        action: 'HT_GUEST_CREATED' as any,
-        actorId: ownerId,
-        resourceType: 'HtGuestProfile',
-        resourceId: created.id,
-        newData: { fullName: created.fullName, documentNumber: created.documentNumber },
-      },
+    await this.htAuditService.log({
+      businessId,
+      module: 'HT' as any,
+      action: 'HT_GUEST_CREATED',
+      actorId: ownerId,
+      resourceType: 'HtGuestProfile',
+      resourceId: created.id,
+      resourceName: created.fullName,
+      newData: { fullName: created.fullName, documentNumber: created.documentNumber },
+      note: `Perfil de hospede criado: ${created.fullName}.`,
     });
 
     return created;
@@ -213,17 +217,17 @@ export class HtGuestService {
       },
     });
 
-    await this.prisma.coreAuditLog.create({
-      data: {
-        businessId,
-        module: 'HT' as any,
-        action: 'HT_GUEST_UPDATED' as any,
-        actorId: ownerId,
-        resourceType: 'HtGuestProfile',
-        resourceId: id,
-        previousData: previous,
-        newData: { ...dto },
-      },
+    await this.htAuditService.log({
+      businessId,
+      module: 'HT' as any,
+      action: 'HT_GUEST_UPDATED',
+      actorId: ownerId,
+      resourceType: 'HtGuestProfile',
+      resourceId: id,
+      resourceName: updated.fullName,
+      previousData: previous as any,
+      newData: { ...dto } as any,
+      note: `Perfil de hospede actualizado: ${updated.fullName}.`,
     });
 
     return updated;

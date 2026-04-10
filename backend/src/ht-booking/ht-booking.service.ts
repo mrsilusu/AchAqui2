@@ -8,6 +8,7 @@ import {
 import { HtBookingStatus, HtRoomStatus, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
+import { HtAuditService } from './ht-audit.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateHtBookingDto } from './dto/create-booking.dto';
@@ -21,6 +22,7 @@ export class HtBookingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsGateway: EventsGateway,
+    private readonly htAuditService: HtAuditService,
   ) {}
 
   private normalizeDocumentNumber(value?: string | null): string | null {
@@ -132,22 +134,21 @@ export class HtBookingService {
   // [AUDIT] Linha imutável no log central — nunca dados pessoais em previousData/newData.
   private async audit(params: {
     businessId: string; action: string; actorId: string;
-    resourceId: string; previousData?: object; newData?: object;
+    resourceId: string; resourceType?: string; resourceName?: string; previousData?: object; newData?: object;
     note?: string; ipAddress?: string;
   }) {
-    await this.prisma.coreAuditLog.create({
-      data: {
-        businessId:   params.businessId,
-        module:       'HT',
-        action:       params.action as any,
-        actorId:      params.actorId,
-        resourceType: 'HtRoomBooking',
-        resourceId:   params.resourceId,
-        previousData: params.previousData ?? {},
-        newData:      params.newData ?? {},
-        note:         params.note,
-        ipAddress:    params.ipAddress,
-      },
+    await this.htAuditService.log({
+      businessId: params.businessId,
+      module: 'HT' as any,
+      action: params.action,
+      actorId: params.actorId,
+      resourceType: params.resourceType || 'HtRoomBooking',
+      resourceId: params.resourceId,
+      resourceName: params.resourceName,
+      previousData: (params.previousData || {}) as any,
+      newData: (params.newData || {}) as any,
+      note: params.note,
+      ipAddress: params.ipAddress,
     });
   }
 
