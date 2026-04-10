@@ -283,6 +283,19 @@ export class HtBookingService {
     const previousStatus = booking.status;
     const guestProfileId = await this.ensureGuestProfileForCheckIn(booking, dto);
 
+    // Verificar blacklist — hóspede bloqueado não pode fazer check-in
+    if (guestProfileId) {
+      const profile = await this.prisma.htGuestProfile.findUnique({
+        where: { id: guestProfileId },
+        select: { isBlacklisted: true, fullName: true },
+      });
+      if (profile?.isBlacklisted) {
+        throw new ForbiddenException(
+          `Check-in bloqueado: hóspede ${profile.fullName ?? ''} está em lista negra.`,
+        );
+      }
+    }
+
     // Se não veio roomId explícito, atribuir automaticamente um quarto CLEAN do tipo correcto.
     // Sem esta atribuição, o HtRoom nunca fica marcado como ocupado no dashboard.
     let resolvedRoomId = dto.roomId ?? booking.roomId ?? null;
