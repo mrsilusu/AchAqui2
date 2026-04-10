@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
+import { AppModule, StaffRole, UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { StaffAccess } from '../auth/decorators/staff-access.decorator';
 import { HtStaffService } from './ht-staff.service';
 
 @UseGuards(ThrottlerGuard)
@@ -124,11 +125,38 @@ export class HtStaffController {
   ) {
     const resolvedBusinessId = this.resolveBusinessId(req, businessId);
     return this.s.getStaffActivity(
-      id,
       resolvedBusinessId,
       req.user.userId,
-      from,
-      to,
+      {
+        staffId: id,
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined,
+      },
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
+  }
+
+  @Get('activity')
+  @Roles(UserRole.OWNER)
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
+  getActivity(
+    @Query('businessId') businessId: string,
+    @Query('staffId') staffId: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Req() req: any,
+  ) {
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.getStaffActivity(
+      resolvedBusinessId,
+      req.user.userId,
+      {
+        staffId,
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined,
+      },
       req.user.role ?? 'OWNER',
       req.user.businessId,
       req.user.staffRole,

@@ -623,33 +623,41 @@ export class HtStaffService {
   }
 
   async getStaffActivity(
-    staffId: string,
     businessId: string,
     ownerId: string,
-    from?: string,
-    to?: string,
+    filters?: { staffId?: string; from?: Date; to?: Date },
     actorRole: string = 'OWNER',
     actorBusinessId?: string,
     actorStaffRole?: StaffRole | null,
   ) {
     await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
-    const staff = await this.getStaffOrThrow(staffId, businessId);
-    if (!staff.userId) return [];
 
-    const fromDate = from ? this.parseDate(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const toDate = to ? this.parseDate(to) : new Date();
+    let actorIdFilter: string | undefined;
+    if (filters?.staffId) {
+      const staff = await this.prisma.htStaff.findFirst({
+        where: { id: filters.staffId, businessId },
+        select: { userId: true },
+      });
+      if (!staff?.userId) return [];
+      actorIdFilter = staff.userId;
+    }
 
     return this.prisma.coreAuditLog.findMany({
       where: {
         businessId,
-        actorId: staff.userId,
-        createdAt: {
-          gte: fromDate || undefined,
-          lte: toDate || undefined,
-        },
+        module: 'HT' as any,
+        ...(actorIdFilter && { actorId: actorIdFilter }),
+        ...(filters?.from && { createdAt: { gte: filters.from } }),
+        ...(filters?.to && {
+          createdAt: {
+            ...(filters.from ? { gte: filters.from } : {}),
+            lte: filters.to,
+          },
+        }),
       },
+      include: { actor: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: 'desc' },
-      take: 200,
+      take: 100,
     });
   }
 
