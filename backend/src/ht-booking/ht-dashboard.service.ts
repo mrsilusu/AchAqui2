@@ -367,6 +367,22 @@ export class HtDashboardService {
       });
       return t;
     });
+
+    await this.prisma.coreAuditLog.create({
+      data: {
+        businessId: task.room.business.id,
+        module: 'HT' as any,
+        action: 'HT_HOUSEKEEPING_COMPLETED' as any,
+        actorId: ownerId,
+        resourceType: 'HtHousekeepingTask',
+        resourceId: taskId,
+        newData: {
+          roomId: task.roomId,
+          completedAt: new Date().toISOString(),
+        },
+      },
+    });
+
     return updated;
   }
 
@@ -394,7 +410,7 @@ export class HtDashboardService {
       throw new BadRequestException('Não há tarefa concluída pendente de inspeção para este quarto.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const inspectedTask = await this.prisma.$transaction(async (tx) => {
       const inspectedTask = await tx.htHousekeepingTask.update({
         where: { id: task.id },
         data: {
@@ -408,5 +424,19 @@ export class HtDashboardService {
       });
       return inspectedTask;
     });
+
+    await this.prisma.coreAuditLog.create({
+      data: {
+        businessId: room.business.id,
+        module: 'HT' as any,
+        action: 'HT_HOUSEKEEPING_INSPECTED' as any,
+        actorId: ownerId,
+        resourceType: 'HtRoom',
+        resourceId: roomId,
+        newData: { status: 'CLEAN' },
+      },
+    });
+
+    return inspectedTask;
   }
 }

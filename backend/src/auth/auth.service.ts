@@ -295,6 +295,21 @@ export class AuthService {
       const refreshToken = await this.createRefreshToken(user);
       const staffRoles = await this.getActiveStaffRoles(user.id);
 
+      await this.prisma.coreAuditLog.create({
+        data: {
+          businessId: staffContext.businessId,
+          module: 'HT' as any,
+          action: 'HT_STAFF_LOGIN' as any,
+          actorId: user.id,
+          resourceType: 'User',
+          resourceId: user.id,
+          newData: {
+            staffRole: staffContext.staffRole,
+            loginAt: new Date().toISOString(),
+          },
+        },
+      }).catch(() => {}); // silent — não bloquear login por falha de audit
+
       return {
         accessToken,
         refreshToken,
