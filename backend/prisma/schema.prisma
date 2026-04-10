@@ -188,6 +188,11 @@ enum AuditAction {
   HT_ROOM_REASSIGNED
   HT_GUEST_PROFILE_UPDATED
   HT_RATE_CHANGED
+  HT_HOUSEKEEPING_COMPLETED   // camareira marcou quarto limpo
+  HT_HOUSEKEEPING_INSPECTED   // supervisor aprovou quarto
+  HT_GUEST_CREATED            // novo perfil de hóspede
+  HT_GUEST_UPDATED            // dados do hóspede alterados
+  HT_STAFF_LOGIN              // staff fez login no sistema
   // Dining (exemplo — expande quando o módulo for implementado)
   DI_ORDER_CREATED
   DI_ORDER_CANCELLED
