@@ -10,23 +10,53 @@ import { HtStaffService } from './ht-staff.service';
 export class HtStaffController {
   constructor(private readonly s: HtStaffService) {}
 
+  private resolveBusinessId(req: any, fallback?: string) {
+    return String(req.user.role) === 'STAFF'
+      ? req.user.businessId
+      : fallback;
+  }
+
   @Get()
   list(
     @Query('businessId') businessId: string,
     @Query('includeInactive') includeInactive: string,
     @Req() req: any,
   ) {
-    return this.s.getStaff(businessId, req.user.userId, includeInactive !== 'false');
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.getStaff(
+      resolvedBusinessId,
+      req.user.userId,
+      includeInactive !== 'false',
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Post()
   create(@Body() body: any, @Req() req: any) {
-    return this.s.createStaff(req.user.userId, body);
+    const resolvedBusinessId = this.resolveBusinessId(req, body?.businessId);
+    return this.s.createStaff(
+      req.user.userId,
+      { ...body, businessId: resolvedBusinessId },
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Query('businessId') businessId: string, @Req() req: any) {
-    return this.s.suspendStaff(id, businessId, req.user.userId, 'Removido pelo owner');
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.suspendStaff(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      'Removido pelo owner',
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Patch(':id')
@@ -36,7 +66,16 @@ export class HtStaffController {
     @Body() body: any,
     @Req() req: any,
   ) {
-    return this.s.updateStaff(id, businessId, req.user.userId, body);
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.updateStaff(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      body,
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Patch(':id/suspend')
@@ -46,7 +85,16 @@ export class HtStaffController {
     @Body() body: { reason?: string },
     @Req() req: any,
   ) {
-    return this.s.suspendStaff(id, businessId, req.user.userId, body?.reason || 'Suspenso pelo owner');
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.suspendStaff(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      body?.reason || 'Suspenso pelo owner',
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Patch(':id/reactivate')
@@ -55,7 +103,15 @@ export class HtStaffController {
     @Query('businessId') businessId: string,
     @Req() req: any,
   ) {
-    return this.s.reactivateStaff(id, businessId, req.user.userId);
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.reactivateStaff(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Get(':id/activity')
@@ -66,7 +122,17 @@ export class HtStaffController {
     @Query('to') to: string,
     @Req() req: any,
   ) {
-    return this.s.getStaffActivity(id, businessId, req.user.userId, from, to);
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.getStaffActivity(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      from,
+      to,
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Patch('tasks/:taskId/assign')
@@ -75,7 +141,16 @@ export class HtStaffController {
     @Body() body: { staffId: string; businessId: string },
     @Req() req: any,
   ) {
-    return this.s.assignTask(taskId, body.staffId, body.businessId, req.user.userId);
+    const resolvedBusinessId = this.resolveBusinessId(req, body?.businessId);
+    return this.s.assignTask(
+      taskId,
+      body.staffId,
+      resolvedBusinessId,
+      req.user.userId,
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 
   @Post(':id/create-account')
@@ -85,6 +160,15 @@ export class HtStaffController {
     @Body() body: { password?: string },
     @Req() req: any,
   ) {
-    return this.s.createStaffAccount(id, businessId, req.user.userId, body);
+    const resolvedBusinessId = this.resolveBusinessId(req, businessId);
+    return this.s.createStaffAccount(
+      id,
+      resolvedBusinessId,
+      req.user.userId,
+      body,
+      req.user.role ?? 'OWNER',
+      req.user.businessId,
+      req.user.staffRole,
+    );
   }
 }

@@ -1365,7 +1365,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const canReception = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'reception');
   const canHousekeeping = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'housekeeping');
   const canBookingsMgr = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'bookingsManager');
-  const canStaffMgr = isOwner || (isStaff && staffRole === 'HT_MANAGER');
+  const canStaffMgr = isOwner || (isStaff && (staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER'));
 
   const handleStaffPinSuccess = useCallback(({ accessToken: token }) => {
     setStaffToken(token);

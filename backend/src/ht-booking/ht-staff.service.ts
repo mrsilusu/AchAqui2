@@ -134,7 +134,47 @@ export class HtStaffService {
     }));
   }
 
-  private async assertOwnership(businessId: string, ownerId: string) {
+  private async assertOwnership(
+    businessId: string,
+    ownerId: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    if (String(actorRole) === 'STAFF') {
+      if (!actorBusinessId || actorBusinessId !== businessId) {
+        throw new ForbiddenException('Sem permissão para este estabelecimento.');
+      }
+
+      if (actorStaffRole === StaffRole.HT_MANAGER || actorStaffRole === StaffRole.GENERAL_MANAGER) {
+        return;
+      }
+
+      const coreManager = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          businessId,
+          userId: ownerId,
+          revokedAt: null,
+          role: { in: [StaffRole.HT_MANAGER, StaffRole.GENERAL_MANAGER] },
+        },
+        select: { id: true },
+      });
+      if (coreManager) return;
+
+      const htManager = await this.prisma.htStaff.findFirst({
+        where: {
+          businessId,
+          userId: ownerId,
+          isActive: true,
+          department: HtStaffDepartment.MANAGEMENT,
+        },
+        select: { id: true },
+      });
+      if (htManager) return;
+
+      throw new ForbiddenException('Sem permissão para gestão de staff.');
+    }
+
     const business = await this.prisma.business.findFirst({ where: { id: businessId, ownerId } });
     if (!business) throw new ForbiddenException('Sem permissão para este estabelecimento.');
   }
@@ -305,8 +345,15 @@ export class HtStaffService {
     return staff;
   }
 
-  async getStaff(businessId: string, ownerId: string, includeInactive = true) {
-    await this.assertOwnership(businessId, ownerId);
+  async getStaff(
+    businessId: string,
+    ownerId: string,
+    includeInactive = true,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
     try {
       const list = await this.prisma.htStaff.findMany({
         where: {
@@ -325,12 +372,24 @@ export class HtStaffService {
     }
   }
 
-  async getAllStaff(businessId: string, ownerId: string) {
-    return this.getStaff(businessId, ownerId, true);
+  async getAllStaff(
+    businessId: string,
+    ownerId: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    return this.getStaff(businessId, ownerId, true, actorRole, actorBusinessId, actorStaffRole);
   }
 
-  async createStaff(ownerId: string, dto: CreateStaffDto) {
-    await this.assertOwnership(dto.businessId, ownerId);
+  async createStaff(
+    ownerId: string,
+    dto: CreateStaffDto,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    await this.assertOwnership(dto.businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
 
     const fullName = String(dto.fullName || '').trim();
     const email = this.normalizeEmail(dto.email);
@@ -418,8 +477,16 @@ export class HtStaffService {
     };
   }
 
-  async updateStaff(id: string, businessId: string, ownerId: string, dto: UpdateStaffDto) {
-    await this.assertOwnership(businessId, ownerId);
+  async updateStaff(
+    id: string,
+    businessId: string,
+    ownerId: string,
+    dto: UpdateStaffDto,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
     const current = await this.getStaffOrThrow(id, businessId);
 
     const nextEmail = dto.email !== undefined ? this.normalizeEmail(dto.email) : current.email;
@@ -497,7 +564,15 @@ export class HtStaffService {
     return this.sanitizeStaff(updated);
   }
 
-  async suspendStaff(id: string, businessId: string, ownerId: string, reason: string) {
+  async suspendStaff(
+    id: string,
+    businessId: string,
+    ownerId: string,
+    reason: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
     const reasonText = String(reason || '').trim();
     if (reasonText.length < 3) {
       throw new BadRequestException('Motivo da suspensão é obrigatório.');
@@ -510,7 +585,7 @@ export class HtStaffService {
     const updated = await this.updateStaff(id, businessId, ownerId, {
       isActive: false,
       notes: reasonText,
-    });
+    }, actorRole, actorBusinessId, actorStaffRole);
 
     await this.prisma.coreAuditLog.create({
       data: {
@@ -529,7 +604,14 @@ export class HtStaffService {
     return updated;
   }
 
-  async reactivateStaff(id: string, businessId: string, ownerId: string) {
+  async reactivateStaff(
+    id: string,
+    businessId: string,
+    ownerId: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
     const current = await this.getStaffOrThrow(id, businessId);
     if (current.isActive) {
       throw new BadRequestException('Funcionário já está activo.');
@@ -537,11 +619,20 @@ export class HtStaffService {
     return this.updateStaff(id, businessId, ownerId, {
       isActive: true,
       notes: current.notes,
-    });
+    }, actorRole, actorBusinessId, actorStaffRole);
   }
 
-  async getStaffActivity(staffId: string, businessId: string, ownerId: string, from?: string, to?: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async getStaffActivity(
+    staffId: string,
+    businessId: string,
+    ownerId: string,
+    from?: string,
+    to?: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
     const staff = await this.getStaffOrThrow(staffId, businessId);
     if (!staff.userId) return [];
 
@@ -562,8 +653,16 @@ export class HtStaffService {
     });
   }
 
-  async assignTask(taskId: string, staffId: string, businessId: string, ownerId: string) {
-    await this.assertOwnership(businessId, ownerId);
+  async assignTask(
+    taskId: string,
+    staffId: string,
+    businessId: string,
+    ownerId: string,
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
+  ) {
+    await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
     const staff = await this.prisma.htStaff.findFirst(
       { where: { id: staffId, businessId, isActive: true }, select: { id: true, department: true } });
     if (!staff) throw new NotFoundException('Funcionário não encontrado.');
@@ -578,8 +677,11 @@ export class HtStaffService {
     businessId: string,
     ownerId: string,
     dto?: { password?: string },
+    actorRole: string = 'OWNER',
+    actorBusinessId?: string,
+    actorStaffRole?: StaffRole | null,
   ) {
-    await this.assertOwnership(businessId, ownerId);
+    await this.assertOwnership(businessId, ownerId, actorRole, actorBusinessId, actorStaffRole);
     const staff = await this.getStaffOrThrow(staffId, businessId);
 
     if (!staff.email) throw new BadRequestException('Funcionário não tem email definido.');

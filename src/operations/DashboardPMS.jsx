@@ -214,16 +214,16 @@ export function DashboardPMS({
       || '',
   ).trim();
   const canAccessReception = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
+    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
       : canSeeSection(staffToken, 'reception'));
   const canAccessHousekeeping = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_HOUSEKEEPER' || staffRole === 'HT_MANAGER')
+    || (isJwtStaff ? (staffRole === 'HT_HOUSEKEEPER' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
       : canSeeSection(staffToken, 'housekeeping'));
   const canAccessBookingsMgr = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER')
+    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
       : canSeeSection(staffToken, 'bookingsManager'));
   const canAccessStaff = !isStaffMode
-    || (isJwtStaff ? staffRole === 'HT_MANAGER'
+    || (isJwtStaff ? (staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
       : canSeeSection(staffToken, 'staffManager'));
 
   const [data, setData]             = useState(null);
