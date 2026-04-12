@@ -9,6 +9,7 @@ import { AppModule, HtStaffDepartment, HtShift, StaffRole, UserRole } from '@pri
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { HtAuditService } from './ht-audit.service';
 
 type CreateStaffDto = {
   businessId: string;
@@ -46,7 +47,10 @@ type UpdateStaffDto = Partial<CreateStaffDto> & {
 
 @Injectable()
 export class HtStaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly htAuditService: HtAuditService,
+  ) {}
 
   private isSchemaDriftError(error: unknown) {
     if (!(error instanceof PrismaClientKnownRequestError)) return false;
@@ -562,6 +566,86 @@ export class HtStaffService {
 
       return staff;
     });
+
+    // ── Audit log ──────────────────────────────────────────────────────────
+    try {
+      const resourceName = updated.fullName ?? current.fullName;
+
+      // Department / role change
+      if (dto.department !== undefined && dto.department !== current.department) {
+        await this.htAuditService.log({
+          businessId,
+          module: AppModule.HT,
+          action: 'CORE_STAFF_ROLE_CHANGED',
+          actorId: ownerId,
+          actorRole,
+          resourceType: 'HtStaff',
+          resourceId: id,
+          resourceName,
+          previousData: { department: current.department },
+          newData: { department: dto.department },
+        });
+      }
+
+      // Section overrides change
+      if (dto.sectionOverrides !== undefined) {
+        await this.htAuditService.log({
+          businessId,
+          module: AppModule.HT,
+          action: 'CORE_STAFF_PERMISSIONS_CHANGED',
+          actorId: ownerId,
+          actorRole,
+          resourceType: 'HtStaff',
+          resourceId: id,
+          resourceName,
+          previousData: { sectionOverrides: current.sectionOverrides as any },
+          newData: { sectionOverrides: dto.sectionOverrides },
+          note: 'Acessos de secção actualizados',
+        });
+      }
+
+      // Operational permissions change
+      const permFields = ['canCancelBookings', 'canApplyDiscounts', 'canViewFinancials'] as const;
+      const changedPerms: Record<string, { from: any; to: any }> = {};
+      for (const field of permFields) {
+        if (dto[field] !== undefined && !!dto[field] !== !!(current as any)[field]) {
+          changedPerms[field] = { from: !!(current as any)[field], to: !!dto[field] };
+        }
+      }
+      if (Object.keys(changedPerms).length > 0) {
+        await this.htAuditService.log({
+          businessId,
+          module: AppModule.HT,
+          action: 'CORE_STAFF_PERMISSIONS_CHANGED',
+          actorId: ownerId,
+          actorRole,
+          resourceType: 'HtStaff',
+          resourceId: id,
+          resourceName,
+          previousData: Object.fromEntries(Object.entries(changedPerms).map(([k, v]) => [k, v.from])),
+          newData: Object.fromEntries(Object.entries(changedPerms).map(([k, v]) => [k, v.to])),
+          note: 'Permissões operacionais actualizadas',
+        });
+      }
+
+      // PIN reset
+      if (dto.pin !== undefined) {
+        await this.htAuditService.log({
+          businessId,
+          module: AppModule.HT,
+          action: 'CORE_STAFF_PIN_RESET',
+          actorId: ownerId,
+          actorRole,
+          resourceType: 'HtStaff',
+          resourceId: id,
+          resourceName,
+          previousData: {},
+          newData: { pinReset: true },
+        });
+      }
+    } catch {
+      // Audit falha silenciosamente — não bloqueia a operação principal
+    }
 
     return this.sanitizeStaff(updated);
   }

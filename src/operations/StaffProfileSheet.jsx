@@ -92,10 +92,12 @@ export default function StaffProfileSheet({
         ...defaultPerms,
         sectionOverrides: null,
       }, accessToken);
-      Alert.alert('Sucesso', 'Cargo atualizado. Permissões padrão do cargo aplicadas.');
       setShowRoleModal(false);
-      onRefresh?.();
-      onClose();
+      Alert.alert(
+        'Cargo alterado',
+        'Permissões padrão do novo cargo aplicadas.\n\nO funcionário deve fechar e reabrir sessão para os novos acessos de secção entrarem em vigor.',
+        [{ text: 'OK', onPress: () => { onRefresh?.(); onClose(); } }],
+      );
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível alterar o cargo.');
     } finally {
@@ -108,7 +110,7 @@ export default function StaffProfileSheet({
     setSaving(true);
     try {
       await backendApi.htUpdateStaff(staff.id, businessId, permissions, accessToken);
-      Alert.alert('Sucesso', 'Permissões atualizadas.');
+      Alert.alert('Permissões atualizadas', 'As permissões operacionais foram guardadas.');
       onRefresh?.();
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível guardar.');
@@ -125,7 +127,10 @@ export default function StaffProfileSheet({
       await backendApi.htUpdateStaff(staff.id, businessId, { sectionOverrides: newOverrides }, accessToken);
       setSectionOverrides(newOverrides);
       setEditingSection(null);
-      Alert.alert('Sucesso', 'Acessos da secção actualizados.');
+      Alert.alert(
+        'Acessos de secção actualizados',
+        'O funcionário deve fechar e reabrir sessão para as alterações entrarem em vigor no dashboard.',
+      );
       onRefresh?.();
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível guardar.');
