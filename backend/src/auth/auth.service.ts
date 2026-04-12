@@ -100,6 +100,7 @@ export class AuthService {
     businessId: string;
     staffRole: StaffRole;
     staffId: string;
+    sectionAccess: Record<string, boolean>;
   } | null> {
     // 1ª tentativa: coreBusinessStaff (tabela unificada)
     const assignment = await this.prisma.coreBusinessStaff.findFirst({
@@ -115,13 +116,18 @@ export class AuthService {
     if (assignment) {
       const htStaff = await this.prisma.htStaff.findFirst({
         where: { userId, businessId: assignment.businessId, isActive: true },
-        select: { id: true },
+        select: { id: true, sectionOverrides: true, department: true },
       });
       if (htStaff?.id) {
         return {
           businessId: assignment.businessId,
           staffRole: assignment.role,
           staffId: htStaff.id,
+          sectionAccess: this.buildHtSectionAccess(
+            assignment.role,
+            htStaff.department,
+            htStaff.sectionOverrides as Record<string, string[]> | null | undefined,
+          ),
         };
       }
     }
@@ -130,7 +136,7 @@ export class AuthService {
     const htStaffDirect = await this.prisma.htStaff.findFirst({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, businessId: true, department: true },
+      select: { id: true, businessId: true, department: true, sectionOverrides: true },
     });
 
     if (!htStaffDirect) return null;
@@ -146,7 +152,67 @@ export class AuthService {
       businessId: htStaffDirect.businessId,
       staffRole: inferredRole,
       staffId: htStaffDirect.id,
+      sectionAccess: this.buildHtSectionAccess(
+        inferredRole,
+        htStaffDirect.department,
+        htStaffDirect.sectionOverrides as Record<string, string[]> | null | undefined,
+      ),
     };
+  }
+
+  private buildHtSectionAccess(
+    staffRole: StaffRole,
+    department: HtStaffDepartment,
+    sectionOverrides?: Record<string, string[]> | null,
+  ): Record<string, boolean> {
+    const resolvedRole = staffRole || (
+      department === HtStaffDepartment.RECEPTION
+        ? StaffRole.HT_RECEPTIONIST
+        : department === HtStaffDepartment.MANAGEMENT
+          ? StaffRole.HT_MANAGER
+          : StaffRole.HT_HOUSEKEEPER
+    );
+
+    const baseByRole: Record<string, Record<string, boolean>> = {
+      [StaffRole.HT_HOUSEKEEPER]: {
+        dashboard: false,
+        reception: false,
+        housekeeping: true,
+        bookingsManager: false,
+        staffManager: false,
+        financials: false,
+      },
+      [StaffRole.HT_RECEPTIONIST]: {
+        dashboard: true,
+        reception: true,
+        housekeeping: false,
+        bookingsManager: true,
+        staffManager: false,
+        financials: false,
+      },
+      [StaffRole.HT_MANAGER]: {
+        dashboard: true,
+        reception: true,
+        housekeeping: true,
+        bookingsManager: true,
+        staffManager: true,
+        financials: true,
+      },
+      [StaffRole.GENERAL_MANAGER]: {
+        dashboard: true,
+        reception: true,
+        housekeeping: true,
+        bookingsManager: true,
+        staffManager: true,
+        financials: true,
+      },
+    };
+
+    const merged = { ...(baseByRole[resolvedRole] ?? {}) };
+    for (const [sectionKey, perms] of Object.entries(sectionOverrides || {})) {
+      merged[sectionKey] = Array.isArray(perms) && perms.length > 0;
+    }
+    return merged;
   }
 
   private async createAccessToken(user: User) {
@@ -162,6 +228,7 @@ export class AuthService {
           staffRole: primaryHtContext.staffRole,
           businessId: primaryHtContext.businessId,
           staffId: primaryHtContext.staffId,
+          sectionAccess: primaryHtContext.sectionAccess,
         }),
       },
       {
@@ -177,6 +244,7 @@ export class AuthService {
     staffRole?: StaffRole | null;
     businessId: string;
     staffId: string;
+    sectionAccess?: Record<string, boolean>;
   }) {
     return this.jwtService.signAsync(
       {
@@ -186,6 +254,7 @@ export class AuthService {
         staffRole: params.staffRole ?? null,
         businessId: params.businessId,
         staffId: params.staffId,
+        sectionAccess: params.sectionAccess ?? {},
       },
       {
         secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
@@ -291,6 +360,7 @@ export class AuthService {
         staffRole: staffContext.staffRole,
         businessId: staffContext.businessId,
         staffId: staffContext.staffId,
+        sectionAccess: staffContext.sectionAccess,
       });
       const refreshToken = await this.createRefreshToken(user);
       const staffRoles = await this.getActiveStaffRoles(user.id);
@@ -354,6 +424,7 @@ export class AuthService {
         fullName: true,
         department: true,
         pinHash: true,
+        sectionOverrides: true,
       },
     });
 
@@ -390,12 +461,18 @@ export class AuthService {
           ? StaffRole.HT_MANAGER
           : StaffRole.HT_HOUSEKEEPER
     );
+    const staffSectionAccess = this.buildHtSectionAccess(
+      staffRole,
+      matchedStaff.department,
+      matchedStaff.sectionOverrides as Record<string, string[]> | null | undefined,
+    );
     const accessToken = await this.createStaffAccessToken({
       userId: matchedStaff.userId,
       email: matchedStaff.email,
       staffRole,
       businessId,
       staffId: matchedStaff.id,
+      sectionAccess: staffSectionAccess,
     });
 
     return {
