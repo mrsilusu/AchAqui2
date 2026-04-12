@@ -808,6 +808,7 @@ model HtStaff {
   canCancelBookings  Boolean              @default(false)
   canApplyDiscounts  Boolean              @default(false)
   canViewFinancials  Boolean              @default(false)
+  sectionOverrides   Json?                // per-staff section permission overrides { sectionKey: string[] }
   employmentStart    DateTime?
   employmentEnd      DateTime?
   isActive           Boolean              @default(true)

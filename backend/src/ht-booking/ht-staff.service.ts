@@ -41,6 +41,7 @@ type CreateStaffDto = {
 type UpdateStaffDto = Partial<CreateStaffDto> & {
   pin?: string;
   isActive?: boolean;
+  sectionOverrides?: Record<string, string[]> | null;
 };
 
 @Injectable()
@@ -530,6 +531,7 @@ export class HtStaffService {
           ...(dto.canCancelBookings !== undefined && { canCancelBookings: !!dto.canCancelBookings }),
           ...(dto.canApplyDiscounts !== undefined && { canApplyDiscounts: !!dto.canApplyDiscounts }),
           ...(dto.canViewFinancials !== undefined && { canViewFinancials: !!dto.canViewFinancials }),
+          ...(dto.sectionOverrides !== undefined && { sectionOverrides: dto.sectionOverrides ?? null }),
           ...(dto.employmentStart !== undefined && { employmentStart: this.parseDate(dto.employmentStart) }),
           ...(dto.employmentEnd !== undefined && { employmentEnd: this.parseDate(dto.employmentEnd) }),
           ...(dto.notes !== undefined && { notes: dto.notes?.trim() || null }),
