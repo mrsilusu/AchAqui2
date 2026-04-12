@@ -92,6 +92,7 @@ function getRangeFor(key) {
 }
 
 function actionLabel(action) {
+  if (!action || typeof action !== 'string') return 'Acao desconhecida';
   return LOG_ICONS[action]?.label || action.replace(/_/g, ' ');
 }
 
@@ -145,23 +146,37 @@ export default function StaffActivityLog({ visible, staff, businessId, accessTok
     setLoading(true);
     try {
       const { from, to } = getRangeFor(dateFilter);
-      const actorId = staff?.userId || selectedActor || undefined;
-      const res = await backendApi.htGetAuditLog(businessId, {
-        from,
-        to,
-        actorId,
-        page: nextPage,
-      }, accessToken);
-      const items = Array.isArray(res?.items) ? res.items : [];
-      setLogs((prev) => (append ? [...prev, ...items] : items));
-      setPage(Number(res?.page || nextPage));
-      setHasMore(Number(res?.page || nextPage) < Number(res?.totalPages || 1));
+      if (staff?.id) {
+        const activity = await backendApi.htGetStaffActivity(
+          staff.id,
+          businessId,
+          from,
+          to,
+          accessToken,
+        );
+        const items = Array.isArray(activity) ? activity : [];
+        setLogs(items);
+        setPage(1);
+        setHasMore(false);
+      } else {
+        const actorId = selectedActor || undefined;
+        const res = await backendApi.htGetAuditLog(businessId, {
+          from,
+          to,
+          actorId,
+          page: nextPage,
+        }, accessToken);
+        const items = Array.isArray(res?.items) ? res.items : [];
+        setLogs((prev) => (append ? [...prev, ...items] : items));
+        setPage(Number(res?.page || nextPage));
+        setHasMore(Number(res?.page || nextPage) < Number(res?.totalPages || 1));
+      }
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível carregar o log.');
     } finally {
       setLoading(false);
     }
-  }, [staff?.userId, selectedActor, businessId, accessToken, dateFilter]);
+  }, [staff?.id, selectedActor, businessId, accessToken, dateFilter]);
 
   useEffect(() => {
     if (visible) loadLogs(1, false);
