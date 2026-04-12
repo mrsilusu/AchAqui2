@@ -218,6 +218,12 @@ export function isStaffTokenValid(token) {
 // section: 'dashboard' | 'reception' | 'housekeeping' | 'bookingsManager' | 'staffManager' | 'financials'
 // ---------------------------------------------------------------------------
 export function canSeeSection(token, section) {
+  const payload = decodeStaffToken(token);
+  const claimAccess = payload?.sectionAccess;
+  if (claimAccess && typeof claimAccess === 'object' && section in claimAccess) {
+    return !!claimAccess[section];
+  }
+
   const role = getStaffRole(token);
   if (!role) return false;
   const access = SECTION_ACCESS[role];
@@ -229,6 +235,10 @@ export function canSeeSection(token, section) {
 // getSectionAccess(token) → objeto com todas as secções
 // ---------------------------------------------------------------------------
 export function getSectionAccess(token) {
+  const payload = decodeStaffToken(token);
+  const claimAccess = payload?.sectionAccess;
+  if (claimAccess && typeof claimAccess === 'object') return claimAccess;
+
   const role = getStaffRole(token);
   if (!role) return null;
   return SECTION_ACCESS[role] ?? null;
@@ -312,6 +322,10 @@ export const SECTION_PERMISSIONS = {
   ],
   financials: [
     { key: 'canViewFinancials', label: 'Ver Financeiros', description: 'Acesso a dados financeiros' },
+    { key: 'canViewOccupancy', label: 'Taxa de Ocupação', description: 'Ver taxa de ocupação dos quartos' },
+    { key: 'canViewADR', label: 'ADR (Diária Média)', description: 'Ver receita média por quarto disponível' },
+    { key: 'canViewRevPAR', label: 'RevPAR', description: 'Ver receita por quarto disponível' },
+    { key: 'canViewDailyRevenue', label: 'Receita do Dia', description: 'Ver receitas diárias do hotel' },
     { key: 'canExportReports', label: 'Exportar Relatórios', description: 'Exportar dados financeiros' },
     { key: 'canManagePayments', label: 'Gerir Pagamentos', description: 'Processar e anular pagamentos' },
   ],

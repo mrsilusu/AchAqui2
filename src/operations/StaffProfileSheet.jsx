@@ -21,7 +21,7 @@ import { backendApi } from '../lib/backendApi';
 import {
   getRoleLabel, getRoleColor,
   PERMISSIONS_CATALOG, SECTION_LABELS, getSectionAccessForDept,
-  SECTION_PERMISSIONS, STAFF_ROLES, getStaffRole,
+  SECTION_PERMISSIONS, STAFF_ROLES, getStaffRole, getDefaultPermsForDept,
 } from '../lib/staffPermissions';
 
 const DEPARTMENTS = {
@@ -47,6 +47,7 @@ export default function StaffProfileSheet({
   const [showPin, setShowPin]     = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [showSuspendBox, setShowSuspendBox] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
 
   // Permissões locais (controladas por Switch)
   const [permissions, setPermissions] = useState(
@@ -80,6 +81,27 @@ export default function StaffProfileSheet({
   if (!staff) return null;
 
   const isActive = staff.isActive;
+
+  // ── Alterar cargo ─────────────────────────────────────────────────────────
+  const handleChangeRole = async (newDept) => {
+    setSaving(true);
+    try {
+      const defaultPerms = getDefaultPermsForDept(newDept);
+      await backendApi.htUpdateStaff(staff.id, businessId, {
+        department: newDept,
+        ...defaultPerms,
+        sectionOverrides: null,
+      }, accessToken);
+      Alert.alert('Sucesso', 'Cargo atualizado. Permissões padrão do cargo aplicadas.');
+      setShowRoleModal(false);
+      onRefresh?.();
+      onClose();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível alterar o cargo.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ── Guardar alterações de permissão ──────────────────────────────────────
   const handleSavePermissions = async () => {
@@ -227,6 +249,7 @@ export default function StaffProfileSheet({
               sectionOverrides={sectionOverrides}
               canEdit={canEditSections && isActive}
               onTilePress={(key) => setEditingSection(key)}
+              onRoleBadgePress={() => setShowRoleModal(true)}
             />
 
             {/* PERMISSÕES OPERACIONAIS */}
@@ -384,11 +407,19 @@ export default function StaffProfileSheet({
         onSave={(perms) => handleSaveSectionOverride(editingSection, perms)}
         saving={saving}
       />
+      {/* MODAL DE ALTERAÇÃO DE CARGO */}
+      <RoleChangeModal
+        visible={showRoleModal}
+        currentDept={staff.department}
+        onClose={() => setShowRoleModal(false)}
+        onSave={handleChangeRole}
+        saving={saving}
+      />
     </Modal>
   );
 }
 
-function CargoSection({ department, sectionOverrides = {}, canEdit = false, onTilePress }) {
+function CargoSection({ department, sectionOverrides = {}, canEdit = false, onTilePress, onRoleBadgePress }) {
   const roleLabel = getRoleLabel(department);
   const roleColor = getRoleColor(department);
   const sectionAccess = getSectionAccessForDept(department);
@@ -404,9 +435,20 @@ function CargoSection({ department, sectionOverrides = {}, canEdit = false, onTi
   return (
     <View style={s.section}>
       <Text style={s.sectionTitle}>Cargo e acessos</Text>
-      <View style={[s.roleBadge, { backgroundColor: roleColor.bg }]}>
-        <Text style={[s.roleBadgeText, { color: roleColor.text }]}>{roleLabel}</Text>
-      </View>
+      {canEdit ? (
+        <TouchableOpacity
+          style={[s.roleBadge, { backgroundColor: roleColor.bg, flexDirection: 'row', alignItems: 'center' }]}
+          onPress={onRoleBadgePress}
+          activeOpacity={0.75}
+        >
+          <Text style={[s.roleBadgeText, { color: roleColor.text }]}>{roleLabel}</Text>
+          <Text style={{ color: roleColor.text, fontSize: 10, marginLeft: 5, opacity: 0.75 }}>✎</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={[s.roleBadge, { backgroundColor: roleColor.bg }]}>
+          <Text style={[s.roleBadgeText, { color: roleColor.text }]}>{roleLabel}</Text>
+        </View>
+      )}
       <Text style={s.accessSubtitle}>
         {canEdit ? 'Toque numa secção para personalizar acessos:' : 'Secções disponíveis para este cargo:'}
       </Text>
@@ -633,6 +675,86 @@ const s = StyleSheet.create({
 
   logLink:     { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', alignItems: 'center' },
   logLinkText: { fontSize: 14, color: COLORS_REF.primary, fontWeight: '600' },
+});
+
+// ─── RoleChangeModal ──────────────────────────────────────────────────────────
+function RoleChangeModal({ visible, currentDept, onClose, onSave, saving }) {
+  const [selectedDept, setSelectedDept] = useState(currentDept);
+
+  useEffect(() => {
+    if (visible) setSelectedDept(currentDept);
+  }, [visible, currentDept]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={sm.overlay}>
+        <View style={sm.card}>
+          <View style={sm.header}>
+            <Text style={sm.title}>Alterar Cargo</Text>
+            <TouchableOpacity onPress={onClose} style={sm.closeBtn}>
+              <Text style={sm.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={sm.subtitle}>
+            Selecione o novo cargo. As permissões padrão do cargo serão aplicadas automaticamente.
+          </Text>
+
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {Object.entries(DEPARTMENTS).map(([key, deptLabel]) => {
+              const isSelected = selectedDept === key;
+              const isCurrent = currentDept === key;
+              const color = getRoleColor(key);
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[rm.deptRow, isSelected && rm.deptRowSelected]}
+                  onPress={() => setSelectedDept(key)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[rm.deptBadge, { backgroundColor: color.bg }]}>
+                    <Text style={[rm.deptBadgeText, { color: color.text }]}>
+                      {getRoleLabel(key)}
+                    </Text>
+                  </View>
+                  <Text style={rm.deptLabel}>{deptLabel}{isCurrent ? ' (actual)' : ''}</Text>
+                  {isSelected && <Text style={rm.checkmark}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <View style={sm.actions}>
+            <TouchableOpacity style={[sm.btn, sm.cancelBtn]} onPress={onClose}>
+              <Text style={sm.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[sm.btn, sm.saveBtn, (saving || selectedDept === currentDept) && { opacity: 0.55 }]}
+              onPress={() => onSave(selectedDept)}
+              disabled={saving || selectedDept === currentDept}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color={COLORS.white} />
+                : <Text style={sm.saveBtnText}>Aplicar Cargo</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const rm = StyleSheet.create({
+  deptRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  deptRowSelected: { backgroundColor: '#EFF6FF' },
+  deptBadge: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+  },
+  deptBadgeText: { fontSize: 12, fontWeight: '700' },
+  deptLabel: { flex: 1, fontSize: 14, color: COLORS.text },
+  checkmark: { fontSize: 16, color: COLORS.primary, fontWeight: '700' },
 });
 
 // ─── Styles do SectionPermModal ───────────────────────────────────────────────

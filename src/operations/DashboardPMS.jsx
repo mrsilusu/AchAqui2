@@ -214,17 +214,15 @@ export function DashboardPMS({
       || '',
   ).trim();
   const canAccessReception = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
-      : canSeeSection(staffToken, 'reception'));
+    || canSeeSection(effectiveAccessToken ?? '', 'reception');
   const canAccessHousekeeping = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_HOUSEKEEPER' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
-      : canSeeSection(staffToken, 'housekeeping'));
+    || canSeeSection(effectiveAccessToken ?? '', 'housekeeping');
   const canAccessBookingsMgr = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_RECEPTIONIST' || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
-      : canSeeSection(staffToken, 'bookingsManager'));
+    || canSeeSection(effectiveAccessToken ?? '', 'bookingsManager');
   const canAccessStaff = !isStaffMode
-    || (isJwtStaff ? (staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER')
-      : canSeeSection(staffToken, 'staffManager'));
+    || canSeeSection(effectiveAccessToken ?? '', 'staffManager');
+  const canAccessFinancials = !isStaffMode
+    || canSeeSection(effectiveAccessToken ?? '', 'financials');
 
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -467,6 +465,7 @@ export function DashboardPMS({
             )}
 
             {/* ── Taxa de ocupação ── */}
+            {canAccessFinancials && (
             <View style={dS.occupancyCard}>
               <View style={dS.occupancyLeft}>
                 <Text style={dS.occupancyLabel}>Taxa de Ocupação</Text>
@@ -495,6 +494,7 @@ export function DashboardPMS({
                 </View>
               </View>
             </View>
+            )}
 
             {/* ── Métricas do dia ── */}
             <Text style={dS.sectionTitle}>Hoje</Text>
@@ -522,19 +522,24 @@ export function DashboardPMS({
               />
             </View>
               <View style={dS.metricsRow}>
+                {canAccessFinancials && (
                 <MetricCard
                   icon="analytics"  label="ADR"
                   value={`${(data?.kpis?.adr ?? 0).toLocaleString()} Kz`}
                   color="#0891B2"
                 />
+                )}
+                {canAccessFinancials && (
                 <MetricCard
                   icon="analytics"  label="RevPAR"
                   value={`${(data?.kpis?.revpar ?? 0).toLocaleString()} Kz`}
                   color="#7C3AED"
                 />
+                )}
               </View>
 
             {/* ── Receita do dia ── */}
+            {canAccessFinancials && (
             <View style={dS.revenueCard}>
               <Icon name="analytics" size={18} color="#22A06B" strokeWidth={2} />
               <View style={{ flex: 1, marginLeft: 12 }}>
@@ -543,6 +548,7 @@ export function DashboardPMS({
               </View>
               <Text style={dS.revenueSub}>checkouts pagos</Text>
             </View>
+            )}
 
             {/* ── Overbooking Buffer / Stop-Sell ── */}
             {!isStaffMode && (
