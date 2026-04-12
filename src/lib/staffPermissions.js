@@ -294,8 +294,11 @@ export const SECTION_PERMISSIONS = {
     { key: 'canViewDashboard', label: 'Ver Dashboard', description: 'Acesso ao painel principal' },
     { key: 'canViewReports', label: 'Ver Relatórios', description: 'Acesso a relatórios gerais' },
     { key: 'canViewAnalytics', label: 'Ver Analíticas', description: 'Dados analíticos do negócio' },
+    { key: 'canViewTodayMetrics', label: 'Ver Métricas de Hoje', description: 'Chegadas, saídas, hóspedes e housekeeping' },
+    { key: 'canViewRoomCalendar', label: 'Ver Calendário 7 Dias', description: 'Visualizar calendário semanal dos quartos' },
   ],
   reception: [
+    { key: 'canOpenReceptionPanel', label: 'Abrir Receção', description: 'Aceder ao ecrã de receção' },
     { key: 'canCheckIn', label: 'Fazer Check-in', description: 'Processar entradas de hóspedes' },
     { key: 'canCheckOut', label: 'Fazer Check-out', description: 'Processar saídas de hóspedes' },
     { key: 'canCreateBooking', label: 'Criar Reservas', description: 'Criar novas reservas' },
@@ -303,17 +306,24 @@ export const SECTION_PERMISSIONS = {
     { key: 'canCancelBookings', label: 'Cancelar Reservas', description: 'Cancelar reservas confirmadas' },
   ],
   housekeeping: [
+    { key: 'canOpenHousekeepingPanel', label: 'Abrir Housekeeping', description: 'Aceder ao painel de housekeeping' },
+    { key: 'canViewRoomsPanel', label: 'Abrir Quartos', description: 'Aceder ao painel de quartos' },
     { key: 'canManageRooms', label: 'Gerir Quartos', description: 'Actualizar estado dos quartos' },
     { key: 'canAssignTasks', label: 'Atribuir Tarefas', description: 'Distribuir tarefas de limpeza' },
     { key: 'canViewRoomStatus', label: 'Ver Estado Quartos', description: 'Consultar estado de limpeza' },
   ],
   bookingsManager: [
+    { key: 'canOpenReservationMap', label: 'Abrir Mapa de Reservas', description: 'Aceder ao mapa operacional de reservas' },
+    { key: 'canOpenGantt', label: 'Abrir Gantt', description: 'Aceder à visão Gantt de reservas' },
+    { key: 'canOpenGuestProfiles', label: 'Abrir Hóspedes', description: 'Aceder a perfis e histórico de hóspedes' },
+    { key: 'canViewActivityLog', label: 'Ver Registo de Atividade', description: 'Aceder ao log de atividade do hotel' },
     { key: 'canViewAllBookings', label: 'Ver Todas Reservas', description: 'Listar todas as reservas' },
     { key: 'canCancelBookings', label: 'Cancelar Reservas', description: 'Cancelar reservas confirmadas' },
     { key: 'canApplyDiscounts', label: 'Aplicar Descontos', description: 'Aplicar descontos em reservas' },
     { key: 'canModifyPrices', label: 'Alterar Preços', description: 'Modificar preços de reservas' },
   ],
   staffManager: [
+    { key: 'canOpenStaffManager', label: 'Abrir Gestão de Staff', description: 'Aceder ao ecrã de gestão de staff' },
     { key: 'canViewStaff', label: 'Ver Staff', description: 'Listar funcionários' },
     { key: 'canCreateStaff', label: 'Criar Staff', description: 'Adicionar novos funcionários' },
     { key: 'canEditStaff', label: 'Editar Staff', description: 'Modificar dados de funcionários' },
@@ -336,4 +346,52 @@ export const SECTION_PERMISSIONS = {
 // ---------------------------------------------------------------------------
 export function getSectionPerms(sectionKey) {
   return SECTION_PERMISSIONS[sectionKey] ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// canDoSectionAction(token, sectionKey, permKey) → boolean
+// Usa sectionPerms do JWT quando disponível; fallback: secção ativa = todas ações da secção
+// ---------------------------------------------------------------------------
+export function canDoSectionAction(token, sectionKey, permKey) {
+  if (!canSeeSection(token, sectionKey)) return false;
+
+  const payload = decodeStaffToken(token);
+  const claimPerms = payload?.sectionPerms;
+  const permsForSection = claimPerms && typeof claimPerms === 'object'
+    ? claimPerms[sectionKey]
+    : undefined;
+
+  if (Array.isArray(permsForSection)) {
+    if (permsForSection.includes(permKey)) return true;
+
+    // Compatibilidade com tokens/overrides antigos (permissões amplas)
+    if (sectionKey === 'financials' && permsForSection.includes('canViewFinancials')) {
+      return ['canViewOccupancy', 'canViewADR', 'canViewRevPAR', 'canViewDailyRevenue'].includes(permKey);
+    }
+    if (sectionKey === 'dashboard' && permsForSection.includes('canViewDashboard')) {
+      return ['canViewTodayMetrics', 'canViewRoomCalendar'].includes(permKey);
+    }
+    if (sectionKey === 'reception' && permKey === 'canOpenReceptionPanel') {
+      return permsForSection.some((p) => [
+        'canCheckIn',
+        'canCheckOut',
+        'canCreateBooking',
+        'canEditBooking',
+        'canCancelBookings',
+      ].includes(p));
+    }
+    if (sectionKey === 'housekeeping' && ['canOpenHousekeepingPanel', 'canViewRoomsPanel'].includes(permKey)) {
+      return permsForSection.some((p) => ['canManageRooms', 'canAssignTasks', 'canViewRoomStatus'].includes(p));
+    }
+    if (sectionKey === 'bookingsManager' && ['canOpenReservationMap', 'canOpenGantt', 'canOpenGuestProfiles', 'canViewActivityLog'].includes(permKey)) {
+      return permsForSection.some((p) => ['canViewAllBookings', 'canModifyPrices', 'canApplyDiscounts', 'canCancelBookings'].includes(p));
+    }
+    if (sectionKey === 'staffManager' && permKey === 'canOpenStaffManager') {
+      return permsForSection.includes('canViewStaff');
+    }
+
+    return false;
+  }
+
+  return true;
 }

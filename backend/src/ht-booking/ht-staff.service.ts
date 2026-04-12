@@ -568,12 +568,14 @@ export class HtStaffService {
     });
 
     // ── Audit log ──────────────────────────────────────────────────────────
-    try {
-      const resourceName = updated.fullName ?? current.fullName;
+    const safeAudit = async (payload: any) => {
+      try { await this.htAuditService.log(payload); } catch { /* non-blocking */ }
+    };
+    const resourceName = updated.fullName ?? current.fullName;
 
       // Department / role change
       if (dto.department !== undefined && dto.department !== current.department) {
-        await this.htAuditService.log({
+        await safeAudit({
           businessId,
           module: AppModule.HT,
           action: 'CORE_STAFF_ROLE_CHANGED',
@@ -589,7 +591,7 @@ export class HtStaffService {
 
       // Section overrides change
       if (dto.sectionOverrides !== undefined) {
-        await this.htAuditService.log({
+        await safeAudit({
           businessId,
           module: AppModule.HT,
           action: 'CORE_STAFF_PERMISSIONS_CHANGED',
@@ -613,7 +615,7 @@ export class HtStaffService {
         }
       }
       if (Object.keys(changedPerms).length > 0) {
-        await this.htAuditService.log({
+        await safeAudit({
           businessId,
           module: AppModule.HT,
           action: 'CORE_STAFF_PERMISSIONS_CHANGED',
@@ -630,7 +632,7 @@ export class HtStaffService {
 
       // PIN reset
       if (dto.pin !== undefined) {
-        await this.htAuditService.log({
+        await safeAudit({
           businessId,
           module: AppModule.HT,
           action: 'CORE_STAFF_PIN_RESET',
@@ -643,9 +645,6 @@ export class HtStaffService {
           newData: { pinReset: true },
         });
       }
-    } catch {
-      // Audit falha silenciosamente — não bloqueia a operação principal
-    }
 
     return this.sanitizeStaff(updated);
   }

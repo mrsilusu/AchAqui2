@@ -13,6 +13,8 @@ interface JwtPayload {
   staffRole?: StaffRole;
   businessId?: string;
   staffId?: string;
+  sectionAccess?: Record<string, boolean>;
+  sectionPerms?: Record<string, string[]>;
 }
 
 @Injectable()
@@ -58,6 +60,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       staffRole: payload.staffRole ?? null,
       businessId: payload.businessId ?? null,
       staffId: payload.staffId ?? null,
+      sectionAccess: payload.sectionAccess ?? null,
+      sectionPerms: payload.sectionPerms ?? null,
     };
   }
 }

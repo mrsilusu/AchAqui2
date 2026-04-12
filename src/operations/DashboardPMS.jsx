@@ -26,7 +26,7 @@ import { RoomGanttScreen } from './RoomGanttScreen';
 import StaffManagementModal from './StaffManagementModal';
 import StaffProfileSheet from './StaffProfileSheet';
 import StaffActivityLog from './StaffActivityLog';
-import { canSeeSection } from '../lib/staffPermissions';
+import { canDoSectionAction, canSeeSection } from '../lib/staffPermissions';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
 const ROOM_STATUS = {
@@ -223,6 +223,34 @@ export function DashboardPMS({
     || canSeeSection(effectiveAccessToken ?? '', 'staffManager');
   const canAccessFinancials = !isStaffMode
     || canSeeSection(effectiveAccessToken ?? '', 'financials');
+  const canOpenReception = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'reception', 'canOpenReceptionPanel');
+  const canOpenHousekeeping = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'housekeeping', 'canOpenHousekeepingPanel');
+  const canOpenRooms = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'housekeeping', 'canViewRoomsPanel');
+  const canOpenReservationMap = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'bookingsManager', 'canOpenReservationMap');
+  const canOpenGantt = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'bookingsManager', 'canOpenGantt');
+  const canOpenGuestProfiles = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'bookingsManager', 'canOpenGuestProfiles');
+  const canViewActivityLog = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'bookingsManager', 'canViewActivityLog');
+  const canOpenStaffManager = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'staffManager', 'canOpenStaffManager');
+  const canViewTodayMetrics = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'dashboard', 'canViewTodayMetrics');
+  const canViewRoomCalendar = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'dashboard', 'canViewRoomCalendar');
+  const canViewOccupancy = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'financials', 'canViewOccupancy');
+  const canViewADR = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'financials', 'canViewADR');
+  const canViewRevPAR = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'financials', 'canViewRevPAR');
+  const canViewDailyRevenue = !isStaffMode
+    || canDoSectionAction(effectiveAccessToken ?? '', 'financials', 'canViewDailyRevenue');
 
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -465,7 +493,7 @@ export function DashboardPMS({
             )}
 
             {/* ── Taxa de ocupação ── */}
-            {canAccessFinancials && (
+            {canAccessFinancials && canViewOccupancy && (
             <View style={dS.occupancyCard}>
               <View style={dS.occupancyLeft}>
                 <Text style={dS.occupancyLabel}>Taxa de Ocupação</Text>
@@ -497,39 +525,43 @@ export function DashboardPMS({
             )}
 
             {/* ── Métricas do dia ── */}
-            <Text style={dS.sectionTitle}>Hoje</Text>
-            <View style={dS.metricsRow}>
-              <MetricCard
-                icon="reservation"   label="Chegadas"
-                value={data?.today?.arrivals ?? 0}
-                color="#1565C0"
-              />
-              <MetricCard
-                icon="arrow"  label="Saídas"
-                value={data?.today?.departures ?? 0}
-                color="#D97706"
-              />
-              <MetricCard
-                icon="home"     label="Em Casa"
-                value={data?.today?.guests ?? 0}
-                color="#22A06B"
-              />
-              <MetricCard
-                icon="settings"     label="Housekeeping"
-                value={data?.housekeeping?.pendingTasks ?? 0}
-                color={data?.housekeeping?.pendingTasks > 0 ? '#DC2626' : '#6B7280'}
-                sub="tarefas"
-              />
-            </View>
+            {canViewTodayMetrics && (
+            <>
+              <Text style={dS.sectionTitle}>Hoje</Text>
               <View style={dS.metricsRow}>
-                {canAccessFinancials && (
+                <MetricCard
+                  icon="reservation"   label="Chegadas"
+                  value={data?.today?.arrivals ?? 0}
+                  color="#1565C0"
+                />
+                <MetricCard
+                  icon="arrow"  label="Saídas"
+                  value={data?.today?.departures ?? 0}
+                  color="#D97706"
+                />
+                <MetricCard
+                  icon="home"     label="Em Casa"
+                  value={data?.today?.guests ?? 0}
+                  color="#22A06B"
+                />
+                <MetricCard
+                  icon="settings"     label="Housekeeping"
+                  value={data?.housekeeping?.pendingTasks ?? 0}
+                  color={data?.housekeeping?.pendingTasks > 0 ? '#DC2626' : '#6B7280'}
+                  sub="tarefas"
+                />
+              </View>
+            </>
+            )}
+              <View style={dS.metricsRow}>
+                {canAccessFinancials && canViewADR && (
                 <MetricCard
                   icon="analytics"  label="ADR"
                   value={`${(data?.kpis?.adr ?? 0).toLocaleString()} Kz`}
                   color="#0891B2"
                 />
                 )}
-                {canAccessFinancials && (
+                {canAccessFinancials && canViewRevPAR && (
                 <MetricCard
                   icon="analytics"  label="RevPAR"
                   value={`${(data?.kpis?.revpar ?? 0).toLocaleString()} Kz`}
@@ -539,7 +571,7 @@ export function DashboardPMS({
               </View>
 
             {/* ── Receita do dia ── */}
-            {canAccessFinancials && (
+            {canAccessFinancials && canViewDailyRevenue && (
             <View style={dS.revenueCard}>
               <Icon name="analytics" size={18} color="#22A06B" strokeWidth={2} />
               <View style={{ flex: 1, marginLeft: 12 }}>
@@ -576,14 +608,14 @@ export function DashboardPMS({
 
             {/* ── Botões PMS ── */}
             <View style={dS.pmsButtons}>
-              {canAccessReception && (
+              {canAccessReception && canOpenReception && (
               <TouchableOpacity style={dS.receptionBtn} onPress={() => setShowReception(true)}>
                 <Icon name="home" size={18} color="#fff" strokeWidth={2.5} />
                 <Text style={dS.receptionBtnText}>Receção</Text>
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessHousekeeping && (
+              {canAccessHousekeeping && canOpenHousekeeping && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
                 onPress={() => setShowHousekeeping(true)}
@@ -601,7 +633,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessHousekeeping && (
+              {canAccessHousekeeping && canOpenRooms && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#1565C0' }]}
                 onPress={() => setShowRooms(true)}
@@ -613,7 +645,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessBookingsMgr && (
+              {canAccessBookingsMgr && canOpenReservationMap && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D32323' }]}
                 onPress={() => setShowMap(true)}
@@ -623,7 +655,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessBookingsMgr && (
+              {canAccessBookingsMgr && canOpenGantt && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#0891B2' }]}
                 onPress={() => setShowGantt(true)}
@@ -634,7 +666,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessBookingsMgr && (
+              {canAccessBookingsMgr && canOpenGuestProfiles && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#7C3AED' }]}
                 onPress={() => setShowGuests(true)}
@@ -644,7 +676,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessBookingsMgr && (
+              {canAccessBookingsMgr && canViewActivityLog && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#334155' }]}
                 onPress={() => setShowAuditLog(true)}
@@ -654,7 +686,7 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
-              {canAccessStaff && (
+              {canAccessStaff && canOpenStaffManager && (
               <TouchableOpacity
                 style={[dS.receptionBtn, { backgroundColor: '#D97706' }]}
                 onPress={() => setShowStaffMgmt(true)}
@@ -667,7 +699,7 @@ export function DashboardPMS({
             </View>
 
             {/* ── Room Calendar (vista semanal) ── */}
-            {(() => {
+            {canViewRoomCalendar && (() => {
               const today7 = Array.from({ length: 7 }, (_, i) => {
                 const d = new Date(); d.setDate(d.getDate() + i);
                 return { date: d, label: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}` };

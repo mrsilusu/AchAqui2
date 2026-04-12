@@ -7,6 +7,7 @@ import {
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 import { FolioScreen } from './FolioScreen';
+import { canDoSectionAction, decodeStaffToken } from '../lib/staffPermissions';
 
 // ─── Modal: Prolongar estadia ─────────────────────────────────────────────────
 function ExtendStayModal({ visible, booking, onConfirm, onClose }) {
@@ -2102,6 +2103,10 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   const [expiredDateValue, setExpiredDateValue] = useState('');
   const [expiredDateLoading, setExpiredDateLoading] = useState(false);
   const alive = useRef(true);
+  const authPayload = decodeStaffToken(accessToken);
+  const isStaffSession = String(authPayload?.role || '').toUpperCase() === 'STAFF';
+  const canCreateBooking = !isStaffSession
+    || canDoSectionAction(accessToken ?? '', 'reception', 'canCreateBooking');
 
   useEffect(() => {
     alive.current = true;
@@ -2259,6 +2264,30 @@ export function ReceptionScreen({ businessId, accessToken, roomTypes, onClose, p
   }, [accessToken, checkExpiredStays, ddmmyyyyToISO, expiredDateModal, expiredDateValue, load]);
 
   const handleAction = useCallback(async (bookingId, action, bookingObj = null) => {
+    const actionPermMap = {
+      confirm: 'canEditBooking',
+      edit: 'canEditBooking',
+      postpone: 'canEditBooking',
+      extend: 'canEditBooking',
+      'extend-expired': 'canEditBooking',
+      changeroom: 'canEditBooking',
+      guestprofile: 'canEditBooking',
+      folio: 'canEditBooking',
+      checkin: 'canCheckIn',
+      checkout: 'canCheckOut',
+      'force-checkout': 'canCheckOut',
+      'unconfirmed-checkout': 'canCheckOut',
+      'retroactive-checkout': 'canCheckOut',
+      cancel: 'canCancelBookings',
+      noshow: 'canCancelBookings',
+      'revert-noshow': 'canCancelBookings',
+    };
+    const requiredPerm = actionPermMap[action];
+    if (isStaffSession && requiredPerm && !canDoSectionAction(accessToken ?? '', 'reception', requiredPerm)) {
+      Alert.alert('Sem permissão', 'Esta ação da Receção não está autorizada para o seu perfil.');
+      return;
+    }
+
     const labels = { checkin: 'Check-In', checkout: 'Check-Out', noshow: 'No-Show', confirm: 'Confirmar' };
     const msgs   = {
       checkin:  'Confirmar check-in do hóspede?',
@@ -2796,7 +2825,13 @@ Deseja continuar mesmo assim (quarto em uso)?`,
           </View>
           <TouchableOpacity
             style={[rS.iconBtn, { backgroundColor: '#EFF6FF', borderRadius: 8 }]}
-            onPress={() => setShowNewBooking(true)}>
+            onPress={() => {
+              if (!canCreateBooking) {
+                Alert.alert('Sem permissão', 'A criação de reservas está desativada para este perfil.');
+                return;
+              }
+              setShowNewBooking(true);
+            }}>
             <Icon name="plus" size={20} color={COLORS.blue} strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity style={rS.iconBtn} onPress={() => load(true)}>
