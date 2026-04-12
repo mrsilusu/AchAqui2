@@ -19,6 +19,133 @@ export const STAFF_ROLES = {
 };
 
 // ---------------------------------------------------------------------------
+// Mapeamento departamento → role (espelha mapDepartmentToRole do backend)
+// ---------------------------------------------------------------------------
+export const DEPT_TO_ROLE = {
+  MANAGEMENT:   'HT_MANAGER',
+  RECEPTION:    'HT_RECEPTIONIST',
+  HOUSEKEEPING: 'HT_HOUSEKEEPER',
+  MAINTENANCE:  'HT_HOUSEKEEPER',
+  SECURITY:     'HT_HOUSEKEEPER',
+  RESTAURANT:   'HT_HOUSEKEEPER',
+};
+
+// ---------------------------------------------------------------------------
+// Labels legíveis por humano para cada role
+// ---------------------------------------------------------------------------
+export const ROLE_LABELS = {
+  HT_MANAGER:      'Gerente',
+  HT_RECEPTIONIST: 'Rececionista',
+  HT_HOUSEKEEPER:  'Housekeeping',
+  GENERAL_MANAGER: 'Director Geral',
+};
+
+// ---------------------------------------------------------------------------
+// Cores de badge por role
+// ---------------------------------------------------------------------------
+export const ROLE_COLORS = {
+  HT_MANAGER:      { bg: '#FEF3C7', text: '#92400E' },
+  HT_RECEPTIONIST: { bg: '#DBEAFE', text: '#1E40AF' },
+  HT_HOUSEKEEPER:  { bg: '#D1FAE5', text: '#065F46' },
+  GENERAL_MANAGER: { bg: '#EDE9FE', text: '#5B21B6' },
+};
+
+// ---------------------------------------------------------------------------
+// Catálogo de permissões operacionais (individualmente ativáveis/desativáveis)
+// Reflete as colunas canCancelBookings, canApplyDiscounts, canViewFinancials
+// da tabela ht_staff — sem necessidade de migração adicional.
+// ---------------------------------------------------------------------------
+export const PERMISSIONS_CATALOG = [
+  {
+    key:         'canCancelBookings',
+    label:       'Cancelar reservas',
+    description: 'Permite cancelar reservas de hóspedes',
+    defaultByRole: {
+      HT_MANAGER:      true,
+      HT_RECEPTIONIST: false,
+      HT_HOUSEKEEPER:  false,
+      GENERAL_MANAGER: true,
+    },
+  },
+  {
+    key:         'canApplyDiscounts',
+    label:       'Aplicar descontos',
+    description: 'Permite aplicar descontos em reservas e no folio',
+    defaultByRole: {
+      HT_MANAGER:      true,
+      HT_RECEPTIONIST: false,
+      HT_HOUSEKEEPER:  false,
+      GENERAL_MANAGER: true,
+    },
+  },
+  {
+    key:         'canViewFinancials',
+    label:       'Ver dados financeiros',
+    description: 'Acesso a relatórios de receita e dados financeiros',
+    defaultByRole: {
+      HT_MANAGER:      true,
+      HT_RECEPTIONIST: false,
+      HT_HOUSEKEEPER:  false,
+      GENERAL_MANAGER: true,
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Labels das secções de acesso (para mostrar no perfil do staff)
+// ---------------------------------------------------------------------------
+export const SECTION_LABELS = {
+  dashboard:       'Dashboard',
+  reception:       'Receção',
+  housekeeping:    'Housekeeping',
+  bookingsManager: 'Reservas',
+  staffManager:    'Gestão staff',
+  financials:      'Financeiros',
+};
+
+// ---------------------------------------------------------------------------
+// getRoleFromDept(department) → role string
+// ---------------------------------------------------------------------------
+export function getRoleFromDept(department) {
+  return DEPT_TO_ROLE[department] ?? 'HT_HOUSEKEEPER';
+}
+
+// ---------------------------------------------------------------------------
+// getRoleLabel(department) → string legível ("Gerente", "Rececionista", …)
+// ---------------------------------------------------------------------------
+export function getRoleLabel(department) {
+  const role = DEPT_TO_ROLE[department] ?? department;
+  return ROLE_LABELS[role] ?? role;
+}
+
+// ---------------------------------------------------------------------------
+// getRoleColor(department) → { bg, text } para badge
+// ---------------------------------------------------------------------------
+export function getRoleColor(department) {
+  const role = DEPT_TO_ROLE[department] ?? department;
+  return ROLE_COLORS[role] ?? { bg: '#F1F5F9', text: '#475569' };
+}
+
+// ---------------------------------------------------------------------------
+// getDefaultPermsForDept(department)
+// → { canCancelBookings, canApplyDiscounts, canViewFinancials }
+// ---------------------------------------------------------------------------
+export function getDefaultPermsForDept(department) {
+  const role = getRoleFromDept(department);
+  return Object.fromEntries(
+    PERMISSIONS_CATALOG.map((p) => [p.key, p.defaultByRole[role] ?? false]),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// getSectionAccessForDept(department) → objeto com todas as secções
+// ---------------------------------------------------------------------------
+export function getSectionAccessForDept(department) {
+  const role = getRoleFromDept(department);
+  return SECTION_ACCESS[role] ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Permissões de secção por role
 // ---------------------------------------------------------------------------
 const SECTION_ACCESS = {

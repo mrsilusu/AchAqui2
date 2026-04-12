@@ -18,6 +18,10 @@ import {
   TextInput, ActivityIndicator, Alert, Switch, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { backendApi } from '../lib/backendApi';
+import {
+  getRoleLabel, getRoleColor,
+  PERMISSIONS_CATALOG, SECTION_LABELS, getSectionAccessForDept,
+} from '../lib/staffPermissions';
 
 const DEPARTMENTS = {
   RECEPTION:    'Receção',
@@ -43,20 +47,16 @@ export default function StaffProfileSheet({
   const [suspendReason, setSuspendReason] = useState('');
   const [showSuspendBox, setShowSuspendBox] = useState(false);
 
-  // Permissões locais (controladas por Switch)
-  const [permissions, setPermissions] = useState({
-    canCancelBookings:  false,
-    canApplyDiscounts:  false,
-    canViewFinancials:  false,
-  });
+  // Permissões operacionais — inicializadas a partir do objeto staff (valores reais da BD)
+  const [permissions, setPermissions] = useState(
+    () => Object.fromEntries(PERMISSIONS_CATALOG.map((p) => [p.key, false])),
+  );
 
   useEffect(() => {
     if (staff) {
-      setPermissions({
-        canCancelBookings:  !!staff.canCancelBookings,
-        canApplyDiscounts:  !!staff.canApplyDiscounts,
-        canViewFinancials:  !!staff.canViewFinancials,
-      });
+      setPermissions(
+        Object.fromEntries(PERMISSIONS_CATALOG.map((p) => [p.key, !!staff[p.key]])),
+      );
       setNewPin('');
       setShowSuspendBox(false);
       setSuspendReason('');
@@ -181,26 +181,25 @@ export default function StaffProfileSheet({
               )}
             </View>
 
-            {/* PERMISSÕES */}
+            {/* CARGO E ACESSOS DE SECÇÃO */}
+            <CargoSection department={staff.department} />
+
+            {/* PERMISSÕES OPERACIONAIS */}
             {isActive && (
               <View style={s.section}>
                 <Text style={s.sectionTitle}>Permissões operacionais</Text>
-                <PermSwitch
-                  label="Pode cancelar reservas"
-                  value={permissions.canCancelBookings}
-                  onChange={(v) => setPermissions((p) => ({ ...p, canCancelBookings: v }))}
-                />
-                <PermSwitch
-                  label="Pode aplicar descontos"
-                  value={permissions.canApplyDiscounts}
-                  onChange={(v) => setPermissions((p) => ({ ...p, canApplyDiscounts: v }))}
-                />
-                <PermSwitch
-                  label="Pode ver dados financeiros"
-                  value={permissions.canViewFinancials}
-                  onChange={(v) => setPermissions((p) => ({ ...p, canViewFinancials: v }))}
-                />
-
+                <Text style={s.permHint}>
+                  Permissões individuais — substituem os padrões do cargo.
+                </Text>
+                {PERMISSIONS_CATALOG.map((p) => (
+                  <PermSwitch
+                    key={p.key}
+                    label={p.label}
+                    description={p.description}
+                    value={permissions[p.key]}
+                    onChange={(v) => setPermissions((prev) => ({ ...prev, [p.key]: v }))}
+                  />
+                ))}
                 <TouchableOpacity
                   style={[s.actionBtn, { backgroundColor: COLORS.primary, marginTop: 10 }]}
                   onPress={handleSavePermissions}
@@ -344,10 +343,43 @@ function Row({ label, value, danger }) {
   );
 }
 
-function PermSwitch({ label, value, onChange }) {
+function CargoSection({ department }) {
+  const roleLabel = getRoleLabel(department);
+  const roleColor = getRoleColor(department);
+  const sectionAccess = getSectionAccessForDept(department);
+
+  return (
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>Cargo e acessos</Text>
+      {/* Badge do cargo */}
+      <View style={[s.roleBadge, { backgroundColor: roleColor.bg }]}>
+        <Text style={[s.roleBadgeText, { color: roleColor.text }]}>{roleLabel}</Text>
+      </View>
+      {/* Secções a que este cargo tem acesso */}
+      <Text style={s.accessSubtitle}>Secções disponíveis para este cargo:</Text>
+      <View style={s.tilesRow}>
+        {sectionAccess && Object.entries(sectionAccess).map(([key, allowed]) => (
+          <View key={key} style={[s.tile, allowed ? s.tileOn : s.tileOff]}>
+            <Text style={[s.tileText, allowed ? s.tileTextOn : s.tileTextOff]}>
+              {SECTION_LABELS[key] ?? key}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <Text style={s.accessNote}>
+        Os acessos de secção são definidos pelo cargo e não podem ser alterados individualmente.
+      </Text>
+    </View>
+  );
+}
+
+function PermSwitch({ label, description, value, onChange }) {
   return (
     <View style={s.permRow}>
-      <Text style={s.permLabel}>{label}</Text>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={s.permLabel}>{label}</Text>
+        {description ? <Text style={s.permDesc}>{description}</Text> : null}
+      </View>
       <Switch
         value={value}
         onValueChange={onChange}
@@ -393,8 +425,28 @@ const s = StyleSheet.create({
   rowLabel:  { fontSize: 13, color: COLORS_REF.muted, flex: 1 },
   rowValue:  { fontSize: 13, color: COLORS_REF.text, flex: 2, textAlign: 'right' },
 
-  permRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  permLabel: { fontSize: 14, color: COLORS_REF.text, flex: 1, paddingRight: 8 },
+  permHint:  { fontSize: 12, color: COLORS_REF.muted, marginBottom: 10, fontStyle: 'italic' },
+  permRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  permLabel: { fontSize: 14, color: COLORS_REF.text, fontWeight: '600' },
+  permDesc:  { fontSize: 12, color: COLORS_REF.muted, marginTop: 1 },
+
+  roleBadge: {
+    alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 8, marginBottom: 12,
+  },
+  roleBadgeText: { fontSize: 13, fontWeight: '700' },
+
+  accessSubtitle: { fontSize: 12, color: COLORS_REF.muted, marginBottom: 8 },
+  tilesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  tile: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
+  },
+  tileOn:      { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' },
+  tileOff:     { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  tileText:    { fontSize: 11, fontWeight: '600' },
+  tileTextOn:  { color: '#15803D' },
+  tileTextOff: { color: '#94A3B8' },
+  accessNote:  { fontSize: 11, color: COLORS_REF.muted, fontStyle: 'italic' },
 
   actionBtn: {
     padding: 13, borderRadius: 10, alignItems: 'center', justifyContent: 'center',

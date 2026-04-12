@@ -15,6 +15,7 @@ import {
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { backendApi } from '../lib/backendApi';
+import { getRoleLabel, getRoleColor, PERMISSIONS_CATALOG } from '../lib/staffPermissions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 const DEPARTMENTS = [
@@ -242,6 +243,17 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
                       </View>
                       <Text style={s.staffEmail} numberOfLines={1}>{staff.email}</Text>
                       <Text style={s.staffDept}>{deptLabel(staff.department)}</Text>
+                      {/* Cargo badge + permissões operacionais */}
+                      <View style={s.cardMeta}>
+                        <RoleBadge department={staff.department} />
+                        {PERMISSIONS_CATALOG.map((p) => (
+                          <PermDot
+                            key={p.key}
+                            label={p.label}
+                            active={!!staff[p.key]}
+                          />
+                        ))}
+                      </View>
                       {!staff.userId && staff.isActive && (
                         <TouchableOpacity
                           style={s.createAccountBtn}
@@ -399,6 +411,43 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
   );
 }
 
+// ─── Sub-componentes de card ──────────────────────────────────────────────────
+function RoleBadge({ department }) {
+  const label = getRoleLabel(department);
+  const color = getRoleColor(department);
+  return (
+    <View style={[sCard.badge, { backgroundColor: color.bg }]}>
+      <Text style={[sCard.badgeText, { color: color.text }]}>{label}</Text>
+    </View>
+  );
+}
+
+function PermDot({ label, active }) {
+  return (
+    <View style={[sCard.dot, active ? sCard.dotOn : sCard.dotOff]}>
+      <Text style={[sCard.dotText, active ? sCard.dotTextOn : sCard.dotTextOff]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+const sCard = StyleSheet.create({
+  badge: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start',
+  },
+  badgeText: { fontSize: 10, fontWeight: '700' },
+  dot: {
+    paddingHorizontal: 5, paddingVertical: 2, borderRadius: 5,
+    borderWidth: 1,
+  },
+  dotOn:       { backgroundColor: '#DCFCE7', borderColor: '#16A34A' },
+  dotOff:      { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' },
+  dotText:     { fontSize: 9, fontWeight: '600' },
+  dotTextOn:   { color: '#15803D' },
+  dotTextOff:  { color: '#94A3B8' },
+});
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   overlay: {
@@ -447,6 +496,9 @@ const s = StyleSheet.create({
   staffName:       { fontSize: 15, fontWeight: '600', color: COLORS.text, flex: 1 },
   staffEmail:      { fontSize: 12, color: COLORS.muted, marginTop: 1 },
   staffDept:       { fontSize: 12, color: COLORS.primary, marginTop: 2, fontWeight: '500' },
+  cardMeta: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center',
+  },
   suspendedBadge: {
     backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
   },
