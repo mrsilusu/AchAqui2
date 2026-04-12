@@ -275,3 +275,51 @@ export function getSectionAccessForDept(department) {
   const role = getRoleFromDept(department);
   return SECTION_ACCESS[role] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// SECTION_PERMISSIONS — catálogo granular por secção (para gestão de acessos)
+// ---------------------------------------------------------------------------
+export const SECTION_PERMISSIONS = {
+  dashboard: [
+    { key: 'canViewDashboard', label: 'Ver Dashboard', description: 'Acesso ao painel principal' },
+    { key: 'canViewReports', label: 'Ver Relatórios', description: 'Acesso a relatórios gerais' },
+    { key: 'canViewAnalytics', label: 'Ver Analíticas', description: 'Dados analíticos do negócio' },
+  ],
+  reception: [
+    { key: 'canCheckIn', label: 'Fazer Check-in', description: 'Processar entradas de hóspedes' },
+    { key: 'canCheckOut', label: 'Fazer Check-out', description: 'Processar saídas de hóspedes' },
+    { key: 'canCreateBooking', label: 'Criar Reservas', description: 'Criar novas reservas' },
+    { key: 'canEditBooking', label: 'Editar Reservas', description: 'Modificar reservas existentes' },
+    { key: 'canCancelBookings', label: 'Cancelar Reservas', description: 'Cancelar reservas confirmadas' },
+  ],
+  housekeeping: [
+    { key: 'canManageRooms', label: 'Gerir Quartos', description: 'Actualizar estado dos quartos' },
+    { key: 'canAssignTasks', label: 'Atribuir Tarefas', description: 'Distribuir tarefas de limpeza' },
+    { key: 'canViewRoomStatus', label: 'Ver Estado Quartos', description: 'Consultar estado de limpeza' },
+  ],
+  bookingsManager: [
+    { key: 'canViewAllBookings', label: 'Ver Todas Reservas', description: 'Listar todas as reservas' },
+    { key: 'canCancelBookings', label: 'Cancelar Reservas', description: 'Cancelar reservas confirmadas' },
+    { key: 'canApplyDiscounts', label: 'Aplicar Descontos', description: 'Aplicar descontos em reservas' },
+    { key: 'canModifyPrices', label: 'Alterar Preços', description: 'Modificar preços de reservas' },
+  ],
+  staffManager: [
+    { key: 'canViewStaff', label: 'Ver Staff', description: 'Listar funcionários' },
+    { key: 'canCreateStaff', label: 'Criar Staff', description: 'Adicionar novos funcionários' },
+    { key: 'canEditStaff', label: 'Editar Staff', description: 'Modificar dados de funcionários' },
+    { key: 'canSuspendStaff', label: 'Suspender Staff', description: 'Suspender e reativar funcionários' },
+    { key: 'canViewAuditLog', label: 'Ver Auditoria', description: 'Acesso ao log de auditoria' },
+  ],
+  financials: [
+    { key: 'canViewFinancials', label: 'Ver Financeiros', description: 'Acesso a dados financeiros' },
+    { key: 'canExportReports', label: 'Exportar Relatórios', description: 'Exportar dados financeiros' },
+    { key: 'canManagePayments', label: 'Gerir Pagamentos', description: 'Processar e anular pagamentos' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// getSectionPerms(sectionKey) → array de { key, label, description }
+// ---------------------------------------------------------------------------
+export function getSectionPerms(sectionKey) {
+  return SECTION_PERMISSIONS[sectionKey] ?? [];
+}

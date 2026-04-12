@@ -21,6 +21,7 @@ import { backendApi } from '../lib/backendApi';
 import {
   getRoleLabel, getRoleColor,
   PERMISSIONS_CATALOG, SECTION_LABELS, getSectionAccessForDept,
+  SECTION_PERMISSIONS, STAFF_ROLES, getStaffRole,
 } from '../lib/staffPermissions';
 
 const DEPARTMENTS = {
@@ -52,14 +53,27 @@ export default function StaffProfileSheet({
     () => Object.fromEntries(PERMISSIONS_CATALOG.map((p) => [p.key, false])),
   );
 
+  // Overrides de secção por staff (manager/GM pode editar)
+  const [sectionOverrides, setSectionOverrides] = useState({});
+  const [editingSection, setEditingSection]     = useState(null); // sectionKey | null
+
+  // Role do viewer (quem está a gerir)
+  const viewerRole   = getStaffRole(accessToken);
+  const canEditSections = (
+    viewerRole === STAFF_ROLES.HT_MANAGER ||
+    viewerRole === STAFF_ROLES.GENERAL_MANAGER
+  );
+
   useEffect(() => {
     if (staff) {
       setPermissions(
         Object.fromEntries(PERMISSIONS_CATALOG.map((p) => [p.key, !!staff[p.key]])),
       );
+      setSectionOverrides(staff.sectionOverrides ?? {});
       setNewPin('');
       setShowSuspendBox(false);
       setSuspendReason('');
+      setEditingSection(null);
     }
   }, [staff]);
 
@@ -79,6 +93,32 @@ export default function StaffProfileSheet({
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Guardar override de secção ────────────────────────────────────────────
+  const handleSaveSectionOverride = async (sectionKey, enabledPerms) => {
+    const newOverrides = { ...sectionOverrides, [sectionKey]: enabledPerms };
+    setSaving(true);
+    try {
+      await backendApi.htUpdateStaff(staff.id, businessId, { sectionOverrides: newOverrides }, accessToken);
+      setSectionOverrides(newOverrides);
+      setEditingSection(null);
+      Alert.alert('Sucesso', 'Acessos da secção actualizados.');
+      onRefresh?.();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível guardar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Devolve as permissões iniciais a mostrar no modal de edição de secção
+  const getInitialPermsForSection = (sectionKey) => {
+    if (sectionKey in sectionOverrides) return sectionOverrides[sectionKey];
+    const access = getSectionAccessForDept(staff.department);
+    const defaultEnabled = !!(access && access[sectionKey]);
+    if (defaultEnabled) return (SECTION_PERMISSIONS[sectionKey] ?? []).map((p) => p.key);
+    return [];
   };
 
   // ── Reset PIN ─────────────────────────────────────────────────────────────
@@ -182,7 +222,12 @@ export default function StaffProfileSheet({
             </View>
 
             {/* CARGO E ACESSOS DE SECÇÃO */}
-            <CargoSection department={staff.department} />
+            <CargoSection
+              department={staff.department}
+              sectionOverrides={sectionOverrides}
+              canEdit={canEditSections && isActive}
+              onTilePress={(key) => setEditingSection(key)}
+            />
 
             {/* PERMISSÕES OPERACIONAIS */}
             {isActive && (
@@ -328,14 +373,33 @@ export default function StaffProfileSheet({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      {/* MODAL DE PERMISSÕES POR SECÇÃO */}
+      <SectionPermModal
+        visible={editingSection !== null}
+        sectionKey={editingSection ?? ''}
+        sectionLabel={SECTION_LABELS[editingSection] ?? editingSection ?? ''}
+        initialPerms={editingSection ? getInitialPermsForSection(editingSection) : []}
+        onClose={() => setEditingSection(null)}
+        onSave={(perms) => handleSaveSectionOverride(editingSection, perms)}
+        saving={saving}
+      />
     </Modal>
   );
 }
 
-function CargoSection({ department }) {
+function CargoSection({ department, sectionOverrides = {}, canEdit = false, onTilePress }) {
   const roleLabel = getRoleLabel(department);
   const roleColor = getRoleColor(department);
   const sectionAccess = getSectionAccessForDept(department);
+
+  const isSectionEnabled = (key) => {
+    if (key in sectionOverrides) {
+      const perms = sectionOverrides[key];
+      return Array.isArray(perms) && perms.length > 0;
+    }
+    return !!(sectionAccess && sectionAccess[key]);
+  };
 
   return (
     <View style={s.section}>
@@ -343,18 +407,39 @@ function CargoSection({ department }) {
       <View style={[s.roleBadge, { backgroundColor: roleColor.bg }]}>
         <Text style={[s.roleBadgeText, { color: roleColor.text }]}>{roleLabel}</Text>
       </View>
-      <Text style={s.accessSubtitle}>Secções disponíveis para este cargo:</Text>
+      <Text style={s.accessSubtitle}>
+        {canEdit ? 'Toque numa secção para personalizar acessos:' : 'Secções disponíveis para este cargo:'}
+      </Text>
       <View style={s.tilesRow}>
-        {sectionAccess && Object.entries(sectionAccess).map(([key, allowed]) => (
-          <View key={key} style={[s.tile, allowed ? s.tileOn : s.tileOff]}>
-            <Text style={[s.tileText, allowed ? s.tileTextOn : s.tileTextOff]}>
-              {SECTION_LABELS[key] ?? key}
-            </Text>
-          </View>
-        ))}
+        {sectionAccess && Object.entries(sectionAccess).map(([key]) => {
+          const enabled = isSectionEnabled(key);
+          const isOverridden = key in sectionOverrides;
+          const label = SECTION_LABELS[key] ?? key;
+          if (canEdit) {
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[s.tile, enabled ? s.tileOn : s.tileOff, isOverridden && s.tileOverridden]}
+                onPress={() => onTilePress?.(key)}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.tileText, enabled ? s.tileTextOn : s.tileTextOff]}>
+                  {label}{isOverridden ? ' ✏' : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          }
+          return (
+            <View key={key} style={[s.tile, enabled ? s.tileOn : s.tileOff]}>
+              <Text style={[s.tileText, enabled ? s.tileTextOn : s.tileTextOff]}>{label}</Text>
+            </View>
+          );
+        })}
       </View>
       <Text style={s.accessNote}>
-        Os acessos de secção são definidos pelo cargo e não podem ser alterados individualmente.
+        {canEdit
+          ? 'Personalizações activas mostram ✏. Toque para editar permissões da secção.'
+          : 'Os acessos de secção são definidos pelo cargo e não podem ser alterados individualmente.'}
       </Text>
     </View>
   );
@@ -386,6 +471,88 @@ function PermSwitch({ label, description, value, onChange }) {
         thumbColor={COLORS.white}
       />
     </View>
+  );
+}
+
+// ─── SectionPermModal ─────────────────────────────────────────────────────────
+function SectionPermModal({ visible, sectionKey, sectionLabel, initialPerms, onClose, onSave, saving }) {
+  const allPerms = SECTION_PERMISSIONS[sectionKey] ?? [];
+  const [selected, setSelected] = useState([]);
+
+  useEffect(() => {
+    if (visible) {
+      setSelected(Array.isArray(initialPerms) ? [...initialPerms] : allPerms.map((p) => p.key));
+    }
+  }, [visible, sectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allSelected = allPerms.length > 0 && allPerms.every((p) => selected.includes(p.key));
+
+  const toggleAll = () => setSelected(allSelected ? [] : allPerms.map((p) => p.key));
+
+  const toggle = (key) =>
+    setSelected((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={sm.overlay}>
+        <View style={sm.card}>
+          <View style={sm.header}>
+            <Text style={sm.title}>{sectionLabel}</Text>
+            <TouchableOpacity onPress={onClose} style={sm.closeBtn}>
+              <Text style={sm.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={sm.subtitle}>Escolha as acções disponíveis para este funcionário.</Text>
+
+          {/* TODOS */}
+          <TouchableOpacity style={sm.todosRow} onPress={toggleAll}>
+            <View style={[sm.check, allSelected && sm.checkActive]}>
+              {allSelected ? <Text style={sm.checkTick}>✓</Text> : null}
+            </View>
+            <Text style={sm.todosLabel}>Todos</Text>
+          </TouchableOpacity>
+          <View style={sm.divider} />
+
+          <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+            {allPerms.map((p) => {
+              const isOn = selected.includes(p.key);
+              return (
+                <TouchableOpacity key={p.key} style={sm.permRow} onPress={() => toggle(p.key)} activeOpacity={0.8}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={sm.permLabel}>{p.label}</Text>
+                    {p.description ? <Text style={sm.permDesc}>{p.description}</Text> : null}
+                  </View>
+                  <Switch
+                    value={isOn}
+                    onValueChange={() => toggle(p.key)}
+                    trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+                    thumbColor={COLORS.white}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+            {allPerms.length === 0 && (
+              <Text style={sm.emptyText}>Nenhuma permissão configurável para esta secção.</Text>
+            )}
+          </ScrollView>
+
+          <View style={sm.actions}>
+            <TouchableOpacity style={[sm.btn, sm.cancelBtn]} onPress={onClose}>
+              <Text style={sm.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[sm.btn, sm.saveBtn, saving && { opacity: 0.7 }]}
+              onPress={() => onSave(selected)}
+              disabled={saving}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color={COLORS.white} />
+                : <Text style={sm.saveBtnText}>Guardar</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -442,6 +609,7 @@ const s = StyleSheet.create({
   },
   tileOn:      { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' },
   tileOff:     { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  tileOverridden: { borderColor: '#93C5FD', borderWidth: 1.5 },
   tileText:    { fontSize: 11, fontWeight: '600' },
   tileTextOn:  { color: '#15803D' },
   tileTextOff: { color: '#94A3B8' },
@@ -465,4 +633,53 @@ const s = StyleSheet.create({
 
   logLink:     { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', alignItems: 'center' },
   logLinkText: { fontSize: 14, color: COLORS_REF.primary, fontWeight: '600' },
+});
+
+// ─── Styles do SectionPermModal ───────────────────────────────────────────────
+const sm = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  card: {
+    width: '100%', backgroundColor: COLORS.bg, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  title:        { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  closeBtn:     { padding: 4 },
+  closeBtnText: { fontSize: 18, color: COLORS.muted },
+  subtitle:     { fontSize: 12, color: COLORS.muted, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  todosRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  check: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 1,
+    borderColor: COLORS.border, backgroundColor: COLORS.white,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkActive:  { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkTick:    { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  todosLabel:   { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  divider:      { height: 1, backgroundColor: COLORS.border, marginHorizontal: 16, marginBottom: 4 },
+  permRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10, gap: 8,
+  },
+  permLabel:    { fontSize: 14, color: COLORS.text, fontWeight: '500' },
+  permDesc:     { fontSize: 11, color: COLORS.muted, marginTop: 1 },
+  emptyText:    { fontSize: 13, color: '#94A3B8', textAlign: 'center', padding: 16, fontStyle: 'italic' },
+  actions: {
+    flexDirection: 'row', gap: 8, padding: 16,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  btn:          { flex: 1, padding: 13, borderRadius: 10, alignItems: 'center' },
+  cancelBtn:    { backgroundColor: COLORS.border },
+  saveBtn:      { backgroundColor: COLORS.primary },
+  cancelBtnText: { color: COLORS.muted, fontWeight: '600', fontSize: 14 },
+  saveBtnText:   { color: COLORS.white, fontWeight: '700', fontSize: 14 },
 });
