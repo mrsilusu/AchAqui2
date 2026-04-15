@@ -200,6 +200,7 @@ function BookingDetailModal({ bk, onClose, onAction }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function ReservationMapModal({ businessId, accessToken, onClose, onBookingAction }) {
+  const insets = useSafeAreaInsets();
   const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [viewMode,  setViewMode]  = useState('month');
@@ -209,7 +210,6 @@ export function ReservationMapModal({ businessId, accessToken, onClose, onBookin
   const [collapsed,    setCollapsed]    = useState({});
   const [selectedBk,   setSelectedBk]  = useState(null);
   const alive = useRef(true);
-  const insets = useSafeAreaInsets();
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -548,7 +548,7 @@ export function ReservationMapModal({ businessId, accessToken, onClose, onBookin
 const gS = StyleSheet.create({
   root:           { flex: 1, backgroundColor: '#F5F4F0' },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                     paddingHorizontal: 16, paddingBottom: 12,
+                    paddingHorizontal: 16, paddingBottom: 12,
                     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E1D8' },
   iconBtn:        { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle:    { fontSize: 16, fontWeight: '700', color: '#111' },

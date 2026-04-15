@@ -243,6 +243,7 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
                       </View>
                       <Text style={s.staffEmail} numberOfLines={1}>{staff.email}</Text>
                       <Text style={s.staffDept}>{deptLabel(staff.department)}</Text>
+                      {/* Cargo badge + permissões operacionais */}
                       <View style={s.cardMeta}>
                         <RoleBadge department={staff.department} />
                         {PERMISSIONS_CATALOG.map((p) => (
@@ -440,11 +441,11 @@ const sCard = StyleSheet.create({
     paddingHorizontal: 5, paddingVertical: 2, borderRadius: 5,
     borderWidth: 1,
   },
-  dotOn: { backgroundColor: '#DCFCE7', borderColor: '#16A34A' },
-  dotOff: { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' },
-  dotText: { fontSize: 9, fontWeight: '600' },
-  dotTextOn: { color: '#15803D' },
-  dotTextOff: { color: '#94A3B8' },
+  dotOn:       { backgroundColor: '#DCFCE7', borderColor: '#16A34A' },
+  dotOff:      { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' },
+  dotText:     { fontSize: 9, fontWeight: '600' },
+  dotTextOn:   { color: '#15803D' },
+  dotTextOff:  { color: '#94A3B8' },
 });
 
 // ─── Styles ──────────────────────────────────────────────────────────────────

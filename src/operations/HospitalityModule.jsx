@@ -1322,9 +1322,8 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout, forceLimitedOwnerMode = false, staffRoleOverride = null }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
-  // Em modo staff (forceLimitedOwnerMode=true), ignorar ctx.ownerBusinessPrivate
-  // que pode ser o negócio hardcoded do AppContext (OWNER_BUSINESS) e não o negócio
-  // real do staff.
+  // Em modo staff (forceLimitedOwnerMode=true), ignorar ctx.ownerBusinessPrivate que pode ser
+  // o negócio hardcoded do AppContext (OWNER_BUSINESS) e não o negócio real do staff.
   const ownerBusinessPrivate = ownerBizProp ?? (forceLimitedOwnerMode ? null : ctx?.ownerBusinessPrivate) ?? business;
   const updateOwnerBiz = updateOwnerBizProp ?? ctx?.updateOwnerBiz ?? (() => {});
   const globalSellablePercent = useMemo(() => {
@@ -1365,7 +1364,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const canReception = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'reception');
   const canHousekeeping = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'housekeeping');
   const canBookingsMgr = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'bookingsManager');
-  const canStaffMgr = isOwner || (isStaff && (staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER'));
+  const canStaffMgr = isOwner || (isStaff && staffRole === 'HT_MANAGER');
 
   const handleStaffPinSuccess = useCallback(({ accessToken: token }) => {
     setStaffToken(token);
@@ -1884,6 +1883,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
         noShowAlertBookings={noShowAlertDismissed ? [] : noShowAlertBookings}
         onDismissNoShowAlert={() => setNoShowAlertDismissed(true)}
+        isLimitedStaffOwnerMode={isLimitedStaffOwnerMode}
       />
     );
   }

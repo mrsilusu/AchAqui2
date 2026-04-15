@@ -149,6 +149,7 @@ function RoomTaskCard({ room, staffList, onMarkClean, onMarkMaintenance, onAssig
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCompleted }) {
+  const insets = useSafeAreaInsets();
   const [rooms, setRooms]         = useState([]);
   const [staff, setStaff]         = useState([]);
   const [dashboard, setDashboard] = useState(null);
@@ -157,7 +158,6 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
   const [actionLoading, setActionLoading] = useState(null);
   const [filter, setFilter]       = useState('dirty'); // dirty | all
   const alive = useRef(true);
-  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     alive.current = true;
@@ -358,7 +358,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
 const hkS = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#F7F6F2' },
   header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    paddingHorizontal: 16, paddingBottom: 12,
+                   paddingHorizontal: 16, paddingBottom: 12,
                    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ECEAE3' },
   iconBtn:       { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle:   { fontSize: 16, fontWeight: '700', color: '#111' },

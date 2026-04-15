@@ -100,8 +100,6 @@ export class AuthService {
     businessId: string;
     staffRole: StaffRole;
     staffId: string;
-    sectionAccess: Record<string, boolean>;
-    sectionPerms: Record<string, string[]>;
   } | null> {
     // 1ª tentativa: coreBusinessStaff (tabela unificada)
     const assignment = await this.prisma.coreBusinessStaff.findFirst({
@@ -117,20 +115,13 @@ export class AuthService {
     if (assignment) {
       const htStaff = await this.prisma.htStaff.findFirst({
         where: { userId, businessId: assignment.businessId, isActive: true },
-        select: { id: true, sectionOverrides: true, department: true },
+        select: { id: true },
       });
       if (htStaff?.id) {
-        const sectionPerms = this.buildHtSectionPerms(
-          assignment.role,
-          htStaff.department,
-          htStaff.sectionOverrides as Record<string, string[]> | null | undefined,
-        );
         return {
           businessId: assignment.businessId,
           staffRole: assignment.role,
           staffId: htStaff.id,
-          sectionAccess: this.buildSectionAccessFromPerms(sectionPerms),
-          sectionPerms,
         };
       }
     }
@@ -139,7 +130,7 @@ export class AuthService {
     const htStaffDirect = await this.prisma.htStaff.findFirst({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, businessId: true, department: true, sectionOverrides: true },
+      select: { id: true, businessId: true, department: true },
     });
 
     if (!htStaffDirect) return null;
@@ -151,140 +142,11 @@ export class AuthService {
           ? StaffRole.HT_MANAGER
           : StaffRole.HT_HOUSEKEEPER;
 
-    const sectionPerms = this.buildHtSectionPerms(
-      inferredRole,
-      htStaffDirect.department,
-      htStaffDirect.sectionOverrides as Record<string, string[]> | null | undefined,
-    );
-
     return {
       businessId: htStaffDirect.businessId,
       staffRole: inferredRole,
       staffId: htStaffDirect.id,
-      sectionAccess: this.buildSectionAccessFromPerms(sectionPerms),
-      sectionPerms,
     };
-  }
-
-  private buildHtSectionPerms(
-    staffRole: StaffRole,
-    department: HtStaffDepartment,
-    sectionOverrides?: Record<string, string[]> | null,
-  ): Record<string, string[]> {
-    const resolvedRole = staffRole || (
-      department === HtStaffDepartment.RECEPTION
-        ? StaffRole.HT_RECEPTIONIST
-        : department === HtStaffDepartment.MANAGEMENT
-          ? StaffRole.HT_MANAGER
-          : StaffRole.HT_HOUSEKEEPER
-    );
-
-    const sectionPermCatalog: Record<string, string[]> = {
-      dashboard: [
-        'canViewDashboard',
-        'canViewReports',
-        'canViewAnalytics',
-        'canViewTodayMetrics',
-        'canViewRoomCalendar',
-      ],
-      reception: [
-        'canOpenReceptionPanel',
-        'canCheckIn',
-        'canCheckOut',
-        'canCreateBooking',
-        'canEditBooking',
-        'canCancelBookings',
-      ],
-      housekeeping: [
-        'canOpenHousekeepingPanel',
-        'canViewRoomsPanel',
-        'canManageRooms',
-        'canAssignTasks',
-        'canViewRoomStatus',
-      ],
-      bookingsManager: [
-        'canOpenReservationMap',
-        'canOpenGantt',
-        'canOpenGuestProfiles',
-        'canViewActivityLog',
-        'canViewAllBookings',
-        'canCancelBookings',
-        'canApplyDiscounts',
-        'canModifyPrices',
-      ],
-      staffManager: [
-        'canOpenStaffManager',
-        'canViewStaff',
-        'canCreateStaff',
-        'canEditStaff',
-        'canSuspendStaff',
-        'canViewAuditLog',
-      ],
-      financials: [
-        'canViewFinancials',
-        'canViewOccupancy',
-        'canViewADR',
-        'canViewRevPAR',
-        'canViewDailyRevenue',
-        'canExportReports',
-        'canManagePayments',
-      ],
-    };
-
-    const baseByRole: Record<string, Record<string, boolean>> = {
-      [StaffRole.HT_HOUSEKEEPER]: {
-        dashboard: false,
-        reception: false,
-        housekeeping: true,
-        bookingsManager: false,
-        staffManager: false,
-        financials: false,
-      },
-      [StaffRole.HT_RECEPTIONIST]: {
-        dashboard: true,
-        reception: true,
-        housekeeping: false,
-        bookingsManager: true,
-        staffManager: false,
-        financials: false,
-      },
-      [StaffRole.HT_MANAGER]: {
-        dashboard: true,
-        reception: true,
-        housekeeping: true,
-        bookingsManager: true,
-        staffManager: true,
-        financials: true,
-      },
-      [StaffRole.GENERAL_MANAGER]: {
-        dashboard: true,
-        reception: true,
-        housekeeping: true,
-        bookingsManager: true,
-        staffManager: true,
-        financials: true,
-      },
-    };
-
-    const merged: Record<string, string[]> = {};
-    const baseAccess = baseByRole[resolvedRole] ?? {};
-    for (const [sectionKey, enabled] of Object.entries(baseAccess)) {
-      merged[sectionKey] = enabled ? [...(sectionPermCatalog[sectionKey] ?? [])] : [];
-    }
-
-    for (const [sectionKey, perms] of Object.entries(sectionOverrides || {})) {
-      merged[sectionKey] = Array.isArray(perms) ? [...perms] : [];
-    }
-    return merged;
-  }
-
-  private buildSectionAccessFromPerms(sectionPerms: Record<string, string[]>): Record<string, boolean> {
-    return Object.fromEntries(
-      Object.entries(sectionPerms || {}).map(([sectionKey, perms]) => [
-        sectionKey,
-        Array.isArray(perms) && perms.length > 0,
-      ]),
-    );
   }
 
   private async createAccessToken(user: User) {
@@ -300,8 +162,6 @@ export class AuthService {
           staffRole: primaryHtContext.staffRole,
           businessId: primaryHtContext.businessId,
           staffId: primaryHtContext.staffId,
-          sectionAccess: primaryHtContext.sectionAccess,
-          sectionPerms: primaryHtContext.sectionPerms,
         }),
       },
       {
@@ -317,8 +177,6 @@ export class AuthService {
     staffRole?: StaffRole | null;
     businessId: string;
     staffId: string;
-    sectionAccess?: Record<string, boolean>;
-    sectionPerms?: Record<string, string[]>;
   }) {
     return this.jwtService.signAsync(
       {
@@ -328,8 +186,6 @@ export class AuthService {
         staffRole: params.staffRole ?? null,
         businessId: params.businessId,
         staffId: params.staffId,
-        sectionAccess: params.sectionAccess ?? {},
-        sectionPerms: params.sectionPerms ?? {},
       },
       {
         secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
@@ -427,41 +283,22 @@ export class AuthService {
     }
 
     if (user.role === UserRole.STAFF) {
+      // getPrimaryHtStaffContext já tem o fallback correcto para staff sem entrada em coreBusinessStaff
       const staffContext = await this.getPrimaryHtStaffContext(user.id);
-      if (!staffContext) throw new UnauthorizedException('Conta de staff inactiva.');
+
+      if (!staffContext) {
+        throw new UnauthorizedException('Conta de staff inactiva.');
+      }
+
       const accessToken = await this.createStaffAccessToken({
         userId: user.id,
         email: user.email,
         staffRole: staffContext.staffRole,
         businessId: staffContext.businessId,
         staffId: staffContext.staffId,
-        sectionAccess: staffContext.sectionAccess,
-        sectionPerms: staffContext.sectionPerms,
       });
       const refreshToken = await this.createRefreshToken(user);
       const staffRoles = await this.getActiveStaffRoles(user.id);
-
-      await this.prisma.coreAuditLog.create({
-        data: {
-          businessId: staffContext.businessId,
-          module: 'HT' as any,
-          action: 'CORE_STAFF_LOGIN' as any,
-          actorId: user.id,
-          resourceType: 'User',
-          resourceId: user.id,
-          newData: {
-            staffRole: staffContext.staffRole,
-            loginAt: new Date().toISOString(),
-            _meta: {
-              actorName: user.name,
-              actorEmail: user.email,
-              actorRole: staffContext.staffRole,
-              note: 'Login de staff efectuado com sucesso.',
-            },
-          },
-          note: 'Login de staff efectuado com sucesso.',
-        },
-      }).catch(() => {}); // silent — não bloquear login por falha de audit
 
       return {
         accessToken,
@@ -472,7 +309,7 @@ export class AuthService {
           name: user.name,
           role: user.role,
           staffRoles,
-          businessId: staffContext.businessId,
+          businessId: htStaff.businessId,
         },
       };
     }
@@ -500,7 +337,6 @@ export class AuthService {
         fullName: true,
         department: true,
         pinHash: true,
-        sectionOverrides: true,
       },
     });
 
@@ -537,20 +373,12 @@ export class AuthService {
           ? StaffRole.HT_MANAGER
           : StaffRole.HT_HOUSEKEEPER
     );
-    const staffSectionPerms = this.buildHtSectionPerms(
-      staffRole,
-      matchedStaff.department,
-      matchedStaff.sectionOverrides as Record<string, string[]> | null | undefined,
-    );
-    const staffSectionAccess = this.buildSectionAccessFromPerms(staffSectionPerms);
     const accessToken = await this.createStaffAccessToken({
       userId: matchedStaff.userId,
       email: matchedStaff.email,
       staffRole,
       businessId,
       staffId: matchedStaff.id,
-      sectionAccess: staffSectionAccess,
-      sectionPerms: staffSectionPerms,
     });
 
     return {
@@ -703,6 +531,15 @@ export class AuthService {
         businesses: user._count.businesses,
       },
     };
+  }
+
+  async updateProfile(userId: string, dto: { name: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { name: dto.name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+    return user;
   }
 
   async updateSettings(userId: string, settingsDto: any) {

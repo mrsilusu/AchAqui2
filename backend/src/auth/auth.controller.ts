@@ -45,6 +45,14 @@ export class AuthController {
     return this.authService.me(req.user.userId);
   }
 
+  @Patch('profile')
+  updateProfile(
+    @Req() req: { user: { userId: string } },
+    @Body() body: { name: string },
+  ) {
+    return this.authService.updateProfile(req.user.userId, body);
+  }
+
   @Patch('settings')
   updateSettings(
     @Req() req: { user: { userId: string } },

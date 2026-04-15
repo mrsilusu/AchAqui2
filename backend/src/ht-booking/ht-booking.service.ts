@@ -8,7 +8,6 @@ import {
 import { HtBookingStatus, HtRoomStatus, StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
-import { HtAuditService } from './ht-audit.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateHtBookingDto } from './dto/create-booking.dto';
@@ -22,7 +21,6 @@ export class HtBookingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsGateway: EventsGateway,
-    private readonly htAuditService: HtAuditService,
   ) {}
 
   private normalizeDocumentNumber(value?: string | null): string | null {
@@ -45,7 +43,7 @@ export class HtBookingService {
     const b = await this.prisma.business.findFirst({
       where: {
         id: businessId,
-        OR: [{ ownerId: actorId }],
+        OR: [{ ownerId: actorId }, { ownerId: null, id: businessId }],
       },
       select: { id: true },
     });
@@ -81,15 +79,16 @@ export class HtBookingService {
       },
       select: { id: true },
     });
-
     if (coreStaff) return true;
 
+    // Fallback: verificar ht_staff directamente (staff sem sincronização em coreBusinessStaff)
     const htStaff = await this.prisma.htStaff.findFirst({
       where: { businessId, userId, isActive: true },
       select: { department: true },
     });
     if (!htStaff) return false;
     if (!allowedRoles?.length) return true;
+
     const inferredRole = htStaff.department === 'RECEPTION'
       ? StaffRole.HT_RECEPTIONIST
       : htStaff.department === 'MANAGEMENT'
@@ -134,21 +133,22 @@ export class HtBookingService {
   // [AUDIT] Linha imutável no log central — nunca dados pessoais em previousData/newData.
   private async audit(params: {
     businessId: string; action: string; actorId: string;
-    resourceId: string; resourceType?: string; resourceName?: string; previousData?: object; newData?: object;
+    resourceId: string; previousData?: object; newData?: object;
     note?: string; ipAddress?: string;
   }) {
-    await this.htAuditService.log({
-      businessId: params.businessId,
-      module: 'HT' as any,
-      action: params.action,
-      actorId: params.actorId,
-      resourceType: params.resourceType || 'HtRoomBooking',
-      resourceId: params.resourceId,
-      resourceName: params.resourceName,
-      previousData: (params.previousData || {}) as any,
-      newData: (params.newData || {}) as any,
-      note: params.note,
-      ipAddress: params.ipAddress,
+    await this.prisma.coreAuditLog.create({
+      data: {
+        businessId:   params.businessId,
+        module:       'HT',
+        action:       params.action as any,
+        actorId:      params.actorId,
+        resourceType: 'HtRoomBooking',
+        resourceId:   params.resourceId,
+        previousData: params.previousData ?? {},
+        newData:      params.newData ?? {},
+        note:         params.note,
+        ipAddress:    params.ipAddress,
+      },
     });
   }
 
@@ -283,19 +283,6 @@ export class HtBookingService {
 
     const previousStatus = booking.status;
     const guestProfileId = await this.ensureGuestProfileForCheckIn(booking, dto);
-
-    // Verificar blacklist — hóspede bloqueado não pode fazer check-in
-    if (guestProfileId) {
-      const profile = await this.prisma.htGuestProfile.findUnique({
-        where: { id: guestProfileId },
-        select: { isBlacklisted: true, fullName: true },
-      });
-      if (profile?.isBlacklisted) {
-        throw new ForbiddenException(
-          `Check-in bloqueado: hóspede ${profile.fullName ?? ''} está em lista negra.`,
-        );
-      }
-    }
 
     // Se não veio roomId explícito, atribuir automaticamente um quarto CLEAN do tipo correcto.
     // Sem esta atribuição, o HtRoom nunca fica marcado como ocupado no dashboard.
@@ -1230,7 +1217,7 @@ export class HtBookingService {
       return updated;
     }
 
-    // CRIAR RESERVA (owner cria directamente no PMS)
+    // CRIAR RESERVA (owner ou recepcionista criam directamente no PMS)
     async createBooking(dto: CreateHtBookingDto, ownerId: string, actorRole: string = 'OWNER', actorBusinessId?: string) {
       await this.assertAccess(dto.businessId, ownerId, actorRole, actorBusinessId);
 

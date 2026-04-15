@@ -6,14 +6,10 @@ import {
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { HtAuditService } from './ht-audit.service';
 
 @Injectable()
 export class HtGuestService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly htAuditService: HtAuditService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private normalizeDocumentNumber(value?: string | null): string | null {
     const raw = String(value || '').trim();
@@ -53,6 +49,7 @@ export class HtGuestService {
     });
     if (staff) return;
 
+    // Fallback: verificar ht_staff directamente
     const htStaff = await this.prisma.htStaff.findFirst({
       where: { businessId, userId: actorId, isActive: true },
       select: { id: true },
@@ -128,7 +125,7 @@ export class HtGuestService {
     });
     if (exists) throw new BadRequestException('Número de documento já registado para outro hóspede neste estabelecimento.');
 
-    const created = await this.prisma.htGuestProfile.create({
+    return this.prisma.htGuestProfile.create({
       data: {
         businessId,
         fullName:       dto.fullName,
@@ -146,20 +143,6 @@ export class HtGuestService {
         isVip:          dto.isVip          ?? false,
       },
     });
-
-    await this.htAuditService.log({
-      businessId,
-      module: 'HT' as any,
-      action: 'HT_GUEST_CREATED',
-      actorId: ownerId,
-      resourceType: 'HtGuestProfile',
-      resourceId: created.id,
-      resourceName: created.fullName,
-      newData: { fullName: created.fullName, documentNumber: created.documentNumber },
-      note: `Perfil de hospede criado: ${created.fullName}.`,
-    });
-
-    return created;
   }
 
   // ─── Actualizar perfil ────────────────────────────────────────────────────
@@ -174,7 +157,6 @@ export class HtGuestService {
     await this.assertAccess(businessId, ownerId, actorRole, actorBusinessId);
     const guest = await this.prisma.htGuestProfile.findFirst({ where: { id, businessId } });
     if (!guest) throw new NotFoundException('Hóspede não encontrado.');
-    const previous = { fullName: guest.fullName, documentNumber: guest.documentNumber };
 
     const normalizedDocument = dto.documentNumber !== undefined
       ? this.normalizeDocumentNumber(dto.documentNumber)
@@ -197,7 +179,7 @@ export class HtGuestService {
       }
     }
 
-    const updated = await this.prisma.htGuestProfile.update({
+    return this.prisma.htGuestProfile.update({
       where: { id },
       data: {
         ...(dto.fullName       !== undefined && { fullName:       dto.fullName }),
@@ -216,21 +198,6 @@ export class HtGuestService {
         ...(dto.isBlacklisted  !== undefined && { isBlacklisted:  dto.isBlacklisted }),
       },
     });
-
-    await this.htAuditService.log({
-      businessId,
-      module: 'HT' as any,
-      action: 'HT_GUEST_UPDATED',
-      actorId: ownerId,
-      resourceType: 'HtGuestProfile',
-      resourceId: id,
-      resourceName: updated.fullName,
-      previousData: previous as any,
-      newData: { ...dto } as any,
-      note: `Perfil de hospede actualizado: ${updated.fullName}.`,
-    });
-
-    return updated;
   }
 
   // ─── Ligar hóspede a uma reserva ─────────────────────────────────────────

@@ -569,6 +569,7 @@ function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated 
 
 // ─── Ecrã principal ──────────────────────────────────────────────────────────────────────────────
 export function GuestsScreen({ businessId, accessToken, onClose }) {
+  const insets = useSafeAreaInsets();
   const [guests, setGuests]               = useState([]);
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
