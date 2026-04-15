@@ -66,6 +66,31 @@ export class MediaService {
     return this.upload(filePath, dto);
   }
 
+  async uploadRoomTypePhoto(ownerId: string, roomTypeId: string, dto: UploadBase64Dto) {
+    const roomType = await this.prisma.htRoomType.findUnique({
+      where: { id: roomTypeId },
+      include: {
+        business: {
+          select: {
+            id: true,
+            ownerId: true,
+          },
+        },
+      },
+    });
+
+    if (!roomType) {
+      throw new NotFoundException('Tipo de quarto não encontrado.');
+    }
+
+    if (roomType.business.ownerId !== ownerId) {
+      throw new ForbiddenException('Sem permissão para upload neste tipo de quarto.');
+    }
+
+    const filePath = `room-type/${roomTypeId}/${Date.now()}-${dto.fileName}`;
+    return this.upload(filePath, dto);
+  }
+
   private async upload(filePath: string, dto: UploadBase64Dto) {
     if (!this.supabase) {
       throw new ServiceUnavailableException(
