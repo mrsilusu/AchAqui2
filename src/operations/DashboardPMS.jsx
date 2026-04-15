@@ -139,7 +139,7 @@ function RoomRackModal({ rooms, onMarkClean, onMarkMaintenance, actionLoading, o
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={dS.root} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={dS.root} edges={['top', 'left', 'right', 'bottom']}>
         {/* Header */}
         <View style={dS.header}>
           <TouchableOpacity style={dS.iconBtn} onPress={onClose}>
@@ -875,7 +875,7 @@ export function DashboardPMS({
           accessToken={effectiveAccessToken}
           bookings={guestBookings}
           overbookingBuffer={Number(businessMetadata?.pms?.sellablePercent ?? 100)}
-          onClose={() => setShowGantt(false)}
+          onClose={() => { setShowGantt(false); load(true); }}
         />
       )}
 

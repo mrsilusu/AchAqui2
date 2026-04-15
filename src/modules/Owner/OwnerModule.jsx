@@ -27,7 +27,9 @@ import {
   Dimensions, Platform, Animated, PanResponder,
   KeyboardAvoidingView, Linking,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 
 import {
   Icon, COLORS, OWNER_BUSINESS,
@@ -339,6 +341,20 @@ export function OwnerModule({
   const scrollViewRef   = useRef(null);   // no-op ref — scroll to top não aplicável aqui
   const lastTapTime     = useRef(0);
   const cancelScrollRef = useRef(null);   // scroll no modal de cancelamento
+  const tabFocusAnimRef = useRef({
+    dashboard:    new Animated.Value(0),
+    notifications: new Animated.Value(0),
+    mybusiness:   new Animated.Value(0),
+    exitbusiness: new Animated.Value(0),
+  }).current;
+  const triggerTabFocusAnim = useCallback((tabId) => {
+    if (!tabFocusAnimRef[tabId]) return;
+    tabFocusAnimRef[tabId].setValue(0);
+    Animated.sequence([
+      Animated.timing(tabFocusAnimRef[tabId], { toValue: 1, duration: 150, useNativeDriver: false }),
+      Animated.timing(tabFocusAnimRef[tabId], { toValue: 0, duration: 150, useNativeDriver: false }),
+    ]).start();
+  }, [tabFocusAnimRef]);
   const openCal = useCallback((label, currentVal, onConfirm, minDate) => {
     const safe = (currentVal && /^\d{4}-\d{2}-\d{2}$/.test(currentVal)) ? currentVal : '';
     setCalLabel(label); setCalValue(safe); setCalMinDate(minDate || undefined);
@@ -583,6 +599,40 @@ export function OwnerModule({
   const ownerBusinessId = React.useMemo(() => {
     return ownerBiz?.id || null;
   }, [ownerBiz]);
+  const ownerPhotosStorageKey = useMemo(
+    () => `owner_business_photos_${ownerBusinessId || OWNER_BUSINESS.id}`,
+    [ownerBusinessId]
+  );
+
+  useEffect(() => {
+    const photosFromBiz = Array.isArray(ownerBiz?.photos) ? ownerBiz.photos : [];
+    if (photosFromBiz.length > 0) {
+      setOwnerPhotos(photosFromBiz);
+      OWNER_BUSINESS.photos = photosFromBiz;
+      return;
+    }
+    const fallback = Array.isArray(OWNER_BUSINESS.photos) ? OWNER_BUSINESS.photos : [];
+    setOwnerPhotos(fallback);
+  }, [ownerBiz?.id, ownerBiz?.photos]);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(ownerPhotosStorageKey)
+      .then((raw) => {
+        if (cancelled || !raw) return;
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        setOwnerPhotos(parsed);
+        OWNER_BUSINESS.photos = parsed;
+        if (ownerBusinessId) {
+          onUpdateBusiness({ photos: parsed }, ownerBusinessId);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerPhotosStorageKey, ownerBusinessId, onUpdateBusiness]);
 
   // ── Quartos físicos ──────────────────────────────────────────────────────────
   const loadHtRooms = useCallback(async () => {
@@ -732,6 +782,72 @@ export function OwnerModule({
     }
   }, []);
 
+  const appendOwnerPhoto = useCallback((uri) => {
+    if (!uri || typeof uri !== 'string') return;
+    const current = ownerPhotos || [];
+    if (current.includes(uri)) {
+      Alert.alert('Foto já adicionada', 'Esta foto já existe na galeria do negócio.');
+      return;
+    }
+    const updated = [...current, uri];
+    OWNER_BUSINESS.photos = updated;
+    setOwnerPhotos(updated);
+    updateOwnerBiz({ photos: updated });
+    AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
+  }, [ownerPhotos, ownerPhotosStorageKey, updateOwnerBiz]);
+
+  const pickPhotoFromGallery = useCallback(async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão necessária', 'Permita acesso à galeria para escolher uma foto.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (uri) appendOwnerPhoto(uri);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível abrir a galeria.');
+    }
+  }, [appendOwnerPhoto]);
+
+  const takePhotoWithCamera = useCallback(async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão necessária', 'Permita acesso à câmera para tirar uma foto.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (uri) appendOwnerPhoto(uri);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível abrir a câmera.');
+    }
+  }, [appendOwnerPhoto]);
+
+  const handleAddPhotoAction = useCallback(() => {
+    Alert.alert('Adicionar foto', 'Escolha de onde importar a foto.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Tirar Foto', onPress: takePhotoWithCamera },
+      { text: 'Escolher da Galeria', onPress: pickPhotoFromGallery },
+    ]);
+  }, [pickPhotoFromGallery, takePhotoWithCamera]);
+
   const syncPromoDeals = useCallback((updatedPromotions) => {
     const deals = updatedPromotions.filter(p => p.active).map(p => ({
       id: p.id, title: p.title, description: p.description || '', expires: p.endDate || '',
@@ -742,6 +858,56 @@ export function OwnerModule({
     updateOwnerBiz({ deals, promo: activePromo ? activePromo.title : null });
     onSyncPromoDeals?.(updatedPromotions);
   }, [updateOwnerBiz, onSyncPromoDeals]);
+
+  const closeOwnerTabOverlays = useCallback(() => {
+    setShowModulesModal(false);
+    setShowMenuEditor(false);
+    setShowMenuItemForm(false);
+    setShowInventoryEditor(false);
+    setShowInventoryForm(false);
+    setShowServicesEditor(false);
+    setShowServiceForm(false);
+    setShowRoomsEditor(false);
+    setShowRoomForm(false);
+    setShowRoomTypesEditor(false);
+    setShowRoomBookingsManager(false);
+    setShowDashboard(false);
+    setShowReception(false);
+    setShowStaffMgmtFromDashboard(false);
+    setShowDeliveryConfig(false);
+    setShowDeliveryForm(false);
+    setShowCustomOrders(false);
+    setShowCustomOrderDetail(false);
+    setShowDeliveryOrders(false);
+    setShowDeliveryOrderDetail(false);
+    setShowEditOrder(false);
+    setShowEditDelivery(false);
+    setShowCancelReason(false);
+    setShowReservationsModal(false);
+    setShowResCancelModal(false);
+    setShowPromoCodeModal(false);
+    setShowAmenitiesModal(false);
+    setShowPhotoUpload(false);
+    setShowConfigModal(false);
+    setShowOwnerCategoryPicker(false);
+    setShowOwnerSubCategoryPicker(false);
+    setShowICalModal(false);
+    setShowSettings(false);
+    setShowHighlightsEditor(false);
+    setShowPortfolioEditor(false);
+    setShowServicesOfferedEditor(false);
+    setShowAvailabilityEditor(false);
+    setShowPopularDishesEditor(false);
+    setShowNotifDetail(false);
+    setShowPhotosManager(false);
+    setShowOccupancyEditor(false);
+    setShowFeaturedModal(false);
+    setShowProfileModal(false);
+    setShowClaimFlow(false);
+    setShowPromoManager(false);
+    setShowPromoForm(false);
+    setShowReplyModal(false);
+  }, []);
 
   useEffect(() => {
     if (authRole !== 'OWNER' || !Array.isArray(liveNotifications) || liveNotifications.length === 0) {
@@ -2019,6 +2185,7 @@ export function OwnerModule({
               business={ownerBiz}
               ownerMode={true}
               tenantId={ownerBusinessId}
+              accessToken={accessToken}
               openStaffOnMount={openStaffOnHospitalityEntry}
               onOpenStaffConsumed={() => setOpenStaffOnHospitalityEntry(false)}
               ownerBusinessPrivate={ownerBiz}
@@ -4893,10 +5060,25 @@ export function OwnerModule({
         ]).map(tab => {
           const active = activeBusinessTab === tab.id || (tab.id === "dashboard" && !["notifications","mybusiness","exitbusiness"].includes(activeBusinessTab) && ["home","search","featured","profile"].includes(tab.id) && false);
           return (
-            <TouchableOpacity
-              key={tab.id}
-              style={NAV_BAR_STYLES.tab}
-              onPress={() => {
+            <Animated.View
+              key={`${tab.id}-focus`}
+              style={[
+                NAV_BAR_STYLES.tab,
+                {
+                  transform: [
+                    {
+                      scale: tabFocusAnimRef[tab.id]?.interpolate?.({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.15],
+                      }) || 1,
+                    },
+                  ],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+                onPress={() => {
                 // Double-tap detection for scroll to top
                 const now = Date.now();
                 const DOUBLE_TAP_DELAY = 300;
@@ -4907,137 +5089,23 @@ export function OwnerModule({
                   return;
                 }
                 lastTapTime.current = now;
-                if (["home","search","featured","profile"].includes(tab.id)) { onExitOwnerMode(); return; }
-                // Close autocomplete on any nav tap except search
-                if (tab.id !== 'search') {
-                  
-                }
-                // Handle each tab action
-                if (tab.id === 'home') {
-                  setShowProfileModal(false);
-                  setShowFeaturedModal(false);
-                }
-                else if (tab.id === 'search') {
-                  setShowProfileModal(false);
-                  setShowFeaturedModal(false);
-                  
-                  
-                }
-                else if (tab.id === 'featured') {
-                  setShowProfileModal(false);
-                  setShowFeaturedModal(false);
-                  
-                }
-                else if (tab.id === 'profile') {
-                  setShowFeaturedModal(false);
-                  setShowProfileModal(!showProfileModal);
-                }
-                else if (tab.id === 'dashboard') {
+                triggerTabFocusAnim(tab.id);
+                closeOwnerTabOverlays();
+                if (tab.id === 'exitbusiness') {
                   setActiveBusinessTab('dashboard');
-                  setShowReservationsModal(false);
-                  setShowPromoCodeModal(false);
-                  setShowPromoManager(false);
-                  setShowPromoForm(false);
-                  setShowReplyModal(false);
-                  setShowAmenitiesModal(false);
-                  setShowModulesModal(false);
-                  setShowMenuEditor(false);
-                  setShowMenuItemForm(false);
-                  setShowInventoryEditor(false);
-                  setShowInventoryForm(false);
-                  setShowServicesEditor(false);
-                  setShowServiceForm(false);
-                  setShowRoomsEditor(false);
-                  setShowRoomForm(false);
-                  setShowDeliveryConfig(false);
-                  setShowDeliveryForm(false);
-                  setShowCustomOrders(false);
-                  setShowCustomOrderDetail(false);
-                  setShowDeliveryOrders(false);
-                  setShowDeliveryOrderDetail(false);
-                }
-                else if (tab.id === 'notifications') {
-                  setActiveBusinessTab('notifications');
-                  setShowReservationsModal(false);
-                  setShowPromoCodeModal(false);
-                  setShowPromoManager(false);
-                  setShowPromoForm(false);
-                  setShowReplyModal(false);
-                  setShowAmenitiesModal(false);
-                  setShowModulesModal(false);
-                  setShowMenuEditor(false);
-                  setShowMenuItemForm(false);
-                  setShowInventoryEditor(false);
-                  setShowInventoryForm(false);
-                  setShowServicesEditor(false);
-                  setShowServiceForm(false);
-                  setShowRoomsEditor(false);
-                  setShowRoomForm(false);
-                  setShowDeliveryConfig(false);
-                  setShowDeliveryForm(false);
-                  setShowCustomOrders(false);
-                  setShowCustomOrderDetail(false);
-                  setShowDeliveryOrders(false);
-                  setShowDeliveryOrderDetail(false);
-                }
-                else if (tab.id === 'mybusiness') {
-                  setActiveBusinessTab('mybusiness');
-                  setShowReservationsModal(false);
-                  setShowPromoCodeModal(false);
-                  setShowPromoManager(false);
-                  setShowPromoForm(false);
-                  setShowReplyModal(false);
-                  setShowAmenitiesModal(false);
-                  setShowModulesModal(false);
-                  setShowMenuEditor(false);
-                  setShowMenuItemForm(false);
-                  setShowInventoryEditor(false);
-                  setShowInventoryForm(false);
-                  setShowServicesEditor(false);
-                  setShowServiceForm(false);
-                  setShowRoomsEditor(false);
-                  setShowRoomForm(false);
-                  setShowDeliveryConfig(false);
-                  setShowDeliveryForm(false);
-                  setShowCustomOrders(false);
-                  setShowCustomOrderDetail(false);
-                  setShowDeliveryOrders(false);
-                  setShowDeliveryOrderDetail(false);
-                }
-                else if (tab.id === 'exitbusiness') {
-                  // exit handled by onExitOwnerMode below
-                  setActiveBusinessTab('dashboard');
-                  setShowReservationsModal(false);
-                  setShowPromoCodeModal(false);
-                  setShowPromoManager(false);
-                  setShowPromoForm(false);
-                  setShowReplyModal(false);
-                  setShowAmenitiesModal(false);
-                  setShowModulesModal(false);
-                  setShowMenuEditor(false);
-                  setShowMenuItemForm(false);
-                  setShowInventoryEditor(false);
-                  setShowInventoryForm(false);
-                  setShowServicesEditor(false);
-                  setShowServiceForm(false);
-                  setShowRoomsEditor(false);
-                  setShowRoomForm(false);
-                  setShowDeliveryConfig(false);
-                  setShowDeliveryForm(false);
-                  setShowCustomOrders(false);
-                  setShowCustomOrderDetail(false);
-                  setShowDeliveryOrders(false);
-                  setShowDeliveryOrderDetail(false);
                   onExitOwnerMode();
+                  return;
                 }
+                setActiveBusinessTab(tab.id);
               }}
               activeOpacity={0.75}
             >
-              <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
-                <Icon name={tab.icon} size={20} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
-              </View>
-              <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
-            </TouchableOpacity>
+                <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
+                  <Icon name={tab.icon} size={20} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
+                </View>
+                <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
+              </TouchableOpacity>
+            </Animated.View>
           );
         })}
       </View>
@@ -5191,22 +5259,7 @@ export function OwnerModule({
             </TouchableOpacity>
             <Text style={profS.headerTitle}>Fotos do Negócio</Text>
             <TouchableOpacity
-              onPress={() => {
-                const sample = [
-                  'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
-                  'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400',
-                  'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400',
-                  'https://images.unsplash.com/photo-1571997478779-2adcbbe9ab2f?w=400',
-                ];
-                const next = sample.find(url => !(OWNER_BUSINESS.photos || []).includes(url));
-                if (next) {
-                  const updated = [...(OWNER_BUSINESS.photos || []), next];
-                  OWNER_BUSINESS.photos = updated;
-                  updateOwnerBiz({ photos: updated });
-                } else {
-                  Alert.alert('Máximo', 'Todas as fotos de amostra já foram adicionadas.');
-                }
-              }}
+              onPress={handleAddPhotoAction}
               style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.grayBg, alignItems: 'center', justifyContent: 'center' }}
               activeOpacity={0.7}
             >
@@ -5218,13 +5271,13 @@ export function OwnerModule({
             <View style={{ padding: 16 }}>
               {/* Count info */}
               <Text style={photoS.countInfo}>
-                {(OWNER_BUSINESS.photos || []).length} foto{(OWNER_BUSINESS.photos || []).length !== 1 ? 's' : ''} · A primeira é a foto de capa
+                {(ownerPhotos || []).length} foto{(ownerPhotos || []).length !== 1 ? 's' : ''} · A primeira é a foto de capa
               </Text>
 
               {/* Photo Grid */}
-              {(OWNER_BUSINESS.photos || []).length > 0 ? (
+              {(ownerPhotos || []).length > 0 ? (
                 <View style={photoS.grid}>
-                  {(OWNER_BUSINESS.photos || []).map((photo, idx) => (
+                  {(ownerPhotos || []).map((photo, idx) => (
                     <View key={idx} style={photoS.gridItem}>
                       <Image source={{ uri: photo }} style={photoS.gridPhoto} resizeMode="cover" />
                       {/* Capa badge on first photo */}
@@ -5237,9 +5290,11 @@ export function OwnerModule({
                       <TouchableOpacity
                         style={photoS.removeBtn}
                         onPress={() => {
-                          const updated = (OWNER_BUSINESS.photos || []).filter((_, i) => i !== idx);
+                          const updated = (ownerPhotos || []).filter((_, i) => i !== idx);
                           OWNER_BUSINESS.photos = updated;
+                          setOwnerPhotos(updated);
                           updateOwnerBiz({ photos: updated });
+                          AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
                         }}
                         activeOpacity={0.8}
                       >
@@ -5250,9 +5305,11 @@ export function OwnerModule({
                         <TouchableOpacity
                           style={photoS.setCapaOverlay}
                           onPress={() => {
-                            const updated = [(OWNER_BUSINESS.photos || [])[idx], ...(OWNER_BUSINESS.photos || []).filter((_, i) => i !== idx)];
+                            const updated = [(ownerPhotos || [])[idx], ...(ownerPhotos || []).filter((_, i) => i !== idx)];
                             OWNER_BUSINESS.photos = updated;
+                            setOwnerPhotos(updated);
                             updateOwnerBiz({ photos: updated });
+                            AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
                           }}
                           activeOpacity={0.8}
                         >
@@ -5274,7 +5331,7 @@ export function OwnerModule({
               <TouchableOpacity
                 style={photoS.addBtn}
                 activeOpacity={0.8}
-                onPress={() => Alert.alert('Câmara', 'Tirar nova foto (disponível na versão publicada)')}
+                onPress={takePhotoWithCamera}
               >
                 <Icon name="camera" size={18} color={COLORS.red} strokeWidth={2} />
                 <Text style={photoS.addBtnText}>Tirar Foto</Text>
@@ -5282,7 +5339,7 @@ export function OwnerModule({
               <TouchableOpacity
                 style={[photoS.addBtn, { marginTop: 8 }]}
                 activeOpacity={0.8}
-                onPress={() => Alert.alert('Galeria', 'Escolher da galeria (disponível na versão publicada)')}
+                onPress={pickPhotoFromGallery}
               >
                 <Icon name="camera" size={18} color={COLORS.red} strokeWidth={2} />
                 <Text style={photoS.addBtnText}>Escolher da Galeria</Text>

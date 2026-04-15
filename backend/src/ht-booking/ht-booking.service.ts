@@ -381,8 +381,22 @@ export class HtBookingService {
       action:       'HT_BOOKING_CHECKED_IN',
       actorId:      ownerId,
       resourceId:   bookingId,
-      previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.CHECKED_IN, roomId: updated.roomId, checkedInAt: updated.checkedInAt, earlyCheckInFee },
+      resourceName: `Reserva ${booking.guestName || booking.user?.name || bookingId.slice(0, 8)}`,
+      previousData: {
+        status: previousStatus,
+        roomId: booking.roomId,
+      },
+      newData: {
+        status: HtBookingStatus.CHECKED_IN,
+        roomId: updated.roomId,
+        roomNumber: updated.room?.number || null,
+        roomTypeName: updated.roomType?.name || null,
+        guestName: booking.guestName || booking.user?.name || null,
+        startDate: booking.startDate,
+        endDate: booking.endDate,
+        checkedInAt: updated.checkedInAt,
+        earlyCheckInFee,
+      },
       ipAddress:    ip,
     });
 
@@ -467,14 +481,24 @@ export class HtBookingService {
       action:       'HT_BOOKING_CHECKED_OUT',
       actorId:      ownerId,
       resourceId:   bookingId,
-      previousData: { status: previousStatus, endDate: booking.endDate },
+      resourceName: `Reserva ${booking.guestName || booking.user?.name || bookingId.slice(0, 8)}`,
+      previousData: {
+        status: previousStatus,
+        endDate: booking.endDate,
+        roomId: booking.roomId,
+        guestName: booking.guestName || booking.user?.name || null,
+      },
       newData: {
         status: HtBookingStatus.CHECKED_OUT,
+        roomId: updated.room?.id || booking.roomId || null,
+        roomNumber: updated.room?.number || null,
+        guestName: booking.guestName || booking.user?.name || null,
         checkedOutAt: now,
         plannedEndDate: plannedEnd,
         actualNights: realNights,
         plannedNights,
         folioAdjusted,
+        totalPrice: updated.totalPrice,
       },
       ipAddress: ip,
     });
@@ -552,8 +576,19 @@ export class HtBookingService {
       action:       'HT_BOOKING_NO_SHOW',
       actorId:      ownerId,
       resourceId:   bookingId,
-      previousData: { status: previousStatus },
-      newData:      { status: HtBookingStatus.NO_SHOW, noShowAt: updated.noShowAt },
+      resourceName: `Reserva ${booking.guestName || (booking as any).user?.name || bookingId.slice(0, 8)}`,
+      previousData: {
+        status: previousStatus,
+        guestName: booking.guestName || (booking as any).user?.name || null,
+        startDate: booking.startDate,
+        endDate: booking.endDate,
+      },
+      newData: {
+        status: HtBookingStatus.NO_SHOW,
+        guestName: booking.guestName || (booking as any).user?.name || null,
+        roomNumber: (booking as any).room?.number || null,
+        noShowAt: updated.noShowAt,
+      },
       ipAddress:    ip,
     });
 
@@ -598,8 +633,14 @@ export class HtBookingService {
       action: 'HT_BOOKING_MODIFIED',
       actorId: ownerId,
       resourceId: bookingId,
+      resourceName: `Reserva ${booking.guestName || (booking as any).user?.name || bookingId.slice(0, 8)}`,
       previousData: { startDate: previousStart, endDate: previousEnd },
-      newData: { startDate: newStart, endDate: newEnd, reason: 'postpone_noshow' },
+      newData: {
+        startDate: newStart,
+        endDate: newEnd,
+        guestName: booking.guestName || (booking as any).user?.name || null,
+        reason: 'postpone_noshow',
+      },
       ipAddress: ip,
     });
 
@@ -692,8 +733,19 @@ export class HtBookingService {
       action: 'HT_BOOKING_REVERT_NO_SHOW',
       actorId: ownerId,
       resourceId: bookingId,
-      previousData: { status: HtBookingStatus.NO_SHOW },
-      newData: { status: HtBookingStatus.CHECKED_IN, applyPenalty, penaltyAmount, newTotalPrice },
+      resourceName: `Reserva ${booking.guestName || (booking as any).user?.name || bookingId.slice(0, 8)}`,
+      previousData: {
+        status: HtBookingStatus.NO_SHOW,
+        guestName: booking.guestName || (booking as any).user?.name || null,
+      },
+      newData: {
+        status: HtBookingStatus.CHECKED_IN,
+        guestName: booking.guestName || (booking as any).user?.name || null,
+        roomNumber: (booking as any).room?.number || null,
+        applyPenalty,
+        penaltyAmount,
+        newTotalPrice,
+      },
       note: `applyPenalty=${applyPenalty} | penalty=${penaltyAmount}`,
       ipAddress: ip,
     });
@@ -741,8 +793,19 @@ export class HtBookingService {
       action: 'HT_BOOKING_CANCELLED',
       actorId: ownerId,
       resourceId: bookingId,
-      previousData: { status: previousStatus },
-      newData: { status: HtBookingStatus.CANCELLED, cancelledAt: updated.cancelledAt, cancelReason: reason },
+      resourceName: `Reserva ${booking.guestName || booking.user?.name || bookingId.slice(0, 8)}`,
+      previousData: {
+        status: previousStatus,
+        guestName: booking.guestName || booking.user?.name || null,
+        startDate: booking.startDate,
+        endDate: booking.endDate,
+      },
+      newData: {
+        status: HtBookingStatus.CANCELLED,
+        guestName: booking.guestName || booking.user?.name || null,
+        cancelledAt: updated.cancelledAt,
+        cancelReason: reason,
+      },
       note: reason,
       ipAddress: ip,
     });
@@ -1223,8 +1286,16 @@ export class HtBookingService {
         action:       'HT_BOOKING_CONFIRMED',
         actorId:      ownerId,
         resourceId:   bookingId,
+        resourceName: `Reserva ${booking.guestName || booking.user?.name || bookingId.slice(0, 8)}`,
         previousData: { status: booking.status },
-        newData:      { status: HtBookingStatus.CONFIRMED, confirmedAt: updated.confirmedAt },
+        newData: {
+          status: HtBookingStatus.CONFIRMED,
+          confirmedAt: updated.confirmedAt,
+          guestName: booking.guestName || booking.user?.name || null,
+          startDate: booking.startDate,
+          endDate: booking.endDate,
+          totalPrice: booking.totalPrice,
+        },
         ipAddress:    ip,
       });
       return updated;
@@ -1278,10 +1349,69 @@ export class HtBookingService {
         action:     'HT_BOOKING_CREATED',
         actorId:    ownerId,
         resourceId: booking.id,
-        newData:    { status: HtBookingStatus.CONFIRMED, totalPrice },
+        resourceName: `Reserva ${dto.guestName || booking.id.slice(0, 8)}`,
+        newData: {
+          status: HtBookingStatus.CONFIRMED,
+          guestName: dto.guestName || null,
+          guestPhone: dto.guestPhone || null,
+          roomTypeId: dto.roomTypeId,
+          roomTypeName: roomType.name,
+          startDate,
+          endDate,
+          adults: dto.adults ?? 1,
+          children: dto.children ?? 0,
+          totalPrice,
+        },
       });
 
       return booking;
+    }
+
+    async getRoomTypes(businessId: string, requesterId: string, requesterRole: string = 'OWNER', requesterBusinessId?: string) {
+      await this.assertAccess(businessId, requesterId, requesterRole, requesterBusinessId);
+      return this.prisma.htRoomType.findMany({
+        where: { businessId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    async updateRoomType(
+      id: string,
+      requesterId: string,
+      requesterRole: string,
+      dto: {
+        businessId: string;
+        photos?: string[];
+        amenities?: string[];
+        name?: string;
+        description?: string;
+      },
+      requesterBusinessId?: string,
+    ) {
+      await this.assertAccess(dto.businessId, requesterId, requesterRole, requesterBusinessId);
+
+      const roomType = await this.prisma.htRoomType.findFirst({
+        where: { id, businessId: dto.businessId },
+        include: { business: { select: { ownerId: true } } },
+      });
+
+      if (!roomType) {
+        throw new NotFoundException('Tipo de quarto não encontrado.');
+      }
+
+      if (dto.photos && dto.photos.length > 10) {
+        throw new BadRequestException('Máximo de 10 fotos permitido.');
+      }
+
+      return this.prisma.htRoomType.update({
+        where: { id },
+        data: {
+          ...(dto.photos !== undefined && { photos: dto.photos }),
+          ...(dto.amenities !== undefined && { amenities: dto.amenities }),
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.description !== undefined && { description: dto.description }),
+        },
+      });
     }
 
     // ACTUALIZAR CONFIGURAÇÃO PMS (overbookingBuffer e outros campos tipados)

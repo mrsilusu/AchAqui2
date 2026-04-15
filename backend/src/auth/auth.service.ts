@@ -273,7 +273,28 @@ export class AuthService {
     }
 
     for (const [sectionKey, perms] of Object.entries(sectionOverrides || {})) {
-      merged[sectionKey] = Array.isArray(perms) ? [...perms] : [];
+      if (Array.isArray(perms)) {
+        merged[sectionKey] = [...perms];
+        continue;
+      }
+
+      // Compatibilidade com formatos legados:
+      // - boolean true/false por secção
+      // - objeto { permKey: boolean }
+      if (typeof perms === 'boolean') {
+        merged[sectionKey] = perms ? [...(sectionPermCatalog[sectionKey] ?? [])] : [];
+        continue;
+      }
+
+      if (perms && typeof perms === 'object') {
+        const enabledPerms = Object.entries(perms as Record<string, unknown>)
+          .filter(([, enabled]) => !!enabled)
+          .map(([permKey]) => permKey);
+        merged[sectionKey] = enabledPerms;
+        continue;
+      }
+
+      merged[sectionKey] = [];
     }
     return merged;
   }

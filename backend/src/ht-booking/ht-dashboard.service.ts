@@ -411,6 +411,13 @@ export class HtDashboardService {
       orderBy: { completedAt: 'desc' },
     });
     if (!task) {
+      if (room.status === 'CLEAN') {
+        return {
+          ok: true,
+          alreadyApproved: true,
+          roomId,
+        };
+      }
       throw new BadRequestException('Não há tarefa concluída pendente de inspeção para este quarto.');
     }
 
@@ -429,18 +436,22 @@ export class HtDashboardService {
       return inspectedTask;
     });
 
-    await this.htAuditService.log({
-      businessId: room.business.id,
-      module: 'HT' as any,
-      action: 'HT_HK_TASK_INSPECTED',
-      actorId: ownerId,
-      resourceType: 'HtRoom',
-      resourceId: roomId,
-      resourceName: `Quarto ${room.number}`,
-      previousData: { status: room.status },
-      newData: { status: 'CLEAN' },
-      note: 'Quarto inspecionado e libertado para venda.',
-    });
+    try {
+      await this.htAuditService.log({
+        businessId: room.business.id,
+        module: 'HT' as any,
+        action: 'HT_HK_TASK_INSPECTED',
+        actorId: ownerId,
+        resourceType: 'HtRoom',
+        resourceId: roomId,
+        resourceName: `Quarto ${room.number}`,
+        previousData: { status: room.status },
+        newData: { status: 'CLEAN' },
+        note: 'Quarto inspecionado e libertado para venda.',
+      });
+    } catch {
+      // Auditoria não deve impedir sucesso operacional da inspeção.
+    }
 
     return inspectedTask;
   }

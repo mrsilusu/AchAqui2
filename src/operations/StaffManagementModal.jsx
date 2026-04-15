@@ -287,76 +287,86 @@ export default function StaffManagementModal({ visible, businessId, accessToken,
               <Text style={s.addBtnText}>+ Novo Funcionário</Text>
             </TouchableOpacity>
           ) : (
-            <View style={s.createForm}>
-              <Text style={s.createTitle}>Novo Funcionário</Text>
-              <TextInput style={s.input} placeholder="Nome completo *" placeholderTextColor={COLORS.muted} value={form.fullName}
-                onChangeText={(v) => setForm((f) => ({ ...f, fullName: v }))} />
-              <TextInput style={s.input} placeholder="Email *" placeholderTextColor={COLORS.muted} value={form.email}
-                keyboardType="email-address" autoCapitalize="none"
-                onChangeText={(v) => setForm((f) => ({ ...f, email: v }))} />
-              <TextInput style={s.input} placeholder="Telemóvel" placeholderTextColor={COLORS.muted} value={form.phone}
-                keyboardType="phone-pad"
-                onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} />
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 28 : 0}
+            >
+              <ScrollView
+                style={s.createForm}
+                contentContainerStyle={{ paddingBottom: 24 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={s.createTitle}>Novo Funcionário</Text>
+                <TextInput style={s.input} placeholder="Nome completo *" placeholderTextColor={COLORS.muted} value={form.fullName}
+                  onChangeText={(v) => setForm((f) => ({ ...f, fullName: v }))} />
+                <TextInput style={s.input} placeholder="Email *" placeholderTextColor={COLORS.muted} value={form.email}
+                  keyboardType="email-address" autoCapitalize="none"
+                  onChangeText={(v) => setForm((f) => ({ ...f, email: v }))} />
+                <TextInput style={s.input} placeholder="Telemóvel" placeholderTextColor={COLORS.muted} value={form.phone}
+                  keyboardType="phone-pad"
+                  onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} />
 
-              <Text style={s.fieldLabel}>Departamento</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                {DEPARTMENTS.map((d) => (
+                <Text style={s.fieldLabel}>Departamento</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {DEPARTMENTS.map((d) => (
+                    <TouchableOpacity
+                      key={d.key}
+                      style={[s.deptChip, form.department === d.key && s.deptChipActive]}
+                      onPress={() => setForm((f) => ({ ...f, department: d.key }))}
+                    >
+                      <Text style={[s.deptChipText, form.department === d.key && s.deptChipTextActive]}>
+                        {d.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" placeholderTextColor={COLORS.muted} value={form.pin}
+                  keyboardType="numeric" secureTextEntry maxLength={8}
+                  onChangeText={(v) => setForm((f) => ({ ...f, pin: v.replace(/\D/g, '') }))} />
+                <View style={s.accountNowRow}>
                   <TouchableOpacity
-                    key={d.key}
-                    style={[s.deptChip, form.department === d.key && s.deptChipActive]}
-                    onPress={() => setForm((f) => ({ ...f, department: d.key }))}
+                    style={[s.checkbox, form.createAppAccount && s.checkboxActive]}
+                    onPress={() => setForm((f) => ({ ...f, createAppAccount: !f.createAppAccount }))}
                   >
-                    <Text style={[s.deptChipText, form.department === d.key && s.deptChipTextActive]}>
-                      {d.label}
-                    </Text>
+                    {form.createAppAccount ? <Text style={s.checkboxTick}>✓</Text> : null}
                   </TouchableOpacity>
-                ))}
+                  <Text style={s.fieldLabel}>Criar conta App agora</Text>
+                </View>
+                {form.createAppAccount && (
+                  <TextInput
+                    style={s.input}
+                    placeholder="Password da conta App (mín. 6)"
+                    placeholderTextColor={COLORS.muted}
+                    value={form.accountPassword}
+                    secureTextEntry
+                    onChangeText={(v) => setForm((f) => ({ ...f, accountPassword: v }))}
+                  />
+                )}
+                <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" placeholderTextColor={COLORS.muted} value={form.documentType}
+                  onChangeText={(v) => setForm((f) => ({ ...f, documentType: v }))} />
+                <TextInput style={s.input} placeholder="Nº documento" placeholderTextColor={COLORS.muted} value={form.documentNumber}
+                  onChangeText={(v) => setForm((f) => ({ ...f, documentNumber: v }))} />
+                <TextInput style={s.input} placeholder="Início de emprego (AAAA-MM-DD)" placeholderTextColor={COLORS.muted} value={form.employmentStart}
+                  onChangeText={(v) => setForm((f) => ({ ...f, employmentStart: v }))} />
+                <TextInput style={[s.input, { height: 72, textAlignVertical: 'top' }]}
+                  placeholder="Notas" placeholderTextColor={COLORS.muted} multiline value={form.notes}
+                  onChangeText={(v) => setForm((f) => ({ ...f, notes: v }))} />
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  <TouchableOpacity style={[s.formBtn, s.cancelBtn]} onPress={() => setShowCreate(false)}>
+                    <Text style={s.cancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.formBtn, s.saveBtn]} onPress={handleCreate} disabled={saving}>
+                    {saving
+                      ? <ActivityIndicator color={COLORS.white} size="small" />
+                      : <Text style={s.saveBtnText}>Criar</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
               </ScrollView>
-
-              <TextInput style={s.input} placeholder="PIN (4–8 dígitos, opcional)" placeholderTextColor={COLORS.muted} value={form.pin}
-                keyboardType="numeric" secureTextEntry maxLength={8}
-                onChangeText={(v) => setForm((f) => ({ ...f, pin: v.replace(/\D/g, '') }))} />
-              <View style={s.accountNowRow}>
-                <TouchableOpacity
-                  style={[s.checkbox, form.createAppAccount && s.checkboxActive]}
-                  onPress={() => setForm((f) => ({ ...f, createAppAccount: !f.createAppAccount }))}
-                >
-                  {form.createAppAccount ? <Text style={s.checkboxTick}>✓</Text> : null}
-                </TouchableOpacity>
-                <Text style={s.fieldLabel}>Criar conta App agora</Text>
-              </View>
-              {form.createAppAccount && (
-                <TextInput
-                  style={s.input}
-                  placeholder="Password da conta App (mín. 6)"
-                  placeholderTextColor={COLORS.muted}
-                  value={form.accountPassword}
-                  secureTextEntry
-                  onChangeText={(v) => setForm((f) => ({ ...f, accountPassword: v }))}
-                />
-              )}
-              <TextInput style={s.input} placeholder="Tipo doc. (BI / Passaporte / DIRE)" placeholderTextColor={COLORS.muted} value={form.documentType}
-                onChangeText={(v) => setForm((f) => ({ ...f, documentType: v }))} />
-              <TextInput style={s.input} placeholder="Nº documento" placeholderTextColor={COLORS.muted} value={form.documentNumber}
-                onChangeText={(v) => setForm((f) => ({ ...f, documentNumber: v }))} />
-              <TextInput style={s.input} placeholder="Início de emprego (AAAA-MM-DD)" placeholderTextColor={COLORS.muted} value={form.employmentStart}
-                onChangeText={(v) => setForm((f) => ({ ...f, employmentStart: v }))} />
-              <TextInput style={[s.input, { height: 72, textAlignVertical: 'top' }]}
-                placeholder="Notas" placeholderTextColor={COLORS.muted} multiline value={form.notes}
-                onChangeText={(v) => setForm((f) => ({ ...f, notes: v }))} />
-
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                <TouchableOpacity style={[s.formBtn, s.cancelBtn]} onPress={() => setShowCreate(false)}>
-                  <Text style={s.cancelBtnText}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.formBtn, s.saveBtn]} onPress={handleCreate} disabled={saving}>
-                  {saving
-                    ? <ActivityIndicator color={COLORS.white} size="small" />
-                    : <Text style={s.saveBtnText}>Criar</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </View>
+            </KeyboardAvoidingView>
           )}
         </View>
       </KeyboardAvoidingView>

@@ -33,6 +33,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
 import { apiRequest, backendApi } from '../../lib/backendApi';
+import RoomDetailModal from '../../components/RoomDetailModal';
+import { getAmenitiesPreview } from '../../lib/roomAmenities';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 300;
@@ -130,6 +132,57 @@ function StarRow({ rating, size = 11, color = '#F59E0B' }) {
   );
 }
 
+function RoomTypeCard({ roomType, onPressDetails }) {
+  const photos = roomType.photos ?? [];
+  const visible = photos.slice(0, 3);
+  const extra = photos.length - 3;
+  const { preview: amenityPreview, remaining: amenityRemaining } =
+    getAmenitiesPreview(roomType.amenities ?? [], 4);
+
+  return (
+    <View style={s.roomCardPublic}>
+      <Text style={s.roomCardPublicName}>{roomType.name}</Text>
+      <Text style={s.roomCardPublicPrice}>
+        {roomType.pricePerNight?.toLocaleString('pt-AO')} Kz / noite · Até {roomType.maxGuests} hóspedes
+      </Text>
+
+      <View style={s.roomThumbRow}>
+        {visible.length > 0 ? (
+          <>
+            {visible.map((url, i) => (
+              <TouchableOpacity key={`${url}-${i}`} onPress={() => onPressDetails(roomType, i)} style={s.roomThumb}>
+                <Image source={{ uri: url }} style={s.roomThumbImg} />
+              </TouchableOpacity>
+            ))}
+            {extra > 0 && (
+              <TouchableOpacity style={[s.roomThumb, s.roomExtraThumb]} onPress={() => onPressDetails(roomType, 3)}>
+                <Text style={s.roomExtraText}>+{extra}{'\n'}fotos</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <View style={s.roomPlaceholder}>
+            <Text style={s.roomPlaceholderIcon}>🛏️</Text>
+            <Text style={s.roomPlaceholderText}>Sem fotos disponíveis</Text>
+          </View>
+        )}
+      </View>
+
+      {amenityPreview.length > 0 && (
+        <View style={s.roomAmenityRow}>
+          {amenityPreview.map((a) => (
+            <Text key={a.id} style={s.roomAmenityTag}>{a.icon} {a.label}</Text>
+          ))}
+          {amenityRemaining > 0 && (
+            <Text style={s.roomAmenityMore}>e mais {amenityRemaining}...</Text>
+          )}
+        </View>
+      )}
+
+    </View>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BUSINESS DETAIL MODAL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +251,7 @@ export function BusinessDetailModal({
   const [showAskModal,      setShowAskModal]        = useState(false);
   const [askText,           setAskText]             = useState('');
   const [askSubmitting,     setAskSubmitting]       = useState(false);
+  const [detailModal,       setDetailModal]         = useState(null);
 
   const scrollRef      = useRef(null);
 
@@ -742,6 +796,27 @@ export function BusinessDetailModal({
           </View>
         )}
 
+        {(business.modules?.accommodation || business.roomTypes?.length > 0) && (
+          <View style={s.block}>
+            <Text style={s.blockTitle}>Quartos Disponíveis</Text>
+            {business.roomTypes?.length > 0 ? (
+              <View style={{ gap: 12 }}>
+                {business.roomTypes.map((rt) => (
+                  <RoomTypeCard
+                    key={rt.id}
+                    roomType={rt}
+                    onPressDetails={(roomType, idx) => setDetailModal({ roomType, initialPhotoIdx: idx })}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={s.emptyStateBox}>
+                <Text style={s.emptyStateText}>Quartos em preparação.</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* ── INFORMACOES ──────────────────────────────────────────── */}
         <View
           style={s.block}
@@ -1094,6 +1169,18 @@ export function BusinessDetailModal({
         </View>
       </Animated.ScrollView>
 
+      <RoomDetailModal
+        visible={!!detailModal}
+        roomType={detailModal?.roomType}
+        business={business}
+        initialPhotoIdx={detailModal?.initialPhotoIdx}
+        onClose={() => setDetailModal(null)}
+        onBook={(roomType) => {
+          setDetailModal(null);
+          requireAuth(() => layer.open('hospitality', business));
+        }}
+      />
+
       {/* Nível 2 (OperationalLayerRenderer) renderizado externamente em Main */}
 
       {/* ── REVIEW MODAL ─────────────────────────────────────────── */}
@@ -1444,4 +1531,23 @@ const s = StyleSheet.create({
   loyaltyTier:       { fontSize: 12, color: '#7A4A00', fontWeight: '700', marginTop: 2 },
   loyaltyRedeemBtn:  { marginTop: 10, backgroundColor: '#D32323', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   loyaltyRedeemText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+
+  // Room cards (public)
+  roomCardPublic:      { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  roomCardPublicName:  { fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 2 },
+  roomCardPublicPrice: { fontSize: 13, color: '#64748B', marginBottom: 10 },
+  roomThumbRow:        { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  roomThumb:           { width: 80, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  roomThumbImg:        { width: '100%', height: '100%' },
+  roomExtraThumb:      { backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  roomExtraText:       { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  roomPlaceholder:     { flex: 1, height: 60, backgroundColor: '#F8FAFC', borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  roomPlaceholderIcon: { fontSize: 20 },
+  roomPlaceholderText: { fontSize: 12, color: '#94A3B8' },
+  roomAmenityRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  roomAmenityTag:      { fontSize: 12, color: '#334155', backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
+  roomAmenityMore:     { fontSize: 12, color: '#94A3B8', alignSelf: 'center' },
+  roomCardCta:         { backgroundColor: '#1565C0', borderRadius: 10, padding: 12, alignItems: 'center' },
+  roomCardCtaText:     { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  emptyStateBox:       { borderRadius: 12, padding: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
 });

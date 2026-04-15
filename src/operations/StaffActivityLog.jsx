@@ -103,6 +103,164 @@ function actionColor(action) {
   return COLORS.primary;
 }
 
+const FIELD_LABELS = {
+  status:          'Estado',
+  previousStatus:  'Estado anterior',
+  roomId:          'ID quarto',
+  roomNumber:      'Nº do quarto',
+  roomTypeName:    'Tipo de quarto',
+  guestName:       'Nome do hóspede',
+  startDate:       'Data de entrada',
+  endDate:         'Data de saída',
+  checkedInAt:     'Check-in em',
+  checkedOutAt:    'Check-out em',
+  totalPrice:      'Preço total',
+  earlyCheckInFee: 'Taxa check-in antec.',
+  actualNights:    'Noites realizadas',
+  plannedNights:   'Noites previstas',
+  plannedEndDate:  'Data saída prevista',
+  folioAdjusted:   'Folio ajustado',
+  description:     'Descrição',
+  amount:          'Valor',
+  quantity:        'Quantidade',
+  unitPrice:       'Preço unitário',
+  type:            'Tipo',
+  isActive:        'Ativo',
+  department:      'Departamento',
+  fullName:        'Nome',
+  email:           'Email',
+  phone:           'Telemóvel',
+  position:        'Cargo',
+  documentType:    'Tipo doc.',
+  documentNumber:  'Nº doc.',
+  note:            'Nota',
+  reason:          'Motivo',
+  cancelReason:    'Motivo do cancelamento',
+  noShowAt:        'Data do No-Show',
+  cancelledAt:     'Cancelado em',
+  applyPenalty:    'Penalização aplicada',
+  penaltyAmount:   'Valor da penalização',
+  newTotalPrice:   'Novo preço total',
+  extraDays:       'Dias extra',
+  extraCharge:     'Custo extra',
+};
+
+const STATUS_PT = {
+  PENDING:      'Pendente',
+  CONFIRMED:    'Confirmada',
+  CHECKED_IN:   'Check-in efectuado',
+  CHECKED_OUT:  'Check-out efectuado',
+  CANCELLED:    'Cancelada',
+  NO_SHOW:      'Não compareceu',
+  AVAILABLE:    'Disponível',
+  OCCUPIED:     'Ocupado',
+  DIRTY:        'Para limpeza',
+  CLEANING:     'Em limpeza',
+  INSPECTING:   'A inspecionar',
+  CLEAN:        'Limpo',
+  OUT_OF_ORDER: 'Fora de serviço',
+  MAINTENANCE:  'Em manutenção',
+  BLOCKED:      'Bloqueado',
+  OPEN:         'Em aberto',
+  COMPLETED:    'Concluída',
+  ACTIVE:       'Ativo',
+  SUSPENDED:    'Suspenso',
+};
+
+const DEPT_PT = {
+  RECEPTION:    'Receção',
+  HOUSEKEEPING: 'Limpeza',
+  MAINTENANCE:  'Manutenção',
+  MANAGEMENT:   'Gestão',
+  SECURITY:     'Segurança',
+  RESTAURANT:   'Restaurante',
+};
+
+const CURRENCY_FIELDS = new Set(['totalPrice', 'earlyCheckInFee', 'amount', 'unitPrice', 'penaltyAmount', 'newTotalPrice', 'extraCharge']);
+const DATE_FIELDS     = new Set(['startDate', 'endDate', 'checkedInAt', 'checkedOutAt', 'plannedEndDate', 'employmentStart', 'noShowAt', 'cancelledAt']);
+const BOOL_FIELDS     = new Set(['folioAdjusted', 'isActive', 'applyPenalty']);
+const SKIP_FIELDS     = new Set(['_meta', 'businessId', 'userId', 'actorId']);
+
+function compactMeta(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const { _meta, ...rest } = data;
+  return rest;
+}
+
+function fmtDateValue(value) {
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    const isDateTime = typeof value === 'string' && /T\d{2}:\d{2}/.test(value);
+    if (isDateTime) {
+      return `${d.toLocaleDateString('pt-PT')} ${d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return d.toLocaleDateString('pt-PT');
+  } catch { return String(value); }
+}
+
+function formatFieldValue(key, value) {
+  if (value === null || value === undefined || value === '') return '—';
+
+  if (key === 'status' || key === 'previousStatus') return STATUS_PT[value] || String(value);
+  if (key === 'department') return DEPT_PT[value] || String(value);
+  if (key === 'reason' && value === 'postpone_noshow') return 'Reagendamento após No-Show';
+  if (CURRENCY_FIELDS.has(key)) {
+    const n = Number(value);
+    return isNaN(n) ? String(value) : `${n.toLocaleString('pt-PT')} Kz`;
+  }
+  if (BOOL_FIELDS.has(key)) return (value === true || value === 'true') ? 'Sim' : 'Não';
+  if (DATE_FIELDS.has(key) || (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value))) {
+    return fmtDateValue(value);
+  }
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `${FIELD_LABELS[k] || k}: ${v}`)
+      .join(' · ') || '—';
+  }
+  return String(value);
+}
+
+function toDetailRows(source) {
+  if (!source || typeof source !== 'object') return [];
+  const obj = compactMeta(source);
+  const hasRoomNumber = !!obj.roomNumber;
+  return Object.entries(obj)
+    .filter(([key, value]) => {
+      if (SKIP_FIELDS.has(key)) return false;
+      if (key === 'roomId' && hasRoomNumber) return false;
+      return value !== undefined && value !== null && value !== '';
+    })
+    .map(([key, value]) => ({
+      label: FIELD_LABELS[key] || key,
+      value: formatFieldValue(key, value),
+    }));
+}
+
+function bookingSummary(log) {
+  if (!log) return 'Sem nota adicional';
+  const current = compactMeta(log?.newData || {});
+  const previous = compactMeta(log?.previousData || {});
+  const guest = current.guestName || previous.guestName;
+  const room = current.roomNumber || current.roomId || previous.roomNumber || previous.roomId;
+  const startDate = current.startDate || previous.startDate;
+  const endDate = current.endDate || previous.endDate;
+  const status = current.status || previous.status;
+
+  if (guest || room || status) {
+    return [
+      guest ? `Hóspede: ${guest}` : null,
+      room ? `Quarto: ${room}` : null,
+      status ? `Estado: ${status}` : null,
+      startDate || endDate ? `Período: ${startDate || '-'} → ${endDate || '-'}` : null,
+    ].filter(Boolean).join(' · ');
+  }
+
+  return log?.newData?._meta?.resourceName || log.note || 'Sem nota adicional';
+}
+
 export default function StaffActivityLog({ visible, staff, businessId, accessToken, onClose }) {
   const [logs, setLogs]           = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -295,8 +453,8 @@ export default function StaffActivityLog({ visible, staff, businessId, accessTok
                     <View style={[s.dot, { backgroundColor: actionColor(log.action) }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={s.logAction}>{actionLabel(log.action)}</Text>
-                      <Text style={s.logNote} numberOfLines={2}>
-                        {log?.newData?._meta?.resourceName || log.note || 'Sem nota adicional'}
+                      <Text style={s.logNote} numberOfLines={3}>
+                        {bookingSummary(log)}
                       </Text>
                       <Text style={s.logMeta}>
                         Por: {log?.actor?.name || log?.newData?._meta?.actorName || 'Sistema'}
@@ -348,11 +506,26 @@ export default function StaffActivityLog({ visible, staff, businessId, accessTok
                 <Text style={s.detailLine}>ID: {selectedLog?.resourceId}</Text>
                 <Text style={s.detailLine}>Nome legivel: {selectedLog?.newData?._meta?.resourceName || '-'}</Text>
 
+                <Text style={s.sectionTitle}>Resumo</Text>
+                <Text style={s.detailLine}>{bookingSummary(selectedLog)}</Text>
+
                 <Text style={s.sectionTitle}>Como estava</Text>
-                <Text style={s.detailJson}>{JSON.stringify(selectedLog?.previousData || {}, null, 2)}</Text>
+                {toDetailRows(selectedLog?.previousData).length === 0 ? (
+                  <Text style={s.detailLine}>Sem dados anteriores</Text>
+                ) : (
+                  toDetailRows(selectedLog?.previousData).map((row) => (
+                    <Text key={`prev-${row.label}`} style={s.detailLine}>{row.label}: {row.value}</Text>
+                  ))
+                )}
 
                 <Text style={s.sectionTitle}>Como ficou</Text>
-                <Text style={s.detailJson}>{JSON.stringify(selectedLog?.newData || {}, null, 2)}</Text>
+                {toDetailRows(selectedLog?.newData).length === 0 ? (
+                  <Text style={s.detailLine}>Sem dados novos</Text>
+                ) : (
+                  toDetailRows(selectedLog?.newData).map((row) => (
+                    <Text key={`new-${row.label}`} style={s.detailLine}>{row.label}: {row.value}</Text>
+                  ))
+                )}
 
                 <Text style={s.sectionTitle}>Porque</Text>
                 <Text style={s.detailLine}>{selectedLog?.note || selectedLog?.newData?._meta?.note || '-'}</Text>
@@ -440,13 +613,4 @@ const s = StyleSheet.create({
   detailDate: { fontSize: 12, color: COLORS.muted, marginBottom: 10 },
   sectionTitle: { fontSize: 12, color: COLORS.primary, fontWeight: '800', marginTop: 10, marginBottom: 4 },
   detailLine: { fontSize: 12, color: COLORS.text, marginBottom: 2 },
-  detailJson: {
-    fontSize: 11,
-    color: '#334155',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    padding: 8,
-  },
 });

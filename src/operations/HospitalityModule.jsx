@@ -33,7 +33,7 @@ import React, { useContext,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Modal, TextInput, Alert, Switch, Platform, KeyboardAvoidingView,
+  Modal, TextInput, Alert, Switch, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import {
   sanitizeInput, validateExternalUrl, Icon, COLORS,
@@ -42,7 +42,10 @@ import {
 import { ReceptionScreen } from './ReceptionScreen';
 import { DashboardPMS } from './DashboardPMS';
 import { HousekeepingScreen } from './HousekeepingScreen';
+import RoomTypeEditor from './RoomTypeEditor';
+import RoomDetailModal from '../components/RoomDetailModal';
 import { backendApi } from '../lib/backendApi';
+import { getAmenitiesPreview } from '../lib/roomAmenities';
 import StaffManagementModal from './StaffManagementModal';
 import StaffProfileSheet from './StaffProfileSheet';
 import StaffActivityLog from './StaffActivityLog';
@@ -59,12 +62,6 @@ const MONTH_NAMES = [
   'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
 ];
-const AMENITY_LABELS = {
-  wifi:'📶 WiFi', ac:'❄️ AC', tv:'📺 TV', pool:'🏊 Piscina',
-  gym:'🏋️ Ginásio', parking:'🚗 Parque', breakfast:'🍳 Peq. Almoço',
-  bar:'🍸 Bar', spa:'💆 Spa', safe:'🔒 Cofre', minibar:'🧃 Minibar',
-  balcony:'🌿 Varanda', jacuzzi:'♨️ Jacuzzi',
-};
 const STATUS_CONFIG = {
   pending:          { label:'Pendente',         color:'#D97706', bg:'#FFFBEB' },
   confirmed:        { label:'Confirmada',        color:'#22A06B', bg:'#F0FDF4' },
@@ -396,6 +393,7 @@ function BookingModal({
   activeBookings,
   onClose,
   onConfirm,
+  accessToken = null,
   initialCheckIn = '',
   initialCheckOut = '',
   initialAdults = 1,
@@ -403,8 +401,6 @@ function BookingModal({
   isOwnerMode = false,
   sellablePercent = 100,
 }) {
-  const ctx = useContext(AppContext);
-  const accessToken = ctx?.accessToken;
   const [step, setStep]               = useState(1);
   const [checkIn, setCheckIn]         = useState(initialCheckIn || '');
   const [checkOut, setCheckOut]       = useState(initialCheckOut || '');
@@ -1319,7 +1315,7 @@ function EditBookingModal({ visible, booking, roomTypes, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOSPITALITY MODULE — componente principal (SF_H1 + SF_H2 + SF_H3)
 // ─────────────────────────────────────────────────────────────────────────────
-export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout, forceLimitedOwnerMode = false, staffRoleOverride = null }) {
+export function HospitalityModule({ business, ownerMode, tenantId, ownerBusinessPrivate: ownerBizProp, updateOwnerBiz: updateOwnerBizProp, onCreateBooking, liveBookings, ownerRoomBookings: ownerRoomBookingsProp, onOwnerRoomBookingsChange, onStatusChange: onStatusChangeProp, openStaffOnMount = false, onOpenStaffConsumed, initialStaffToken = null, onLogout, forceLimitedOwnerMode = false, staffRoleOverride = null, accessToken: accessTokenProp = null }) {
   // Safe context read — useContext returns null when outside AppProvider (no throw)
   const ctx = useContext(AppContext);
   // Em modo staff (forceLimitedOwnerMode=true), ignorar ctx.ownerBusinessPrivate
@@ -1358,6 +1354,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   // initialStaffToken pode ser o accessToken normal do signIn (role=STAFF com claims staffRole+businessId)
   // ou o token emitido pelo PIN. Ambos têm o mesmo formato de claims — usar o que existir.
   const effectiveStaffToken = staffToken || initialStaffToken || null;
+  const effectiveAccessToken = accessTokenProp || ctx?.accessToken || effectiveStaffToken || null;
   const tokenStaffRole = effectiveStaffToken ? getStaffRole(effectiveStaffToken) : null;
   const staffRole = staffRoleOverride || tokenStaffRole;
   const isStaff = !isOwner && (isLimitedStaffOwnerMode || isStaffTokenValid(effectiveStaffToken ?? ''));
@@ -1365,7 +1362,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const canReception = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'reception');
   const canHousekeeping = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'housekeeping');
   const canBookingsMgr = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'bookingsManager');
-  const canStaffMgr = isOwner || (isStaff && (staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER'));
+  const canStaffMgr = isOwner || isLimitedStaffOwnerMode || canSeeSection(effectiveStaffToken ?? '', 'staffManager');
 
   const handleStaffPinSuccess = useCallback(({ accessToken: token }) => {
     setStaffToken(token);
@@ -1406,6 +1403,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [guestCount, setGuestCount] = useState(1);
   const [bookingRoom, setBookingRoom] = useState(null);   // room a reservar
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [detailModal, setDetailModal] = useState(null);
+  const [showRoomTypeEditor, setShowRoomTypeEditor] = useState(false);
+  const [editingRoomType, setEditingRoomType] = useState(null);
   // Controlo de qual campo de data está aberto no módulo principal (um de cada vez)
   const [activeDateField, setActiveDateField] = useState(null); // 'checkin' | 'checkout' | null
   // Disponibilidade por roomTypeId -- verificada via API quando datas mudam
@@ -1535,13 +1535,13 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     // [SECURITY] O parse do .ics é feito no backend para evitar CORS e DoS.
     // O frontend apenas dispara o sync; o backend faz o fetch + parse + guarda os bloqueios.
     const bizId = ownerBusinessPrivate?.id || business?.id;
-    if (!bizId || !ctx?.accessToken) {
+    if (!bizId || !effectiveAccessToken) {
       setIcalStatus(s => ({ ...s, error: 'Sem sessão activa.' }));
       return;
     }
     setIcalStatus({ loaded: false, ranges: [], error: null, lastSync: null });
     try {
-      const result = await backendApi.syncHtIcal(bizId, ctx.accessToken);
+      const result = await backendApi.syncHtIcal(bizId, effectiveAccessToken);
       const now    = new Date();
       const lastSync = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       if (result.errors?.length > 0 && result.synced === 0) {
@@ -1557,7 +1557,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     } catch (e) {
       setIcalStatus({ loaded: false, ranges: [], error: e?.message || 'Sync falhou.', lastSync: null });
     }
-  }, [ownerBusinessPrivate?.id, business?.id, ctx?.accessToken]);
+  }, [ownerBusinessPrivate?.id, business?.id, effectiveAccessToken]);
 
   // ── Guardar icalLink no ownerBiz ─────────────────────────────────────────
   const handleIcalChange = useCallback((val) => {
@@ -1618,15 +1618,32 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setShowBookingModal(true);
   }, []);
 
+  const handleOpenRoomDetails = useCallback((room, initialPhotoIdx = 0) => {
+    if (!room) return;
+    setDetailModal({ roomType: room, initialPhotoIdx });
+  }, []);
+
+  const handleOpenRoomEditor = useCallback((room) => {
+    setEditingRoomType(room);
+    setShowRoomTypeEditor(true);
+  }, []);
+
+  const handleRoomTypeSaved = useCallback((updatedRoomType) => {
+    const current = ownerBusinessPrivate?.roomTypes || business?.roomTypes || [];
+    const next = current.map((rt) => (rt.id === updatedRoomType.id ? updatedRoomType : rt));
+    updateOwnerBiz({ roomTypes: next });
+    setEditingRoomType(updatedRoomType);
+  }, [ownerBusinessPrivate?.roomTypes, business?.roomTypes, updateOwnerBiz]);
+
   // Editar datas/tipo de reserva existente (do BookingsManager)
   const handleEditBooking = useCallback(async (bookingId, changes) => {
     try {
-      await backendApi.updateBooking(bookingId, changes, ctx?.accessToken);
+      await backendApi.updateBooking(bookingId, changes, effectiveAccessToken);
       Alert.alert('Reserva Actualizada', 'As alterações foram guardadas.');
     } catch (e) {
       Alert.alert('Erro', e?.message || 'Não foi possível actualizar a reserva.');
     }
-  }, [ctx?.accessToken]);
+  }, [effectiveAccessToken]);
 
   // ── Confirmar reserva ────────────────────────────────────────────────────
   // Se onCreateBooking está disponível (cliente autenticado via backendApi),
@@ -1738,8 +1755,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     if (!isOwner || !booking?.id) return;
     setStatusOverrides(prev => ({ ...prev, [booking.id]: 'cancelled' }));
     try {
-      if (ctx?.accessToken) {
-        await backendApi.cancelBooking(booking.id, { fee, businessId: business.id }, ctx.accessToken);
+      if (effectiveAccessToken) {
+        await backendApi.cancelBooking(booking.id, { fee, businessId: business.id }, effectiveAccessToken);
       } else if (typeof onStatusChangeProp === 'function') {
         await onStatusChangeProp(booking.id, 'cancelled');
       } else {
@@ -1749,7 +1766,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       setStatusOverrides(prev => { const n = { ...prev }; delete n[booking.id]; return n; });
       Alert.alert('Erro', err?.message || 'Não foi possível cancelar a reserva.');
     }
-  }, [isOwner, ctx?.accessToken, business.id, onStatusChangeProp]);
+  }, [isOwner, effectiveAccessToken, business.id, onStatusChangeProp]);
 
   const allRooms = business?.roomTypes || [];
   // Regra 1: cliente só vê tipos de quarto com quartos físicos configurados.
@@ -1872,7 +1889,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     return (
       <DashboardPMS
         businessId={ownerBusinessPrivate?.id || business?.id}
-        accessToken={ctx?.accessToken}
+        accessToken={effectiveAccessToken}
         staffToken={staffToken ?? null}
         onAuthExpired={handleStaffAuthExpired}
         onOpenReception={() => {}}
@@ -1984,6 +2001,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <Text style={hS.sectionTitle}>Tipos de Quarto</Text>
         {filteredRooms.map(room => {
           const ownerRoom    = ownerRoomsWithIcal[room.id] || null;
+          const { preview: amenityPreview, remaining: amenityRemaining } =
+            getAmenitiesPreview(room.amenities ?? [], 4);
           const nights       = countNights(checkIn, checkOut);
           const { subtotal } = nights > 0
             ? calcStayPrice({ ...room, seasonalRates: ownerRoom?.seasonalRates, weekendMultiplier: ownerRoom?.weekendMultiplier || room.weekendMultiplier }, checkIn, checkOut)
@@ -2020,14 +2039,38 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   <Text style={hS.roomPriceUnit}>/ noite</Text>
                 </View>
               </View>
-              {room.amenities?.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={hS.amenRow}>
-                  {room.amenities.map((a, i) => (
-                    <View key={i} style={hS.amenChip}>
-                      <Text style={hS.amenText}>{AMENITY_LABELS[a] || a}</Text>
-                    </View>
+              {amenityPreview.length > 0 && (
+                <View style={hS.amenRowWrap}>
+                  {amenityPreview.map((a) => (
+                    <Text key={a.id} style={hS.amenityTag}>{a.icon} {a.label}</Text>
                   ))}
-                </ScrollView>
+                  {amenityRemaining > 0 && (
+                    <Text style={hS.amenityMore}>e mais {amenityRemaining}...</Text>
+                  )}
+                </View>
+              )}
+              {isOwner && (
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 }}>Fotos do Quarto</Text>
+                  {room.photos?.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {room.photos.slice(0, 4).map((url, idx) => (
+                        <Image
+                          key={`${room.id}-photo-${idx}`}
+                          source={{ uri: url }}
+                          style={{ width: 56, height: 42, borderRadius: 6, marginRight: 6, backgroundColor: COLORS.grayBg }}
+                        />
+                      ))}
+                    </ScrollView>
+                  ) : (
+                    <View style={{ height: 42, borderRadius: 6, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 12, color: COLORS.grayText }}>🛏️ Sem fotos</Text>
+                    </View>
+                  )}
+                  <Text style={{ fontSize: 10, color: COLORS.grayText, marginTop: 4 }}>
+                    {(room.photos || []).length}/10 fotos
+                  </Text>
+                </View>
               )}
               <View style={hS.roomMeta}>
                 <View style={hS.roomMetaItem}>
@@ -2061,6 +2104,22 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   </View>
                 )}
               </View>
+              {isOwner && (
+                <TouchableOpacity
+                  style={[hS.bookBtn, { marginBottom: 8, backgroundColor: '#1565C0' }]}
+                  onPress={() => handleOpenRoomEditor(room)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={hS.bookBtnText}>Editar Quarto</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[hS.bookBtn, hS.detailBookBtn, { marginBottom: 8 }]}
+                onPress={() => handleOpenRoomDetails(room, 0)}
+                activeOpacity={0.85}
+              >
+                <Text style={hS.bookBtnText}>Ver detalhes e reservar</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[hS.bookBtn, isUnavailable && hS.bookBtnDisabled]}
                 disabled={isUnavailable}
@@ -2097,6 +2156,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           ownerRoom={ownerRoomsWithIcal[bookingRoom?.id] || null}
           business={business}
           activeBookings={activeBookings}
+          accessToken={effectiveAccessToken}
           sellablePercent={getSellablePercentForRoom(bookingRoom)}
           initialCheckIn={checkIn}
           initialCheckOut={checkOut}
@@ -2108,10 +2168,22 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         />
       )}
 
+      <RoomDetailModal
+        visible={!!detailModal}
+        roomType={detailModal?.roomType || null}
+        business={business}
+        initialPhotoIdx={detailModal?.initialPhotoIdx ?? 0}
+        onClose={() => setDetailModal(null)}
+        onBook={(roomType) => {
+          setDetailModal(null);
+          handleBook(roomType || detailModal?.roomType);
+        }}
+      />
+
       {(isOwner || canDashboard) && showDashboard && (
         <DashboardPMS
           businessId={ownerBusinessPrivate?.id || business?.id}
-          accessToken={ctx?.accessToken}
+          accessToken={effectiveAccessToken}
           staffToken={isOwner ? null : (staffToken ?? null)}
           onAuthExpired={handleStaffAuthExpired}
           onLogout={onLogout}
@@ -2128,7 +2200,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       {(isOwner || canReception) && showReception && (
         <ReceptionScreen
           businessId={ownerBusinessPrivate?.id || business?.id}
-          accessToken={ctx?.accessToken}
+          accessToken={effectiveAccessToken}
           roomTypes={ownerBusinessPrivate?.roomTypes || rooms}
           onClose={() => {
             setShowReception(false);
@@ -2140,7 +2212,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       {(isOwner || canHousekeeping) && showHousekeeping && (
         <HousekeepingScreen
           businessId={ownerBusinessPrivate?.id || business?.id}
-          accessToken={ctx?.accessToken}
+          accessToken={effectiveAccessToken}
           onClose={() => setShowHousekeeping(false)}
         />
       )}
@@ -2153,6 +2225,18 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           onEditBooking={handleEditBooking}
           onClose={() => setShowBookingsManager(false)}
         />
+      )}
+
+      {isOwner && showRoomTypeEditor && editingRoomType && (
+        <Modal visible={showRoomTypeEditor} animationType="slide" onRequestClose={() => setShowRoomTypeEditor(false)}>
+          <RoomTypeEditor
+            roomType={editingRoomType}
+            businessId={ownerBusinessPrivate?.id || business?.id}
+            accessToken={effectiveAccessToken}
+            onSaved={handleRoomTypeSaved}
+            onClose={() => setShowRoomTypeEditor(false)}
+          />
+        </Modal>
       )}
 
       {/* ── STAFF PIN LOGIN (kiosk PIN mode) ───────────────────────────── */}
@@ -2285,16 +2369,16 @@ const hS = StyleSheet.create({
   roomPriceWrap:    { alignItems: 'flex-end', flexShrink: 0, minWidth: 80 },
   roomPrice:        { fontSize: 14, fontWeight: '800', color: '#D32323' },
   roomPriceUnit:    { fontSize: 10, color: '#8A8A8A' },
-  amenRow:          { marginBottom: 10 },
-  amenChip:         { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#F7F7F8',
-                      borderRadius: 20, marginRight: 6, borderWidth: 1, borderColor: '#EBEBEB' },
-  amenText:         { fontSize: 11, color: '#111111' },
+  amenRowWrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  amenityTag:       { fontSize: 12, color: '#334155', backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
+  amenityMore:      { fontSize: 12, color: '#94A3B8', alignSelf: 'center' },
   roomMeta:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 10,
                       borderTopWidth: 1, borderTopColor: '#EBEBEB', marginBottom: 10 },
   roomMetaItem:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
   roomMetaText:     { fontSize: 11, color: '#8A8A8A' },
   availDot:         { width: 6, height: 6, borderRadius: 3 },
   bookBtn:          { backgroundColor: '#D32323', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  detailBookBtn:    { backgroundColor: '#0F766E' },
   bookBtnDisabled:  { backgroundColor: '#EBEBEB', opacity: 0.6 },
   bookBtnText:      { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   bookBtnTextDisabled: { color: '#8A8A8A' },

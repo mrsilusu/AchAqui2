@@ -97,7 +97,15 @@ export class RolesGuard implements CanActivate {
     businessId: string,
     module: AppModule,
     allowedRoles?: StaffRole[],
+    allowedSections?: string[],
+    requestUser?: any,
   ): Promise<boolean> {
+    const jwtSectionAccess = requestUser?.sectionAccess;
+    if (allowedSections?.length && jwtSectionAccess && typeof jwtSectionAccess === 'object') {
+      const hasAllowedSection = allowedSections.some((section) => !!jwtSectionAccess?.[section]);
+      if (hasAllowedSection) return true;
+    }
+
     const roleFilter = allowedRoles?.length
       ? { in: allowedRoles }
       : { startsWith: `${module}_` };
@@ -124,10 +132,19 @@ export class RolesGuard implements CanActivate {
     if (module === AppModule.HT) {
       const htStaff = await this.prisma.htStaff.findFirst({
         where: { businessId, userId, isActive: true },
-        select: { department: true },
+        select: { department: true, sectionOverrides: true },
       });
       if (!htStaff) return false;
       if (!allowedRoles?.length) return true;
+
+      if (allowedSections?.length && htStaff.sectionOverrides && typeof htStaff.sectionOverrides === 'object') {
+        const overrides = htStaff.sectionOverrides as Record<string, unknown>;
+        const hasAllowedSection = allowedSections.some((section) => {
+          const perms = overrides?.[section];
+          return Array.isArray(perms) && perms.length > 0;
+        });
+        if (hasAllowedSection) return true;
+      }
 
       const inferredRole =
         htStaff.department === HtStaffDepartment.RECEPTION
@@ -176,6 +193,8 @@ export class RolesGuard implements CanActivate {
         jwtBusinessId,
         staffAccess.module,
         staffAccess.roles,
+        staffAccess.sections,
+        request.user,
       );
     }
 

@@ -7,7 +7,7 @@ import { HtRoomsService } from './ht-rooms.service';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
-@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER] })
+@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER], sections: ['housekeeping', 'reception'] })
 @Controller('ht/rooms')
 export class HtRoomsController {
   constructor(private readonly s: HtRoomsService) {}
@@ -31,7 +31,7 @@ export class HtRoomsController {
   }
 
   @Patch(':id')
-  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_HOUSEKEEPER] })
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_HOUSEKEEPER], sections: ['housekeeping'] })
   update(@Param('id') id: string, @Body() body: any, @Req() req: any) {
     return this.s.update(id, req.user.userId, body, req.user.role ?? 'OWNER', req.user.businessId);
   }

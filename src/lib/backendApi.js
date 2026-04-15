@@ -380,6 +380,22 @@ export const backendApi = {
   deleteHtRoom: (roomId, accessToken) =>
     apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
 
+  // ─── HT — Tipos de quarto (fotos/comodidades) ───────────────────────────
+  htGetRoomPhotoSignedUrl: (roomTypeId, businessId, fileName, accessToken) =>
+    apiRequest('/media/room-type/signed-url', {
+      method: 'POST',
+      body: { roomTypeId, businessId, fileName },
+      accessToken,
+    }),
+  htUpdateRoomType: (roomTypeId, businessId, payload, accessToken) =>
+    apiRequest(`/ht/room-types/${roomTypeId}`, {
+      method: 'PATCH',
+      body: { businessId, ...(payload || {}) },
+      accessToken,
+    }),
+  htGetRoomTypes: (businessId, accessToken) =>
+    apiRequest(`/ht/room-types?businessId=${encodeURIComponent(businessId)}`, { accessToken }),
+
   // ─── HT — Mapa de Reservas
   getHtMap: (businessId, from, to, accessToken) => {
     const params = new URLSearchParams({ businessId });

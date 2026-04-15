@@ -16,7 +16,7 @@
  */
 
 import React, {
-  useState, useCallback, useEffect, useMemo,
+  useState, useCallback, useEffect, useMemo, useRef,
 } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView,
@@ -555,7 +555,7 @@ export default function AchAquiMain() {
   );
 }
 
-function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets, onTabPress }) {
+function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets, onTabPress, tabFocusAnimRef, onTabFocus }) {
   const tabs = isBusinessMode
     ? [{id:'dashboard',icon:'analytics',label:'Dashboard'},{id:'notifications',icon:'bell',label:'Notificações'},{id:'mybusiness',icon:'briefcase',label:'Meu Negócio'},{id:'exitbusiness',icon:'x',label:'Sair'}]
     : [{id:'home',icon:'outdoor',label:'Início'},{id:'search',icon:'search',label:'Pesquisar'},{id:'featured',icon:'diamond4',label:'Destaque'},{id:'profile',icon:'user',label:'Perfil'}];
@@ -563,17 +563,56 @@ function BottomNavBar({ isBusinessMode, activeNavTab, activeBusinessTab, insets,
     <View style={[NAV_BAR_STYLES.bar, { paddingBottom: insets.bottom + 8 }]}>
       {tabs.map(tab => {
         const active = isBusinessMode ? activeBusinessTab === tab.id : activeNavTab === tab.id;
+        const animRef = tabFocusAnimRef?.[tab.id];
         return (
-          <TouchableOpacity key={tab.id} style={NAV_BAR_STYLES.tab} activeOpacity={0.7} onPress={() => onTabPress(tab.id)}>
-            <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
-              <Icon name={tab.icon} size={22} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
-            </View>
-            <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
-          </TouchableOpacity>
+          <Animated.View
+            key={`${tab.id}-focus`}
+            style={[
+              NAV_BAR_STYLES.tab,
+              animRef && {
+                transform: [
+                  {
+                    scale: animRef.interpolate ? animRef.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [1, 1.15],
+                    }) : 1,
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.7}
+              onPress={() => {
+                onTabFocus?.(tab.id);
+                onTabPress(tab.id);
+              }}
+            >
+              <View style={[NAV_BAR_STYLES.iconWrap, active && NAV_BAR_STYLES.iconWrapActive]}>
+                <Icon name={tab.icon} size={22} color={active ? COLORS.red : COLORS.grayText} strokeWidth={active ? 2.5 : 1.5} />
+              </View>
+              <Text style={[NAV_BAR_STYLES.label, active && NAV_BAR_STYLES.labelActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          </Animated.View>
         );
       })}
     </View>
   );
+}
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  const payloadPart = parts.length >= 2 ? parts[1] : null;
+  if (!payloadPart) return null;
+
+  try {
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(normalized));
+  } catch {
+    return null;
+  }
 }
 
 function AppContent() {
@@ -588,6 +627,26 @@ function AppContent() {
   });
   const [profileData, setProfileData] = useState(null);
   const [ownerDashboardData, setOwnerDashboardData] = useState(null);
+
+  const tabFocusAnimRef = useRef({
+    home: new Animated.Value(0),
+    search: new Animated.Value(0),
+    featured: new Animated.Value(0),
+    profile: new Animated.Value(0),
+    dashboard: new Animated.Value(0),
+    notifications: new Animated.Value(0),
+    mybusiness: new Animated.Value(0),
+    exitbusiness: new Animated.Value(0),
+  }).current;
+
+  const triggerTabFocusAnim = useCallback((tabId) => {
+    if (!tabFocusAnimRef[tabId]) return;
+    tabFocusAnimRef[tabId].setValue(0);
+    Animated.sequence([
+      Animated.timing(tabFocusAnimRef[tabId], { toValue: 1, duration: 150, useNativeDriver: false }),
+      Animated.timing(tabFocusAnimRef[tabId], { toValue: 0, duration: 150, useNativeDriver: false }),
+    ]).start();
+  }, [tabFocusAnimRef]);
 
   const userProfile = useMemo(() => {
     const createdAt = profileData?.createdAt
@@ -825,12 +884,8 @@ function AppContent() {
       && session.user.staffRoles.some((r) => r?.module === 'HT' || String(r?.role || '').startsWith('HT_'));
     // Verificar também os claims do JWT (cobre fallback sem coreBusinessStaff)
     let jwtHasStaffClaims = false;
-    try {
-      const jwtPayload = session?.accessToken
-        ? JSON.parse(atob(session.accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
-        : null;
-      jwtHasStaffClaims = !!(jwtPayload?.staffRole && jwtPayload?.businessId);
-    } catch { /* token inválido ou não-JWT */ }
+    const jwtPayload = decodeJwtPayload(session?.accessToken);
+    jwtHasStaffClaims = !!(jwtPayload?.staffRole && jwtPayload?.businessId);
     if (session?.user?.role === 'OWNER') {
       setIsBusinessMode(true);
       setActiveBusinessTab('dashboard');
@@ -1369,7 +1424,17 @@ function AppContent() {
             />
           )}
 
-          {!authSession.isAdmin && !isStaff && <BottomNavBar isBusinessMode={isBusinessMode} activeNavTab={activeNavTab} activeBusinessTab={activeBusinessTab} insets={insets} onTabPress={handleTabPress} />}
+          {!authSession.isAdmin && !isBusinessMode && (
+            <BottomNavBar
+              isBusinessMode={isBusinessMode}
+              activeNavTab={activeNavTab}
+              activeBusinessTab={activeBusinessTab}
+              insets={insets}
+              onTabPress={handleTabPress}
+              tabFocusAnimRef={tabFocusAnimRef}
+              onTabFocus={triggerTabFocusAnim}
+            />
+          )}
         </View>
       </Animated.View>
 

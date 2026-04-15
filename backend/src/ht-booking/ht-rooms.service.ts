@@ -81,6 +81,19 @@ export class HtRoomsService {
             completedAt: true,
             inspectedAt: true,
             assignedToId: true,
+            assignedTo: {
+              select: {
+                id: true,
+                fullName: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -143,6 +156,83 @@ export class HtRoomsService {
             ...(dto.floor  !== undefined && { floor:  dto.floor }),
             ...(dto.notes  !== undefined && { notes:  dto.notes }),
             status: 'CLEANING' as any,
+          },
+          include: { roomType: { select: { id: true, name: true } } },
+        });
+      });
+    }
+
+    // Marcação manual como DIRTY deve seguir o fluxo do checkout:
+    // 1) quarto fica DIRTY
+    // 2) cria tarefa pendente de housekeeping quando não existe tarefa aberta
+    if (dto.status === 'DIRTY') {
+      return this.prisma.$transaction(async (tx) => {
+        const openTask = await tx.htHousekeepingTask.findFirst({
+          where: { roomId: id, completedAt: null },
+          select: { id: true },
+        });
+
+        if (!openTask) {
+          await tx.htHousekeepingTask.create({
+            data: {
+              roomId: id,
+              priority: 'NORMAL',
+              notes: 'Quarto marcado manualmente como sujo no mapa',
+            },
+          });
+        }
+
+        return tx.htRoom.update({
+          where: { id },
+          data: {
+            ...(dto.number !== undefined && { number: dto.number }),
+            ...(dto.floor  !== undefined && { floor:  dto.floor }),
+            ...(dto.notes  !== undefined && { notes:  dto.notes }),
+            status: 'DIRTY' as any,
+          },
+          include: { roomType: { select: { id: true, name: true } } },
+        });
+      });
+    }
+
+    // Marcação para INSPECTING sem tarefa prévia:
+    // cria tarefa e marca como concluída para permitir aprovação da inspeção.
+    if (dto.status === 'INSPECTING') {
+      return this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const pendingTask = await tx.htHousekeepingTask.findFirst({
+          where: { roomId: id, completedAt: null },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, startedAt: true },
+        });
+
+        if (pendingTask) {
+          await tx.htHousekeepingTask.update({
+            where: { id: pendingTask.id },
+            data: {
+              startedAt: pendingTask.startedAt ?? now,
+              completedAt: now,
+            },
+          });
+        } else {
+          await tx.htHousekeepingTask.create({
+            data: {
+              roomId: id,
+              priority: 'NORMAL',
+              notes: 'Limpeza concluída manualmente no painel de housekeeping',
+              startedAt: now,
+              completedAt: now,
+            },
+          });
+        }
+
+        return tx.htRoom.update({
+          where: { id },
+          data: {
+            ...(dto.number !== undefined && { number: dto.number }),
+            ...(dto.floor  !== undefined && { floor:  dto.floor }),
+            ...(dto.notes  !== undefined && { notes:  dto.notes }),
+            status: 'INSPECTING' as any,
           },
           include: { roomType: { select: { id: true, name: true } } },
         });

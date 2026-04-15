@@ -10,7 +10,7 @@ import { HtGuestService } from './ht-guest.service';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
-@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] })
+@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST], sections: ['reception'] })
 @Controller('ht/guests')
 export class HtGuestController {
   constructor(private readonly s: HtGuestService) {}

@@ -7,6 +7,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, COLORS } from '../core/AchAqui_Core';
 import { backendApi } from '../lib/backendApi';
 
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload || !globalThis.atob) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(globalThis.atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 const TASK_PRIORITY = {
   URGENT:  { label: 'Urgente',  color: '#DC2626', bg: '#FEF2F2' },
   HIGH:    { label: 'Alta',     color: '#D97706', bg: '#FFFBEB' },
@@ -31,7 +44,7 @@ function fmt(d) {
 // ─── Card de quarto ────────────────────────────────────────────────────────────
 function RoomTaskCard({ room, staffList, onMarkClean, onMarkMaintenance, onAssignTask, onApproveInspection, loading }) {
   const [open, setOpen] = useState(false);
-  const staffById = Object.fromEntries((staffList || []).map((s) => [s?.user?.id, s?.user]));
+  const staffById = Object.fromEntries((staffList || []).map((s) => [s?.id, s]));
   const pendingTasks = (room.tasks || []).filter(t => !t.completedAt);
   const hasPendingInspection = room.status === 'INSPECTING' || (room.tasks || []).some(t => t.completedAt && !t.inspectedAt);
   const st = ROOM_STATUS_LABEL[room.status] || ROOM_STATUS_LABEL.CLEAN;
@@ -73,10 +86,18 @@ function RoomTaskCard({ room, staffList, onMarkClean, onMarkMaintenance, onAssig
                     <View style={{ flex: 1 }}>
                       <Text style={hkS.taskLabel}>{pr.label} · {fmt(task.createdAt)}</Text>
                       <Text style={hkS.taskMeta}>
-                        {staffById[task.assignedToId]?.name
-                          ? `Atribuído: ${staffById[task.assignedToId].name}`
-                          : staffById[task.assignedToId]?.email
-                            ? `Atribuído: ${staffById[task.assignedToId].email}`
+                        {task.assignedTo?.fullName
+                          ? `Atribuído: ${task.assignedTo.fullName}`
+                          : task.assignedTo?.user?.name
+                            ? `Atribuído: ${task.assignedTo.user.name}`
+                            : task.assignedTo?.user?.email
+                              ? `Atribuído: ${task.assignedTo.user.email}`
+                              : staffById[task.assignedToId]?.fullName
+                                ? `Atribuído: ${staffById[task.assignedToId].fullName}`
+                                : staffById[task.assignedToId]?.user?.name
+                                  ? `Atribuído: ${staffById[task.assignedToId].user.name}`
+                                  : staffById[task.assignedToId]?.user?.email
+                                    ? `Atribuído: ${staffById[task.assignedToId].user.email}`
                             : 'Sem colaborador atribuído'}
                       </Text>
                     </View>
@@ -158,6 +179,10 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
   const [filter, setFilter]       = useState('dirty'); // dirty | all
   const alive = useRef(true);
   const insets = useSafeAreaInsets();
+  const authPayload = decodeJwtPayload(accessToken);
+  const isStaffSession = String(authPayload?.role || '').toUpperCase() === 'STAFF';
+  const staffRole = String(authPayload?.staffRole || '').toUpperCase();
+  const canAssignTasks = !isStaffSession || staffRole === 'HT_MANAGER' || staffRole === 'GENERAL_MANAGER';
 
   useEffect(() => {
     alive.current = true;
@@ -168,10 +193,13 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
     if (!businessId || !accessToken) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
+      const staffPromise = canAssignTasks
+        ? backendApi.getHtStaff(businessId, accessToken).catch(() => [])
+        : Promise.resolve([]);
       const [result, roomsData, staffData] = await Promise.all([
         backendApi.getHtDashboard(businessId, accessToken),
         backendApi.getHtRooms(businessId, accessToken),
-        backendApi.getHtStaff(businessId, accessToken).catch(() => []),
+        staffPromise,
       ]);
       if (!alive.current) return;
       setDashboard(result || null);
@@ -182,7 +210,7 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
     } finally {
       if (alive.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [businessId, accessToken]);
+  }, [businessId, accessToken, canAssignTasks]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -219,18 +247,19 @@ export function HousekeepingScreen({ businessId, accessToken, onClose, onTaskCom
   }, [accessToken, load, onTaskCompleted]);
 
   const handleAssignTask = useCallback((taskId) => {
-    if (!Array.isArray(staff) || staff.length === 0) {
-      Alert.alert('Sem staff', 'Adiciona colaboradores HT antes de atribuir tarefas.');
+    const housekeepingStaff = (staff || []).filter(s => s?.department === 'HOUSEKEEPING');
+    if (!Array.isArray(housekeepingStaff) || housekeepingStaff.length === 0) {
+      Alert.alert('Sem colaboradores Housekeeping', 'Adiciona colaboradores com departamento Limpeza antes de atribuir tarefas.');
       return;
     }
-    const options = staff
-      .filter(s => s?.user?.id)
+    const options = housekeepingStaff
+      .filter(s => s?.id)
       .slice(0, 5)
       .map((s) => ({
         text: s.user.name || s.user.email || 'Colaborador',
         onPress: async () => {
           try {
-            await backendApi.assignHtTask(taskId, s.user.id, businessId, accessToken);
+            await backendApi.assignHtTask(taskId, s.id, businessId, accessToken);
             await load(true);
           } catch (e) {
             Alert.alert('Erro', e?.message || 'Falha ao atribuir tarefa.');

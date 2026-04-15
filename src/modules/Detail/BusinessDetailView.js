@@ -47,6 +47,8 @@ import {
 import { Icon, COLORS } from '../../core/AchAqui_Core';
 import { BusinessEngine } from '../../core/BusinessEngine';
 import { HospitalityModule } from '../../operations/HospitalityModule';
+import RoomDetailModal from '../../components/RoomDetailModal';
+import { getAmenitiesPreview } from '../../lib/roomAmenities';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes locais
@@ -157,6 +159,55 @@ const AMENITY_ICON_MAP = {
   portfolio: 'portfolio', languages: 'globe', generator: 'certified',
 };
 
+function RoomTypeCard({ roomType, onPressDetails }) {
+  const photos = roomType.photos ?? [];
+  const visible = photos.slice(0, 3);
+  const extra = photos.length - 3;
+  const { preview: amenityPreview, remaining: amenityRemaining } =
+    getAmenitiesPreview(roomType.amenities ?? [], 4);
+
+  return (
+    <View style={[vS.roomCard, { padding: 14 }]}> 
+      <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText }}>{roomType.name}</Text>
+      <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 2, marginBottom: 8 }}>
+        {roomType.pricePerNight?.toLocaleString('pt-AO')} Kz / noite · Até {roomType.maxGuests} hóspedes
+      </Text>
+
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+        {visible.length > 0 ? (
+          <>
+            {visible.map((url, idx) => (
+              <TouchableOpacity key={`${url}-${idx}`} onPress={() => onPressDetails(roomType, idx)} style={{ width: 80, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} />
+              </TouchableOpacity>
+            ))}
+            {extra > 0 && (
+              <TouchableOpacity style={{ width: 80, height: 60, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }} onPress={() => onPressDetails(roomType, 3)}>
+                <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' }}>+{extra}{'\n'}fotos</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <View style={{ flex: 1, height: 60, backgroundColor: '#F8FAFC', borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
+            <Text style={{ fontSize: 20 }}>🛏️</Text>
+            <Text style={{ fontSize: 12, color: '#94A3B8' }}>Sem fotos disponíveis</Text>
+          </View>
+        )}
+      </View>
+
+      {amenityPreview.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {amenityPreview.map((a) => (
+            <Text key={a.id} style={{ fontSize: 12, color: '#334155', backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 }}>{a.icon} {a.label}</Text>
+          ))}
+          {amenityRemaining > 0 && <Text style={{ fontSize: 12, color: '#94A3B8', alignSelf: 'center' }}>e mais {amenityRemaining}...</Text>}
+        </View>
+      )}
+
+    </View>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BUSINESS DETAIL VIEW
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +241,7 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
   const [userCheckIns,      setUserCheckIns]        = useState(0);
   const [activeTab,         setActiveTab]           = useState('Informacoes');
   const [preselectedRoomId, setPreselectedRoomId]   = useState(null);
+  const [detailModal,       setDetailModal]         = useState(null);
   const [qaItems,           setQaItems]             = useState(QA_MOCK);
   const [reviewSort,        setReviewSort]          = useState('recent');
   const [reviewFilter,      setReviewFilter]        = useState('all');
@@ -582,37 +634,12 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
             <Text style={vS.sectionTitle}>Quartos Disponíveis</Text>
             {business.roomTypes?.length > 0 ? (
               <View style={{ gap: 12 }}>
-                {business.roomTypes.map(room => (
-                  <View key={room.id} style={[vS.roomCard, { padding: 0, overflow: 'hidden' }]}>
-                    {room.photos?.length > 0 && (
-                      <Image source={{ uri: room.photos[0] }} style={{ width: '100%', height: 160 }} resizeMode="cover" />
-                    )}
-                    <View style={{ padding: 14 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkText }}>{room.name}</Text>
-                          <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 2 }}>{room.description}</Text>
-                          <View style={{ flexDirection: 'row', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-                            <Text style={{ fontSize: 12, color: COLORS.grayText }}>👥 Máx. {room.maxGuests}</Text>
-                            {room.amenities?.slice(0, 3).map(a => (
-                              <Text key={a} style={{ fontSize: 11, color: COLORS.grayText, backgroundColor: COLORS.grayBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>{a.toUpperCase()}</Text>
-                            ))}
-                          </View>
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 4, marginLeft: 12 }}>
-                          <Text style={{ fontSize: 17, fontWeight: '700', color: COLORS.red }}>{room.pricePerNight?.toLocaleString()} Kz</Text>
-                          <Text style={{ fontSize: 10, color: COLORS.grayText }}>por noite</Text>
-                          {(room.minNights || 1) > 1 && <Text style={{ fontSize: 10, color: COLORS.blue, fontWeight: '600' }}>mín. {room.minNights} noites</Text>}
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={{ marginTop: 12, backgroundColor: COLORS.red, borderRadius: 10, paddingVertical: 9, alignItems: 'center' }}
-                        onPress={() => { onOpenSubLayer?.('hospitality'); setPreselectedRoomId(room.id); }}
-                      >
-                        <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Reservar</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                {business.roomTypes.map((room) => (
+                  <RoomTypeCard
+                    key={room.id}
+                    roomType={room}
+                    onPressDetails={(roomType, idx) => setDetailModal({ roomType, initialPhotoIdx: idx })}
+                  />
                 ))}
               </View>
             ) : (
@@ -869,6 +896,19 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
 
         <View style={{ height: 80 }} />
       </Animated.ScrollView>
+
+      <RoomDetailModal
+        visible={!!detailModal}
+        roomType={detailModal?.roomType}
+        business={business}
+        initialPhotoIdx={detailModal?.initialPhotoIdx}
+        onClose={() => setDetailModal(null)}
+        onBook={(roomType) => {
+          setPreselectedRoomId(roomType?.id ?? null);
+          setDetailModal(null);
+          onOpenSubLayer?.('hospitality');
+        }}
+      />
     </>
   );
 });

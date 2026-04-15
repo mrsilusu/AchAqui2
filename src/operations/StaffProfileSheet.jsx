@@ -48,6 +48,17 @@ export default function StaffProfileSheet({
   const [suspendReason, setSuspendReason] = useState('');
   const [showSuspendBox, setShowSuspendBox] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    position: '',
+    documentType: '',
+    documentNumber: '',
+    employmentStart: '',
+    notes: '',
+  });
 
   // Permissões locais (controladas por Switch)
   const [permissions, setPermissions] = useState(
@@ -60,6 +71,7 @@ export default function StaffProfileSheet({
 
   // Role do viewer (quem está a gerir)
   const viewerRole   = getStaffRole(accessToken);
+  const canEditProfile = !viewerRole || viewerRole === STAFF_ROLES.HT_MANAGER || viewerRole === STAFF_ROLES.GENERAL_MANAGER;
   const canEditSections = (
     viewerRole === STAFF_ROLES.HT_MANAGER ||
     viewerRole === STAFF_ROLES.GENERAL_MANAGER
@@ -75,12 +87,59 @@ export default function StaffProfileSheet({
       setShowSuspendBox(false);
       setSuspendReason('');
       setEditingSection(null);
+      setEditingInfo(false);
+      setProfileForm({
+        fullName: String(staff.fullName || ''),
+        email: String(staff.email || ''),
+        phone: String(staff.phone || ''),
+        position: String(staff.position || ''),
+        documentType: String(staff.documentType || ''),
+        documentNumber: String(staff.documentNumber || ''),
+        employmentStart: staff.employmentStart
+          ? String(new Date(staff.employmentStart).toISOString().slice(0, 10))
+          : '',
+        notes: String(staff.notes || ''),
+      });
     }
   }, [staff]);
 
   if (!staff) return null;
 
   const isActive = staff.isActive;
+
+  const handleSaveProfile = async () => {
+    const fullName = String(profileForm.fullName || '').trim();
+    const email = String(profileForm.email || '').trim().toLowerCase();
+    if (fullName.length < 2) {
+      Alert.alert('Erro', 'Nome inválido.');
+      return;
+    }
+    if (!email.includes('@')) {
+      Alert.alert('Erro', 'Email inválido.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await backendApi.htUpdateStaff(staff.id, businessId, {
+        fullName,
+        email,
+        phone: String(profileForm.phone || '').trim() || null,
+        position: String(profileForm.position || '').trim() || null,
+        documentType: String(profileForm.documentType || '').trim() || null,
+        documentNumber: String(profileForm.documentNumber || '').trim() || null,
+        employmentStart: String(profileForm.employmentStart || '').trim() || null,
+        notes: String(profileForm.notes || '').trim() || null,
+      }, accessToken);
+      Alert.alert('Dados atualizados', 'As informações do funcionário foram guardadas.');
+      setEditingInfo(false);
+      onRefresh?.();
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível atualizar os dados do funcionário.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ── Alterar cargo ─────────────────────────────────────────────────────────
   const handleChangeRole = async (newDept) => {
@@ -236,13 +295,58 @@ export default function StaffProfileSheet({
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
             {/* INFO BÁSICA */}
             <View style={s.section}>
-              <Text style={s.sectionTitle}>Informação</Text>
-              <Row label="Email"        value={fmt(staff.email)} />
-              <Row label="Telemóvel"    value={fmt(staff.phone)} />
-              <Row label="Doc. Tipo"    value={fmt(staff.documentType)} />
-              <Row label="Doc. Nº"      value={fmt(staff.documentNumber)} />
-              <Row label="Início"       value={fmtDate(staff.employmentStart)} />
-              {staff.notes && <Row label="Notas" value={staff.notes} />}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={s.sectionTitle}>Informação</Text>
+                {canEditProfile && isActive && !editingInfo && (
+                  <TouchableOpacity onPress={() => setEditingInfo(true)}>
+                    <Text style={s.linkBtn}>Editar</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {editingInfo ? (
+                <>
+                  <TextInput style={s.input} placeholder="Nome completo" placeholderTextColor={COLORS.muted} value={profileForm.fullName}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, fullName: v }))} />
+                  <TextInput style={s.input} placeholder="Email" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" value={profileForm.email}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, email: v }))} />
+                  <TextInput style={s.input} placeholder="Telemóvel" placeholderTextColor={COLORS.muted} value={profileForm.phone}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, phone: v }))} />
+                  <TextInput style={s.input} placeholder="Cargo / Função (ex: Rececionista)" placeholderTextColor={COLORS.muted} value={profileForm.position}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, position: v }))} />
+                  <TextInput style={s.input} placeholder="Doc. Tipo" placeholderTextColor={COLORS.muted} value={profileForm.documentType}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, documentType: v }))} />
+                  <TextInput style={s.input} placeholder="Doc. Nº" placeholderTextColor={COLORS.muted} value={profileForm.documentNumber}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, documentNumber: v }))} />
+                  <TextInput style={s.input} placeholder="Início (AAAA-MM-DD)" placeholderTextColor={COLORS.muted} value={profileForm.employmentStart}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, employmentStart: v }))} />
+                  <TextInput style={[s.input, { minHeight: 72, textAlignVertical: 'top' }]} multiline placeholder="Notas" placeholderTextColor={COLORS.muted}
+                    value={profileForm.notes}
+                    onChangeText={(v) => setProfileForm((p) => ({ ...p, notes: v }))} />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={[s.actionBtn, s.cancelBtnSm]} onPress={() => setEditingInfo(false)}>
+                      <Text style={s.cancelBtnSmText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[s.actionBtn, { flex: 1, backgroundColor: COLORS.primary }]} onPress={handleSaveProfile} disabled={saving}>
+                      {saving
+                        ? <ActivityIndicator color={COLORS.white} size="small" />
+                        : <Text style={s.actionBtnText}>Guardar dados</Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Row label="Email"        value={fmt(staff.email)} />
+                  <Row label="Telemóvel"    value={fmt(staff.phone)} />
+                  {staff.position && <Row label="Cargo / Função" value={staff.position} />}
+                  <Row label="Doc. Tipo"    value={fmt(staff.documentType)} />
+                  <Row label="Doc. Nº"      value={fmt(staff.documentNumber)} />
+                  <Row label="Início"       value={fmtDate(staff.employmentStart)} />
+                  {staff.notes && <Row label="Notas" value={staff.notes} />}
+                </>
+              )}
+
               {!isActive && staff.suspensionReason && (
                 <Row label="Motivo suspensão" value={staff.suspensionReason} danger />
               )}
@@ -680,6 +784,7 @@ const s = StyleSheet.create({
 
   logLink:     { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', alignItems: 'center' },
   logLinkText: { fontSize: 14, color: COLORS_REF.primary, fontWeight: '600' },
+  linkBtn: { color: COLORS_REF.primary, fontSize: 12, fontWeight: '700' },
 });
 
 // ─── RoleChangeModal ──────────────────────────────────────────────────────────

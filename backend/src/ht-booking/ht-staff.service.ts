@@ -759,9 +759,35 @@ export class HtStaffService {
     const staff = await this.prisma.htStaff.findFirst(
       { where: { id: staffId, businessId, isActive: true }, select: { id: true, department: true } });
     if (!staff) throw new NotFoundException('Funcionário não encontrado.');
+    if (staff.department !== HtStaffDepartment.HOUSEKEEPING) {
+      throw new BadRequestException('Só colaboradores do departamento Housekeeping podem receber tarefas de limpeza.');
+    }
     const task = await this.prisma.htHousekeepingTask.findFirst(
-      { where: { id: taskId, room: { businessId } }, select: { id: true } });
+      {
+        where: { id: taskId, room: { businessId } },
+        select: {
+          id: true,
+          completedAt: true,
+          assignedToId: true,
+          assignedTo: {
+            select: {
+              fullName: true,
+              user: { select: { name: true, email: true } },
+            },
+          },
+        },
+      });
     if (!task) throw new NotFoundException('Tarefa não encontrada.');
+    if (task.completedAt) {
+      throw new BadRequestException('Tarefa já concluída.');
+    }
+    if (task.assignedToId && task.assignedToId !== staff.id) {
+      const assignedName = task.assignedTo?.fullName
+        || task.assignedTo?.user?.name
+        || task.assignedTo?.user?.email
+        || 'outro colaborador';
+      throw new BadRequestException(`Tarefa já atribuída a ${assignedName}.`);
+    }
     return this.prisma.htHousekeepingTask.update({ where: { id: taskId }, data: { assignedToId: staff.id } });
   }
 

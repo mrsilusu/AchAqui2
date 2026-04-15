@@ -1011,7 +1011,7 @@ export const renderHeroStars = (rating, size = 11) => {
 // Exportado como constante nomeada para substituir bnS no Main.
 // ─────────────────────────────────────────────────────────────────────────────
 export const NAV_BAR_STYLES = StyleSheet.create({
-  bar:           { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EBEBEB', paddingTop: 4, paddingHorizontal: 6, shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 16 },
+  bar:           { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EBEBEB', paddingTop: 4, paddingHorizontal: 6, shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 24, zIndex: 1200 },
   tab:           { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 3, gap: 2 },
   iconWrap:      { width: 32, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   iconWrapActive:{ backgroundColor: '#FFF0F0' },

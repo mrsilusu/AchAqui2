@@ -585,34 +585,39 @@ export class BookingService {
       throw new BadRequestException('Datas inválidas.');
     }
     const nights = Math.ceil((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
-    const [physicalRooms, overlapBookings, businessPolicy] = await Promise.all([
-      this.prisma.htRoom.count({
-        where: {
-          roomTypeId,
-          businessId,
-          status: { not: 'MAINTENANCE' },
-          NOT: {
-            bookings: {
-              some: {
-                status: HtBookingStatus.CHECKED_IN,
-                endDate: { lt: today },
-              },
+
+    // Importante: em ambientes com pool pequeno (ex: connection_limit=1),
+    // Promise.all aqui pode estourar P2024 por disputa de conexão.
+    // Executar em sequência mantém a API estável mesmo com limite baixo.
+    const physicalRooms = await this.prisma.htRoom.count({
+      where: {
+        roomTypeId,
+        businessId,
+        status: { not: 'MAINTENANCE' },
+        NOT: {
+          bookings: {
+            some: {
+              status: HtBookingStatus.CHECKED_IN,
+              endDate: { lt: today },
             },
           },
         },
-      }),
-      this.prisma.htRoomBooking.findMany({
-        where: {
-          businessId,
-          roomTypeId,
-          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-          startDate: { lt: eDate },
-          endDate:   { gt: sDate },
-        },
-        select: { rooms: true },
-      }),
-      this.prisma.business.findUnique({ where: { id: businessId }, select: { metadata: true } }),
-    ]);
+      },
+    });
+    const overlapBookings = await this.prisma.htRoomBooking.findMany({
+      where: {
+        businessId,
+        roomTypeId,
+        status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
+        startDate: { lt: eDate },
+        endDate:   { gt: sDate },
+      },
+      select: { rooms: true },
+    });
+    const businessPolicy = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { metadata: true },
+    });
     const sellablePercent = this.resolveSellablePercent(businessPolicy?.metadata);
     const sellableCapacity = this.computeSellableCapacity(physicalRooms, sellablePercent);
     const overlapping = overlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);

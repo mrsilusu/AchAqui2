@@ -40,6 +40,7 @@ import {
   AppContext,
 } from '../core/AchAqui_Core';
 import { ReceptionScreen } from './ReceptionScreen';
+import { getAmenitiesPreview } from '../lib/roomAmenities';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -49,12 +50,6 @@ const MONTH_NAMES = [
   'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
 ];
-const AMENITY_LABELS = {
-  wifi:'📶 WiFi', ac:'❄️ AC', tv:'📺 TV', pool:'🏊 Piscina',
-  gym:'🏋️ Ginásio', parking:'🚗 Parque', breakfast:'🍳 Peq. Almoço',
-  bar:'🍸 Bar', spa:'💆 Spa', safe:'🔒 Cofre', minibar:'🧃 Minibar',
-  balcony:'🌿 Varanda', jacuzzi:'♨️ Jacuzzi',
-};
 const STATUS_CONFIG = {
   pending:          { label:'Pendente',         color:'#D97706', bg:'#FFFBEB' },
   confirmed:        { label:'Confirmada',        color:'#22A06B', bg:'#F0FDF4' },
@@ -1371,6 +1366,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         <Text style={hS.sectionTitle}>Tipos de Quarto</Text>
         {filteredRooms.map(room => {
           const ownerRoom    = ownerRooms[room.id] || null;
+          const { preview: amenityPreview, remaining: amenityRemaining } =
+            getAmenitiesPreview(room.amenities ?? [], 4);
           const nights       = countNights(checkIn, checkOut);
           const { subtotal } = nights > 0
             ? calcStayPrice({ ...room, seasonalRates: ownerRoom?.seasonalRates, weekendMultiplier: ownerRoom?.weekendMultiplier || room.weekendMultiplier }, checkIn, checkOut)
@@ -1393,14 +1390,15 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   <Text style={hS.roomPriceUnit}>/ noite</Text>
                 </View>
               </View>
-              {room.amenities?.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={hS.amenRow}>
-                  {room.amenities.map((a, i) => (
-                    <View key={i} style={hS.amenChip}>
-                      <Text style={hS.amenText}>{AMENITY_LABELS[a] || a}</Text>
-                    </View>
+              {amenityPreview.length > 0 && (
+                <View style={hS.amenRowWrap}>
+                  {amenityPreview.map((a) => (
+                    <Text key={a.id} style={hS.amenityTag}>{a.icon} {a.label}</Text>
                   ))}
-                </ScrollView>
+                  {amenityRemaining > 0 && (
+                    <Text style={hS.amenityMore}>e mais {amenityRemaining}...</Text>
+                  )}
+                </View>
               )}
               <View style={hS.roomMeta}>
                 <View style={hS.roomMetaItem}>
@@ -1438,8 +1436,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   {isUnavailable
                     ? 'Indisponível nestas datas'
                     : (checkIn && checkOut && nights > 0)
-                      ? `Reservar — ${subtotal.toLocaleString()} Kz`
-                      : 'Reservar'}
+                      ? `Ver detalhes e reservar — ${subtotal.toLocaleString()} Kz`
+                      : 'Ver detalhes e reservar'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1602,10 +1600,9 @@ const hS = StyleSheet.create({
   roomPriceWrap:    { alignItems: 'flex-end', flexShrink: 0, minWidth: 80 },
   roomPrice:        { fontSize: 14, fontWeight: '800', color: '#D32323' },
   roomPriceUnit:    { fontSize: 10, color: '#8A8A8A' },
-  amenRow:          { marginBottom: 10 },
-  amenChip:         { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#F7F7F8',
-                      borderRadius: 20, marginRight: 6, borderWidth: 1, borderColor: '#EBEBEB' },
-  amenText:         { fontSize: 11, color: '#111111' },
+  amenRowWrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  amenityTag:       { fontSize: 12, color: '#334155', backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
+  amenityMore:      { fontSize: 12, color: '#94A3B8', alignSelf: 'center' },
   roomMeta:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 10,
                       borderTopWidth: 1, borderTopColor: '#EBEBEB', marginBottom: 10 },
   roomMetaItem:     { flexDirection: 'row', alignItems: 'center', gap: 4 },

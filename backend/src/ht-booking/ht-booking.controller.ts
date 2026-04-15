@@ -15,7 +15,7 @@ import { CreateHtBookingDto } from './dto/create-booking.dto';
 
 @UseGuards(ThrottlerGuard)
 @Roles(UserRole.OWNER)
-@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST] })
+@StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST], sections: ['reception', 'bookingsManager'] })
 @Controller('ht')
 export class HtBookingController {
   constructor(
@@ -60,6 +60,7 @@ export class HtBookingController {
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
   @Get('dashboard')
+  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST, StaffRole.HT_HOUSEKEEPER], sections: ['dashboard'] })
   getDashboard(@Query('businessId') businessId: string, @Req() req: any) {
     const resolvedBusinessId =
       String(req.user.role) === 'STAFF'
@@ -210,6 +211,37 @@ export class HtBookingController {
         req.user.userId,
         body,
         req.user.role ?? 'OWNER',
+        req.user.businessId,
+      );
+    }
+
+    // ─── Tipos de quarto (fotos/comodidades) ──────────────────────────────────
+    @Get('room-types')
+    @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER, StaffRole.HT_RECEPTIONIST], sections: ['reception'] })
+    getRoomTypes(@Query('businessId') businessId: string, @Req() req: any) {
+      const resolvedBusinessId = String(req.user.role) === 'STAFF' ? req.user.businessId : businessId;
+      return this.htBookingService.getRoomTypes(
+        resolvedBusinessId,
+        req.user.userId,
+        req.user.role ?? 'OWNER',
+        req.user.businessId,
+      );
+    }
+
+    @Patch('room-types/:id')
+    @Throttle({ default: { limit: 20, ttl: 60_000 } })
+    @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
+    updateRoomType(
+      @Param('id') id: string,
+      @Req() req: any,
+      @Body() body: { businessId: string; photos?: string[]; amenities?: string[]; [key: string]: any },
+    ) {
+      const resolvedBusinessId = String(req.user.role) === 'STAFF' ? req.user.businessId : body.businessId;
+      return this.htBookingService.updateRoomType(
+        id,
+        req.user.userId,
+        req.user.role ?? 'OWNER',
+        { ...body, businessId: resolvedBusinessId },
         req.user.businessId,
       );
     }
