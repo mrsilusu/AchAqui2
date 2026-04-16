@@ -42,4 +42,14 @@ export class MediaController {
       body,
     );
   }
+
+  @Post('room-type/:roomTypeId/upload')
+  @Roles(UserRole.OWNER)
+  uploadRoomTypePhoto(
+    @Req() req: { user: { userId: string } },
+    @Param('roomTypeId') roomTypeId: string,
+    @Body() dto: UploadBase64Dto,
+  ) {
+    return this.mediaService.uploadRoomTypePhoto(req.user.userId, roomTypeId, dto);
+  }
 }

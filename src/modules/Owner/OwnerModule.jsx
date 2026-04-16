@@ -404,7 +404,8 @@ export function OwnerModule({
   const [blockStartDate, setBlockStartDate] = useState('');
   const [blockEndDate, setBlockEndDate] = useState('');
   const [editingRoom, setEditingRoom] = useState(null);
-  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
+  const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], photos: [], available: true, _photoUrlInput: '' });
+  const [isRoomPhotoUploading, setIsRoomPhotoUploading] = useState(false);
   const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
   // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
   // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
@@ -1333,6 +1334,7 @@ export function OwnerModule({
         totalRooms: parseInt(roomForm.totalRooms) || 1,
         available: roomForm.available !== false,
         amenities: Array.isArray(roomForm.amenities) ? roomForm.amenities : [],
+        photos: Array.isArray(roomForm.photos) ? roomForm.photos : [],
       };
       const payload = editingRoom
         ? basePayload
@@ -1360,7 +1362,7 @@ export function OwnerModule({
 
       setShowRoomForm(false);
       setEditingRoom(null);
-      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true });
+      setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], photos: [], available: true, _photoUrlInput: '' });
       Alert.alert('Sucesso', editingRoom ? 'Quarto atualizado.' : 'Quarto criado.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível guardar o quarto.');
@@ -1368,6 +1370,38 @@ export function OwnerModule({
       setIsRoomLoading(false);
     }
   }, [roomForm, editingRoom, ownerBusinessId, accessToken]);
+
+  const handleAddRoomPhoto = useCallback(async (uri, roomTypeId, fileName, mimeType, base64) => {
+    if (!uri) return;
+    if (!base64 || !roomTypeId) {
+      setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), uri] }));
+      return;
+    }
+    setIsRoomPhotoUploading(true);
+    try {
+      const result = await backendApi.uploadRoomTypePhoto(
+        roomTypeId,
+        { fileName: fileName || 'photo.jpg', mimeType: mimeType || 'image/jpeg', base64 },
+        accessToken,
+      );
+      const publicUrl = result?.publicUrl || uri;
+      setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), publicUrl] }));
+    } catch (uploadErr) {
+      const is503 = uploadErr?.status === 503 || uploadErr?.message?.includes('503')
+        || uploadErr?.message?.toLowerCase().includes('storage');
+      if (is503) {
+        setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), uri] }));
+        Alert.alert(
+          'Foto guardada localmente',
+          'O armazenamento remoto não está configurado. A foto foi guardada apenas neste dispositivo.',
+        );
+      } else {
+        Alert.alert('Erro no upload', uploadErr?.message || 'Não foi possível fazer upload da foto.');
+      }
+    } finally {
+      setIsRoomPhotoUploading(false);
+    }
+  }, [accessToken]);
 
   const handleDeleteRoom = useCallback(async (itemId) => {
     Alert.alert(
@@ -3011,8 +3045,72 @@ export function OwnerModule({
                     <Text style={editorS.formLabel}>Disponível</Text>
                     <Switch value={roomForm.available} onValueChange={(val) => setRoomForm({...roomForm, available: val})} trackColor={{false:'#D1D5DB', true:COLORS.green}} thumbColor={COLORS.white} />
                   </View>
+
+                  {/* ── FOTOS DO TIPO DE QUARTO ─────────────────────────────── */}
+                  <Text style={editorS.formLabel}>Fotos do Quarto</Text>
+                  {(roomForm.photos || []).length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:8}}>
+                      {(roomForm.photos || []).map((uri, idx) => (
+                        <View key={idx} style={{marginRight:8, position:'relative'}}>
+                          <Image
+                            source={{ uri }}
+                            style={{width:72, height:72, borderRadius:8, backgroundColor:'#F1F5F9'}}
+                            resizeMode="cover"
+                          />
+                          {idx === 0 && (
+                            <View style={{position:'absolute', bottom:0, left:0, right:0,
+                              backgroundColor:'rgba(0,0,0,0.5)', borderBottomLeftRadius:8,
+                              borderBottomRightRadius:8, paddingVertical:2, alignItems:'center'}}>
+                              <Text style={{color:'#fff', fontSize:9, fontWeight:'700'}}>Capa</Text>
+                            </View>
+                          )}
+                          <TouchableOpacity
+                            style={{position:'absolute', top:2, right:2, backgroundColor:'rgba(0,0,0,0.55)',
+                              borderRadius:10, width:18, height:18, alignItems:'center', justifyContent:'center'}}
+                            onPress={() => setRoomForm(prev => ({
+                              ...prev, photos: (prev.photos || []).filter((_, i) => i !== idx)
+                            }))}
+                          >
+                            <Icon name="x" size={10} color="#fff" strokeWidth={3} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                  {/* Input inline de URL — cross-platform (iOS e Android) */}
+                  <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:8}}>
+                    <TextInput
+                      style={[editorS.formInput, {flex:1, marginBottom:0}]}
+                      value={roomForm._photoUrlInput || ''}
+                      onChangeText={(t) => setRoomForm(prev => ({...prev, _photoUrlInput: t}))}
+                      placeholder="URL da foto (https://...)"
+                      placeholderTextColor={COLORS.grayText}
+                      keyboardType="url"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      style={{paddingHorizontal:12, paddingVertical:10, borderRadius:8,
+                        backgroundColor: COLORS.red,
+                        opacity: isRoomPhotoUploading || !(roomForm._photoUrlInput || '').trim() ? 0.6 : 1}}
+                      disabled={isRoomPhotoUploading || !(roomForm._photoUrlInput || '').trim()}
+                      onPress={() => {
+                        const trimmed = (roomForm._photoUrlInput || '').trim();
+                        if (!trimmed) return;
+                        handleAddRoomPhoto(trimmed, null, null, null, null);
+                        setRoomForm(prev => ({...prev, _photoUrlInput: ''}));
+                      }}
+                    >
+                      <Text style={{color:'#fff', fontSize:13, fontWeight:'700'}}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={{fontSize:11, color:COLORS.grayText, marginBottom:8}}>
+                    {(roomForm.photos || []).length === 0
+                      ? 'A primeira foto será usada como capa nas listagens'
+                      : `${(roomForm.photos || []).length} foto${(roomForm.photos||[]).length!==1?'s':''} · toque no × para remover`}
+                  </Text>
                   <View style={editorS.formActions}>
-                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
+                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowRoomForm(false); setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], photos: [], available: true, _photoUrlInput: '' }); }}><Text style={editorS.formBtnCancelText}>Cancelar</Text></TouchableOpacity>
                     <TouchableOpacity 
                       style={[editorS.formBtnSave, ((!roomForm.name) || isRoomLoading) && {opacity:0.5}]} 
                       disabled={!roomForm.name || isRoomLoading} 
@@ -3222,7 +3320,7 @@ export function OwnerModule({
               <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={profS.headerTitle}>Tipos de Quarto</Text>
-            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true }); setShowRoomForm(true); }}>
+            <TouchableOpacity onPress={() => { setEditingRoom(null); setRoomForm({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], photos: [], available: true, _photoUrlInput: '' }); setShowRoomForm(true); }}>
               <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
@@ -3230,11 +3328,18 @@ export function OwnerModule({
             <View style={{padding:16}}>
               {roomTypes.length > 0 ? roomTypes.map(room => (
                 <View key={room.id} style={editorS.itemCard}>
+                  {(room.photos || []).length > 0 && (
+                    <Image
+                      source={{ uri: room.photos[0] }}
+                      style={{width:'100%', height:120, borderRadius:8, marginBottom:8, backgroundColor:'#F1F5F9'}}
+                      resizeMode="cover"
+                    />
+                  )}
                   <View style={editorS.itemHeader}>
                     <View style={{flex:1}}>
                       <Text style={editorS.itemName}>{room.name}</Text>
                       <Text style={editorS.itemCategory}>
-                        {room.maxGuests ? `👥 ${room.maxGuests} hósp.` : ''}{room.pricePerNight ? `  ·  ${Number(room.pricePerNight).toLocaleString()} Kz/noite` : ''}
+                        {room.maxGuests ? `👥 ${room.maxGuests} hósp.` : ''}{room.pricePerNight ? `  ·  ${Number(room.pricePerNight).toLocaleString()} Kz/noite` : ''}{(room.photos||[]).length > 0 ? `  ·  📷 ${room.photos.length}` : ''}
                       </Text>
                       {room.description ? <Text style={editorS.itemDesc} numberOfLines={2}>{room.description}</Text> : null}
                     </View>
@@ -3245,7 +3350,7 @@ export function OwnerModule({
                     </View>
                   </View>
                   <View style={editorS.itemActions}>
-                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], available: room.available ?? true }); setShowRoomForm(true); }}>
+                    <TouchableOpacity style={editorS.itemActionBtn} onPress={() => { setEditingRoom(room); setRoomForm({ name: room.name, description: room.description || '', pricePerNight: String(room.pricePerNight || ''), maxGuests: String(room.maxGuests || ''), totalRooms: String(room.totalRooms || '1'), amenities: room.amenities || [], photos: room.photos || [], available: room.available ?? true, _photoUrlInput: '' }); setShowRoomForm(true); }}>
                       <Icon name="edit" size={16} color={COLORS.red} strokeWidth={2} /><Text style={editorS.itemActionText}>Editar Tipo</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={editorS.itemActionBtn} onPress={() => Alert.alert('Remover Tipo', `Remover "${room.name}" e todos os seus quartos físicos?`, [{text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress: async ()=>{ try { await backendApi.deleteRoom(room.id, accessToken); setHtRooms(prev => prev.filter(r => r.roomTypeId !== room.id)); const updated=roomTypes.filter(r=>r.id!==room.id); setRoomTypes(updated); OWNER_BUSINESS.roomTypes=updated; updateOwnerBiz({roomTypes:updated}); } catch(e){ Alert.alert('Erro', e?.message||'Não foi possível remover.'); }}}])}>

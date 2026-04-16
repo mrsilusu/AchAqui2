@@ -380,6 +380,15 @@ export const backendApi = {
   deleteHtRoom: (roomId, accessToken) =>
     apiRequest(`/ht/rooms/${roomId}`, { method: 'DELETE', accessToken }),
 
+  // ─── MEDIA UPLOAD (Fotos — Negócio e Tipo de Quarto)
+  // dto: { fileName: string, mimeType: string, base64: string }
+  // Retorna: { path: string, publicUrl: string }
+  // Requer SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY no backend; lança 503 sem elas.
+  uploadBusinessPhoto: (businessId, dto, accessToken) =>
+    apiRequest(`/media/business/${businessId}/upload`, { method: 'POST', body: dto, accessToken }),
+  uploadRoomTypePhoto: (roomTypeId, dto, accessToken) =>
+    apiRequest(`/media/room-type/${roomTypeId}/upload`, { method: 'POST', body: dto, accessToken }),
+
   // ─── HT — Tipos de quarto (fotos/comodidades) ───────────────────────────
   htGetRoomPhotoSignedUrl: (roomTypeId, businessId, fileName, accessToken) =>
     apiRequest('/media/room-type/signed-url', {
