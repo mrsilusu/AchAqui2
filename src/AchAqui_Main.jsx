@@ -48,6 +48,10 @@ import { backendApi } from './lib/backendApi';
 
 import { sortS } from './styles/Main.styles';
 
+// Chave AsyncStorage para persistir o negócio do dono entre falhas de rede.
+// Garante que o OwnerModule nunca mostra o onboarding por causa de um 503/timeout.
+const OWNER_BIZ_CACHE_KEY = '@achaqui:ownerBiz_v1';
+
 const MOCK_BUSINESSES_INITIAL = [
   {
     id:'c74f2850-0dcd-4f2c-a61a-aa9fd2c7459e', name:'Pizzaria Bela Vista', category:'Restaurante Italiano', subcategory:'Pizza, Massa, Italiana',
@@ -639,7 +643,24 @@ function AppContent() {
         .filter(Boolean);
       const apiIds = new Set(fromApi.map(b => b.id));
       const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
-      setBusinesses([...fromApi, ...mocksNotInApi]);
+      const merged = [...fromApi, ...mocksNotInApi];
+
+      // Garantir que o negócio do dono está na lista + actualizar cache
+      const userId = authSession.user?.id;
+      const found = userId ? merged.find(b => b?.owner?.id === userId) : null;
+      if (found) {
+        AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+        setBusinesses(merged);
+      } else {
+        // Tentar recuperar da cache se a API não devolveu o negócio do dono
+        try {
+          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+          const cached = raw ? JSON.parse(raw) : null;
+          setBusinesses(cached?.owner?.id === userId ? [cached, ...merged] : merged);
+        } catch {
+          setBusinesses(merged);
+        }
+      }
     } catch { /* manter lista actual */ }
 
     await liveSync.reloadAll();
@@ -848,6 +869,8 @@ function AppContent() {
         await backendApi.logout({ refreshToken: authSession.refreshToken }).catch(() => {});
       }
     } finally {
+      // Limpar cache do negócio do dono ao fazer logout
+      AsyncStorage.removeItem(OWNER_BIZ_CACHE_KEY).catch(() => {});
       await authSession.saveSession(null);
       setAdminSessionBackup(null);
       setIsBusinessMode(false);
@@ -1148,12 +1171,48 @@ function AppContent() {
   }, [userLocation?.latitude, userLocation?.longitude, isStartupLoading, handleHomeRefresh]);
 
   // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
+  //
+  // IMPORTANTE: usa Promise.allSettled em vez de Promise.all para que a falha
+  // de uma chamada (ex: getBusinesses() → 503) não cancele as restantes nem
+  // substitua toda a lista de negócios por mocks sem owner.id, o que causaria
+  // o OwnerModule a mostrar o ecrã de onboarding ("Ainda não tens um negócio").
+  //
+  // Adicionalmente, o negócio do dono é persistido em AsyncStorage (OWNER_BIZ_CACHE_KEY)
+  // e injectado na lista sempre que não seja encontrado na resposta da API.
   useEffect(() => {
     let cancelled = false;
 
     const startup = async () => {
+      // 1. Ler negócio do dono da cache antes das chamadas de rede
+      let cachedOwnerBiz = null;
+      if (authSession.isOwner && authSession.user?.id) {
+        try {
+          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+          cachedOwnerBiz = raw ? JSON.parse(raw) : null;
+        } catch { /* ignorar erros de leitura da cache */ }
+      }
+
+      // 2. Helper: garante que o negócio do dono está sempre na lista de negócios.
+      //    Se estiver na lista → actualiza a cache; se não estiver → injeccta da cache.
+      const ensureOwnerBizInList = (list) => {
+        if (!authSession.isOwner || !authSession.user?.id) return list;
+        const userId = authSession.user.id;
+        const found = list.find((b) => b?.owner?.id === userId);
+        if (found) {
+          // Negócio encontrado — persistir para uso offline
+          AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+          return list;
+        }
+        // Não encontrado na lista (API falhou ou não retornou owner) — injectar da cache
+        if (cachedOwnerBiz?.owner?.id === userId) {
+          return [cachedOwnerBiz, ...list];
+        }
+        return list;
+      };
+
       try {
-        const [meRes, dashRes, bizRes, recRes, hybridRes] = await Promise.all([
+        // 3. Chamadas paralelas independentes — rejeições individuais não afectam as outras
+        const [meSettled, dashSettled, bizSettled, recSettled, hybridSettled] = await Promise.allSettled([
           authSession.accessToken
             ? backendApi.getMe(authSession.accessToken)
             : Promise.resolve(null),
@@ -1175,6 +1234,17 @@ function AppContent() {
         ]);
 
         if (cancelled) return;
+
+        const meRes     = meSettled.status     === 'fulfilled' ? meSettled.value     : null;
+        const dashRes   = dashSettled.status   === 'fulfilled' ? dashSettled.value   : null;
+        const bizRes    = bizSettled.status    === 'fulfilled' ? bizSettled.value    : null;
+        const recRes    = recSettled.status    === 'fulfilled' ? recSettled.value    : null;
+        const hybridRes = hybridSettled.status === 'fulfilled' ? hybridSettled.value : null;
+
+        if (bizSettled.status === 'rejected') {
+          console.warn('[Startup][getBusinesses falhou — usando cache do dono se disponível]',
+            bizSettled.reason?.message || '');
+        }
 
         setProfileData(meRes || null);
         setOwnerDashboardData(authSession.isOwner ? (dashRes || null) : null);
@@ -1201,7 +1271,9 @@ function AppContent() {
 
           const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
           const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
-          setBusinesses(applyEstimatedDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current));
+          setBusinesses(ensureOwnerBizInList(
+            applyEstimatedDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current),
+          ));
           return;
         }
 
@@ -1218,18 +1290,20 @@ function AppContent() {
               : biz;
           })
           .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
-        setBusinesses(applyEstimatedDistances(merged, userLocationRef.current));
+        setBusinesses(ensureOwnerBizInList(applyEstimatedDistances(merged, userLocationRef.current)));
       } catch (error) {
-        console.error('[Startup][API_FAIL]', {
+        // Erro inesperado fora do allSettled (ex: erro de parsing)
+        console.error('[Startup][ERRO_INESPERADO]', {
           reason: error?.type || 'unknown',
           status: error?.status || null,
-          url: error?.url || null,
           message: error?.message || 'Falha no startup.',
         });
         if (!cancelled) {
           setProfileData(null);
           setOwnerDashboardData(null);
-          setBusinesses(MOCK_BUSINESSES_INITIAL);
+          // Mesmo em erro inesperado, tentar preservar o negócio do dono
+          const fallback = ensureOwnerBizInList(MOCK_BUSINESSES_INITIAL);
+          setBusinesses(fallback);
         }
       } finally {
         if (!cancelled) setIsStartupLoading(false);
@@ -1241,7 +1315,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.accessToken, userLocation?.latitude, userLocation?.longitude]);
+  }, [authSession.accessToken, authSession.isOwner, authSession.user?.id, userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     if (!authSession.accessToken) return;
