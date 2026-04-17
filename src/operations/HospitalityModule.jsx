@@ -483,13 +483,7 @@ function BookingModal({
     if (!isUnavailable || !room || !checkIn) return null;
     // API retorna nextAvailableDate directamente (formato DD/MM/YYYY)
     if (apiAvailability?.nextAvailableDate) return apiAvailability.nextAvailableDate;
-    if (apiAvailability) {
-      // Fallback seguro: usar parseDate para suportar DD/MM/YYYY e ISO
-      const base = parseDate(checkOut || checkIn);
-      if (!base || isNaN(base.getTime())) return null;
-      base.setDate(base.getDate() + 1);
-      return fmtDate(base);
-    }
+    if (apiAvailability) return null;
     if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings, sellablePercent);
     return null;
   })();
@@ -1618,14 +1612,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setShowBookingModal(true);
   }, []);
 
-  const handleOpenRoomDetails = useCallback((room, initialPhotoIdx = 0, options = {}) => {
+  const handleOpenRoomDetails = useCallback((room, initialPhotoIdx = 0, isRoomUnavailable = false) => {
     if (!room) return;
-    setDetailModal({
-      roomType: room,
-      initialPhotoIdx,
-      isUnavailable: !!options.isUnavailable,
-      isChecking: !!options.isChecking,
-    });
+    setDetailModal({ roomType: room, initialPhotoIdx, isUnavailable: isRoomUnavailable });
   }, []);
 
   const handleOpenRoomEditor = useCallback((room) => {
@@ -2135,13 +2124,13 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   hS.bookBtn,
                   hS.detailBookBtn,
                   { marginBottom: 8 },
-                  (isUnavailable || isChecking) && hS.bookBtnDisabled,
+                  isUnavailable && hS.bookBtnDisabled,
                 ]}
-                disabled={isUnavailable || isChecking}
-                onPress={() => handleOpenRoomDetails(room, 0, { isUnavailable, isChecking })}
+                disabled={isUnavailable}
+                onPress={() => handleOpenRoomDetails(room, 0, isUnavailable)}
                 activeOpacity={0.85}
               >
-                <Text style={[hS.bookBtnText, (isUnavailable || isChecking) && hS.bookBtnTextDisabled]}>
+                <Text style={[hS.bookBtnText, isUnavailable && hS.bookBtnTextDisabled]}>
                   Ver detalhes e reservar
                 </Text>
               </TouchableOpacity>
@@ -2198,7 +2187,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         roomType={detailModal?.roomType || null}
         business={business}
         initialPhotoIdx={detailModal?.initialPhotoIdx ?? 0}
-        isUnavailable={!!detailModal?.isUnavailable}
+        isUnavailable={detailModal?.isUnavailable ?? false}
         isChecking={!!detailModal?.isChecking}
         onClose={() => setDetailModal(null)}
         onBook={(roomType) => {

@@ -952,7 +952,6 @@ function AppContent() {
         await backendApi.logout({ refreshToken: authSession.refreshToken }).catch(() => {});
       }
     } finally {
-      AsyncStorage.removeItem(OWNER_BIZ_CACHE_KEY).catch(() => {});
       await authSession.saveSession(null);
       setAdminSessionBackup(null);
       setIsBusinessMode(false);

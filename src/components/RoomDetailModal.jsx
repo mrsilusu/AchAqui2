@@ -137,12 +137,12 @@ export default function RoomDetailModal({
 
         <View style={[d.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}> 
           <TouchableOpacity
-            style={[d.bookBtn, (isUnavailable || isChecking) && d.bookBtnDisabled]}
-            disabled={isUnavailable || isChecking}
-            onPress={() => !isUnavailable && !isChecking && onBook?.(roomType)}
+            style={[d.bookBtn, isUnavailable && d.bookBtnDisabled]}
+            disabled={isUnavailable}
+            onPress={() => onBook?.(roomType)}
           >
-            <Text style={[d.bookBtnText, (isUnavailable || isChecking) && d.bookBtnTextDisabled]}>
-              Reservar agora →
+            <Text style={d.bookBtnText}>
+              {isUnavailable ? 'Indisponível nestas datas' : 'Reservar agora →'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -175,7 +175,7 @@ const d = StyleSheet.create({
   policyText:      { fontSize: 14, color: '#475569', marginBottom: 4 },
   footer:          { padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#fff' },
   bookBtn:         { backgroundColor: '#1565C0', borderRadius: 12, padding: 16, alignItems: 'center' },
-  bookBtnDisabled: { backgroundColor: '#E2E8F0' },
+  bookBtnDisabled: { backgroundColor: '#94A3B8' },
   bookBtnText:     { color: '#fff', fontWeight: '700', fontSize: 16 },
   bookBtnTextDisabled: { color: '#94A3B8' },
 });
