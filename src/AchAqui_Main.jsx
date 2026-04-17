@@ -1181,11 +1181,13 @@ function AppContent() {
     let cancelled = false;
 
     const startup = async () => {
+      setIsStartupLoading(true);
+
       // 1. Ler negócio do dono da cache antes das chamadas de rede
       let cachedOwnerBiz = null;
       if (authSession.isOwner && authSession.user?.id) {
         try {
-          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+          const raw = await AsyncStorage.getItem(`${OWNER_BIZ_CACHE_KEY}:${authSession.user.id}`);
           cachedOwnerBiz = raw ? JSON.parse(raw) : null;
         } catch { /* ignorar erros de leitura da cache */ }
       }
@@ -1198,7 +1200,7 @@ function AppContent() {
         const found = list.find((b) => b?.owner?.id === userId);
         if (found) {
           // Negócio encontrado — persistir para uso offline
-          AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+          AsyncStorage.setItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`, JSON.stringify(found)).catch(() => {});
           return list;
         }
         // Não encontrado na lista (API falhou ou não retornou owner) — injectar da cache
@@ -1438,6 +1440,7 @@ function AppContent() {
               ownerMetrics={ownerMetrics}
               ownerRoomBookings={ownerRoomBookings}
               onOwnerRoomBookingsChange={setOwnerRoomBookings}
+              isLoading={isStartupLoading}
             />
           )}
 

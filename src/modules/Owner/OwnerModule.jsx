@@ -253,6 +253,7 @@ export function OwnerModule({
   onRefreshOwnerData = () => {},
   ownerRoomBookings: ownerRoomBookingsProp = null,
   onOwnerRoomBookingsChange = null,
+  isLoading = false,
 }) {
   const ownerMetrics = ownerMetricsProp || {
     views: 0,
@@ -1375,7 +1376,7 @@ export function OwnerModule({
     <View style={{ flex: 1 }}>
 
       {/* ── ONBOARDING: sem negócio associado ─────────────────────────────── */}
-      {!ownerBiz && !showSettings && (
+      {!ownerBiz && !showSettings && !isLoading && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>
             <TouchableOpacity style={profS.backBtn} onPress={onExitOwnerMode}>
