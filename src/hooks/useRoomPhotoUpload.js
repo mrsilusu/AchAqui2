@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { backendApi } from '../lib/backendApi';
 import { BACKEND_URL } from '../lib/runtimeConfig';
 
 export function useRoomPhotoUpload() {
@@ -89,7 +90,6 @@ export function useRoomPhotoUpload() {
     setUploading(true);
     setProgress(0);
     const uploadedUrls = [];
-    let usedLocalFallback = false;
 
     try {
       for (let i = 0; i < result.assets.slice(0, remaining).length; i++) {
@@ -100,7 +100,7 @@ export function useRoomPhotoUpload() {
         const compressed = await ImageManipulator.manipulateAsync(
           asset.uri,
           [{ resize: { width: 1280, height: 720 } }],
-          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
 
         const fileName = `room-${Date.now()}-${i}.jpg`;
@@ -123,20 +123,24 @@ export function useRoomPhotoUpload() {
           if (!uploadRes.ok) throw new Error(`Falha no upload da foto ${i + 1}.`);
           uploadedUrls.push(publicUrl);
         } catch (error) {
-          if (isStorageUnavailable(error) && compressed?.uri) {
-            usedLocalFallback = true;
-            // Fallback local: mesma abordagem do módulo de fotos do negócio.
-            uploadedUrls.push(compressed.uri);
-            continue;
+          if (isStorageUnavailable(error) && compressed?.base64) {
+            try {
+              const fallback = await backendApi.uploadRoomTypePhoto(
+                roomTypeId,
+                { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
+                accessToken,
+              );
+              uploadedUrls.push(fallback.publicUrl);
+              continue;
+            } catch {
+              // se o fallback também falhar, continua para o throw
+            }
           }
           throw error;
         }
       }
 
       setProgress(1);
-      if (usedLocalFallback) {
-        Alert.alert('Modo local activo', 'As fotos do quarto foram adicionadas localmente neste dispositivo.');
-      }
       return uploadedUrls;
     } catch (e) {
       Alert.alert('Erro no upload', e?.message || 'Tenta novamente.');

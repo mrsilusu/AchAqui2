@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
 import { createClient } from '@supabase/supabase-js';
+import * as fs from 'fs/promises';
+import * as nodePath from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadBase64Dto } from './dto/upload-base64.dto';
 
@@ -164,11 +166,22 @@ export class MediaService {
     };
   }
 
+  private async uploadToLocalDisk(
+    filePath: string,
+    dto: UploadBase64Dto,
+  ): Promise<{ path: string; publicUrl: string }> {
+    const uploadsBase = nodePath.join(process.cwd(), 'uploads');
+    const fullPath = nodePath.join(uploadsBase, filePath);
+    await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, Buffer.from(dto.base64, 'base64'));
+    const backendUrl = (process.env.BACKEND_URL ?? '').replace(/\/$/, '')
+      || `http://localhost:${process.env.PORT ?? 3000}`;
+    return { path: filePath, publicUrl: `${backendUrl}/uploads/${filePath}` };
+  }
+
   private async upload(filePath: string, dto: UploadBase64Dto) {
     if (!this.supabase) {
-      throw new ServiceUnavailableException(
-        'Media service não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.',
-      );
+      return this.uploadToLocalDisk(filePath, dto);
     }
 
     const fileBuffer = Buffer.from(dto.base64, 'base64');

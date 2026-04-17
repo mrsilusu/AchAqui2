@@ -30,6 +30,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 import {
   Icon, COLORS, OWNER_BUSINESS,
@@ -798,6 +799,30 @@ export function OwnerModule({
     AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
   }, [ownerPhotos, ownerPhotosStorageKey, updateOwnerBiz]);
 
+  const uploadAndAppendPhoto = useCallback(async (localUri) => {
+    if (!localUri) return;
+    if (!ownerBusinessId || !accessToken) {
+      Alert.alert('Sessão inválida', 'Volta a fazer login para adicionar fotos.');
+      return;
+    }
+    try {
+      const compressed = await ImageManipulator.manipulateAsync(
+        localUri,
+        [{ resize: { width: 1280, height: 720 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      const fileName = `business-${Date.now()}.jpg`;
+      const result = await backendApi.uploadBusinessPhoto(
+        ownerBusinessId,
+        { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
+        accessToken,
+      );
+      appendOwnerPhoto(result.publicUrl);
+    } catch (err) {
+      Alert.alert('Erro no upload', err?.message || 'Não foi possível guardar a foto.');
+    }
+  }, [ownerBusinessId, accessToken, appendOwnerPhoto]);
+
   const pickPhotoFromGallery = useCallback(async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -814,11 +839,11 @@ export function OwnerModule({
 
       if (result.canceled) return;
       const uri = result.assets?.[0]?.uri;
-      if (uri) appendOwnerPhoto(uri);
+      if (uri) uploadAndAppendPhoto(uri);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível abrir a galeria.');
     }
-  }, [appendOwnerPhoto]);
+  }, [uploadAndAppendPhoto]);
 
   const takePhotoWithCamera = useCallback(async () => {
     try {
@@ -836,11 +861,11 @@ export function OwnerModule({
 
       if (result.canceled) return;
       const uri = result.assets?.[0]?.uri;
-      if (uri) appendOwnerPhoto(uri);
+      if (uri) uploadAndAppendPhoto(uri);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível abrir a câmera.');
     }
-  }, [appendOwnerPhoto]);
+  }, [uploadAndAppendPhoto]);
 
   const handleAddPhotoAction = useCallback(() => {
     Alert.alert('Adicionar foto', 'Escolha de onde importar a foto.', [
@@ -1388,17 +1413,7 @@ export function OwnerModule({
       const publicUrl = result?.publicUrl || uri;
       setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), publicUrl] }));
     } catch (uploadErr) {
-      const is503 = uploadErr?.status === 503 || uploadErr?.message?.includes('503')
-        || uploadErr?.message?.toLowerCase().includes('storage');
-      if (is503) {
-        setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), uri] }));
-        Alert.alert(
-          'Foto guardada localmente',
-          'O armazenamento remoto não está configurado. A foto foi guardada apenas neste dispositivo.',
-        );
-      } else {
-        Alert.alert('Erro no upload', uploadErr?.message || 'Não foi possível fazer upload da foto.');
-      }
+      Alert.alert('Erro no upload', uploadErr?.message || 'Não foi possível fazer upload da foto.');
     } finally {
       setIsRoomPhotoUploading(false);
     }
