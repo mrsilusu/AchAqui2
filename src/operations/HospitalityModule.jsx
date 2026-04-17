@@ -487,13 +487,8 @@ function BookingModal({
     if (!isUnavailable || !room || !checkIn) return null;
     // API retorna nextAvailableDate directamente (formato DD/MM/YYYY)
     if (apiAvailability?.nextAvailableDate) return apiAvailability.nextAvailableDate;
-    if (apiAvailability) {
-      // Fallback seguro: usar parseDate para suportar DD/MM/YYYY e ISO
-      const base = parseDate(checkOut || checkIn);
-      if (!base || isNaN(base.getTime())) return null;
-      base.setDate(base.getDate() + 1);
-      return fmtDate(base);
-    }
+    // Se API respondeu mas não tem data sugerida, não adivinhar -- pode também estar ocupado
+    if (apiAvailability) return null;
     if (ownerRoom) return findNextAvailableDate(room, ownerRoom, checkIn, nights || 1, 1, activeBookings, sellablePercent);
     return null;
   })();

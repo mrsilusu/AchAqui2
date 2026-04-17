@@ -869,8 +869,6 @@ function AppContent() {
         await backendApi.logout({ refreshToken: authSession.refreshToken }).catch(() => {});
       }
     } finally {
-      // Limpar cache do negócio do dono ao fazer logout
-      AsyncStorage.removeItem(OWNER_BIZ_CACHE_KEY).catch(() => {});
       await authSession.saveSession(null);
       setAdminSessionBackup(null);
       setIsBusinessMode(false);

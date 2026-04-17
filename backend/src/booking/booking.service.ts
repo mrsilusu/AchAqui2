@@ -628,7 +628,6 @@ export class BookingService {
     // Calcular próxima data disponível se ocupado
     let nextAvailableDate: string | null = null;
     if (available === 0 && sellableCapacity > 0) {
-      // Encontrar a última reserva activa que se sobrepõe e sugerir após o seu checkout
       const lastBooking = await this.prisma.htRoomBooking.findFirst({
         where: {
           roomTypeId,
@@ -640,27 +639,33 @@ export class BookingService {
         select: { endDate: true },
       });
       if (lastBooking) {
-        // Sugerir endDate + 1 para garantir tempo de limpeza/housekeeping.
-        // Ex: reserva 10→12, checkout dia 12, próxima entrada sugerida: dia 13.
-        const next = new Date(lastBooking.endDate);
-        next.setDate(next.getDate() + 1);
-        // Verificar se nessa data já há disponibilidade
-        const nextEnd = new Date(next.getTime() + nights * 24 * 60 * 60 * 1000);
-        const nextOverlapBookings = await this.prisma.htRoomBooking.findMany({
+        const searchFrom = new Date(lastBooking.endDate);
+        searchFrom.setDate(searchFrom.getDate() + 1);
+        const searchTo = new Date(searchFrom.getTime() + 60 * 24 * 60 * 60 * 1000);
+        // Uma query para todos os próximos 60 dias; depois verificar dia a dia em memória
+        const windowBookings = await this.prisma.htRoomBooking.findMany({
           where: {
             businessId,
             roomTypeId,
             status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-            startDate: { lt: nextEnd },
-            endDate:   { gt: next },
+            startDate: { lt: searchTo },
+            endDate:   { gt: searchFrom },
           },
-          select: { rooms: true },
+          select: { rooms: true, startDate: true, endDate: true },
         });
-        const nextOccupied = nextOverlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
-        if (nextOccupied < sellableCapacity) {
-          const d = next.toISOString().slice(0, 10);
-          const [y, m, day] = d.split('-');
-          nextAvailableDate = `${day}/${m}/${y}`;
+        const candidate = new Date(searchFrom);
+        for (let i = 0; i < 60; i++) {
+          const candidateEnd = new Date(candidate.getTime() + nights * 24 * 60 * 60 * 1000);
+          const occupied = windowBookings
+            .filter((b) => b.startDate < candidateEnd && b.endDate > candidate)
+            .reduce((sum, b) => sum + (b.rooms ?? 1), 0);
+          if (occupied < sellableCapacity) {
+            const d = candidate.toISOString().slice(0, 10);
+            const [y, m, day] = d.split('-');
+            nextAvailableDate = `${day}/${m}/${y}`;
+            break;
+          }
+          candidate.setDate(candidate.getDate() + 1);
         }
       }
     }
