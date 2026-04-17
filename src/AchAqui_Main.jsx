@@ -726,6 +726,39 @@ function AppContent() {
     }
   }, [authSession.accessToken, authSession.isOwner, liveSync]);
 
+  const ensureOwnerBizInList = useCallback(async (list) => {
+    if (!authSession.isOwner || !authSession.user?.id) return list;
+
+    const dedupeById = (arr) => {
+      const seen = new Set();
+      return arr.filter((biz) => {
+        const id = biz?.id;
+        if (!id) return true;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    };
+
+    const safeList = dedupeById(list);
+    const userId = authSession.user.id;
+    const found = safeList.find((b) => b?.owner?.id === userId);
+    if (found) {
+      AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+      return safeList;
+    }
+    try {
+      const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+      const cached = raw ? JSON.parse(raw) : null;
+      if (cached?.owner?.id === userId) {
+        return dedupeById([cached, ...safeList]);
+      }
+    } catch {
+      // ignore cache read errors and keep list unchanged
+    }
+    return safeList;
+  }, [authSession.isOwner, authSession.user?.id]);
+
   const handleHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
     try {
@@ -762,7 +795,7 @@ function AppContent() {
 
           const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
           const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
-          setBusinesses([...fromFeed, ...fromApi, ...mocksFallback]);
+          setBusinesses(await ensureOwnerBizInList([...fromFeed, ...fromApi, ...mocksFallback]));
           return;
         }
       }
@@ -771,11 +804,11 @@ function AppContent() {
       const fromApi = (Array.isArray(response) ? response : [])
         .map(normalizeBusiness).filter(Boolean);
       const apiIds = new Set(fromApi.map(b => b.id));
-      setBusinesses([...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]);
+      setBusinesses(await ensureOwnerBizInList([...fromApi, ...MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id))]));
       filters.refreshShuffle?.();
     } catch {}
     finally { setHomeRefreshing(false); }
-  }, [filters, userLocation?.latitude, userLocation?.longitude]);
+  }, [ensureOwnerBizInList, filters, userLocation?.latitude, userLocation?.longitude]);
 
   // ── Dados globais ──────────────────────────────────────────────────────────
   const [businesses, setBusinesses] = useState([]);
@@ -1224,31 +1257,6 @@ function AppContent() {
     let cancelled = false;
 
     const startup = async () => {
-      // Ler cache do negócio do dono antes das chamadas de rede
-      let cachedOwnerBiz = null;
-      if (authSession.isOwner && authSession.user?.id) {
-        try {
-          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
-          cachedOwnerBiz = raw ? JSON.parse(raw) : null;
-        } catch { /* ignorar */ }
-      }
-
-      // Garante que o negócio do dono está sempre na lista:
-      // encontrado → actualiza cache; não encontrado → injecta da cache
-      const ensureOwnerBizInList = (list) => {
-        if (!authSession.isOwner || !authSession.user?.id) return list;
-        const userId = authSession.user.id;
-        const found = list.find((b) => b?.owner?.id === userId);
-        if (found) {
-          AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
-          return list;
-        }
-        if (cachedOwnerBiz?.owner?.id === userId) {
-          return [cachedOwnerBiz, ...list];
-        }
-        return list;
-      };
-
       try {
         // allSettled: cada chamada falha de forma independente
         const [meSettled, dashSettled, bizSettled, recSettled, hybridSettled] =
@@ -1311,7 +1319,7 @@ function AppContent() {
 
           const mergedIds = new Set([...fromFeed, ...fromApi].map((b) => b.id));
           const mocksFallback = MOCK_BUSINESSES_INITIAL.filter((b) => !mergedIds.has(b.id));
-          setBusinesses(ensureOwnerBizInList(
+          setBusinesses(await ensureOwnerBizInList(
             applyEstimatedDistances([...fromFeed, ...fromApi, ...mocksFallback], userLocationRef.current),
           ));
           return;
@@ -1330,7 +1338,7 @@ function AppContent() {
               : biz;
           })
           .sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
-        setBusinesses(ensureOwnerBizInList(applyEstimatedDistances(merged, userLocationRef.current)));
+        setBusinesses(await ensureOwnerBizInList(applyEstimatedDistances(merged, userLocationRef.current)));
       } catch (error) {
         console.error('[Startup][ERRO_INESPERADO]', {
           reason: error?.type || 'unknown',
@@ -1340,7 +1348,7 @@ function AppContent() {
         if (!cancelled) {
           setProfileData(null);
           setOwnerDashboardData(null);
-          setBusinesses(ensureOwnerBizInList(MOCK_BUSINESSES_INITIAL));
+          setBusinesses(await ensureOwnerBizInList(MOCK_BUSINESSES_INITIAL));
         }
       } finally {
         if (!cancelled) setIsStartupLoading(false);
@@ -1352,7 +1360,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.accessToken, authSession.isOwner, authSession.user?.id,
+  }, [authSession.accessToken, authSession.isOwner, authSession.user?.id, ensureOwnerBizInList,
       userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {

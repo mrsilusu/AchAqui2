@@ -386,6 +386,7 @@ export function BusinessDetailModal({
         return false; // não captura no início — só em movimento
       },
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
+        if (detailModal) return false;
         // Layer operacional activa → não interferir
         if (layer.activeLayer) return false;
 

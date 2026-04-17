@@ -633,39 +633,27 @@ export class BookingService {
     // Calcular próxima data disponível se ocupado
     let nextAvailableDate: string | null = null;
     if (available === 0 && sellableCapacity > 0) {
-      // Encontrar a última reserva activa que se sobrepõe e sugerir após o seu checkout
-      const lastBooking = await this.prisma.htRoomBooking.findFirst({
-        where: {
-          roomTypeId,
-          status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-          startDate: { lt: eDate },
-          endDate:   { gt: sDate },
-        },
-        orderBy: { endDate: 'desc' },
-        select: { endDate: true },
-      });
-      if (lastBooking) {
-        // Sugerir endDate + 1 para garantir tempo de limpeza/housekeeping.
-        // Ex: reserva 10→12, checkout dia 12, próxima entrada sugerida: dia 13.
-        const next = new Date(lastBooking.endDate);
-        next.setDate(next.getDate() + 1);
-        // Verificar se nessa data já há disponibilidade
-        const nextEnd = new Date(next.getTime() + nights * 24 * 60 * 60 * 1000);
-        const nextOverlapBookings = await this.prisma.htRoomBooking.findMany({
+      for (let offset = 1; offset <= 60; offset++) {
+        const probeStart = new Date(sDate);
+        probeStart.setDate(probeStart.getDate() + offset);
+        const probeEnd = new Date(probeStart.getTime() + nights * 86400000);
+
+        const probeOccupied = await this.prisma.htRoomBooking.findMany({
           where: {
             businessId,
             roomTypeId,
-            status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as any },
-            startDate: { lt: nextEnd },
-            endDate:   { gt: next },
+            status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] as HtBookingStatus[] },
+            startDate: { lt: probeEnd },
+            endDate: { gt: probeStart },
           },
           select: { rooms: true },
-        });
-        const nextOccupied = nextOverlapBookings.reduce((sum, b) => sum + (b.rooms ?? 1), 0);
-        if (nextOccupied < sellableCapacity) {
-          const d = next.toISOString().slice(0, 10);
-          const [y, m, day] = d.split('-');
+        }).then(rows => rows.reduce((sum, b) => sum + (b.rooms ?? 1), 0));
+
+        if (probeOccupied < sellableCapacity) {
+          const iso = probeStart.toISOString().slice(0, 10);
+          const [y, m, day] = iso.split('-');
           nextAvailableDate = `${day}/${m}/${y}`;
+          break;
         }
       }
     }

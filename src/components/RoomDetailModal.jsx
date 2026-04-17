@@ -14,6 +14,8 @@ export default function RoomDetailModal({
   roomType,
   business,
   initialPhotoIdx,
+  isUnavailable,
+  isChecking,
   onClose,
   onBook,
 }) {
@@ -36,8 +38,14 @@ export default function RoomDetailModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={d.container} edges={['top', 'bottom']}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      allowSwipeDismissal={false}
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={d.container} edges={['top', 'right', 'bottom', 'left']}>
         <View style={d.header}>
           <TouchableOpacity onPress={onClose} style={d.closeBtn}>
             <Text style={d.closeBtnText}>✕</Text>
@@ -65,7 +73,7 @@ export default function RoomDetailModal({
                     <Image
                       source={{ uri: url }}
                       style={{ width: SCREEN_WIDTH, height: CAROUSEL_HEIGHT }}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                   )}
                   getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
@@ -78,7 +86,9 @@ export default function RoomDetailModal({
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={d.thumbRow}>
                 {photos.map((url, i) => (
                   <TouchableOpacity key={url} onPress={() => scrollToPhoto(i)}>
-                    <Image source={{ uri: url }} style={[d.thumb, i === activeIdx && d.thumbActive]} />
+                    <View style={[d.thumb, i === activeIdx && d.thumbActive]}>
+                      <Image source={{ uri: url }} style={d.thumbImage} resizeMode="contain" />
+                    </View>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -126,8 +136,14 @@ export default function RoomDetailModal({
         </ScrollView>
 
         <View style={[d.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}> 
-          <TouchableOpacity style={d.bookBtn} onPress={() => onBook?.(roomType)}>
-            <Text style={d.bookBtnText}>Reservar agora →</Text>
+          <TouchableOpacity
+            style={[d.bookBtn, (isUnavailable || isChecking) && d.bookBtnDisabled]}
+            disabled={isUnavailable || isChecking}
+            onPress={() => !isUnavailable && !isChecking && onBook?.(roomType)}
+          >
+            <Text style={[d.bookBtnText, (isUnavailable || isChecking) && d.bookBtnTextDisabled]}>
+              Reservar agora →
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -144,7 +160,8 @@ const d = StyleSheet.create({
   photoCounter:    { position: 'absolute', bottom: 10, right: 12, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   photoCounterText:{ color: '#fff', fontSize: 12, fontWeight: '600' },
   thumbRow:        { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#1E293B' },
-  thumb:           { width: 52, height: 38, borderRadius: 5, marginRight: 6, borderWidth: 2, borderColor: 'transparent' },
+  thumb:           { width: 80, height: 60, borderRadius: 8, marginRight: 6, borderWidth: 2, borderColor: 'transparent', overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  thumbImage:      { width: '100%', height: '100%' },
   thumbActive:     { borderColor: '#60A5FA' },
   noPhoto:         { height: CAROUSEL_HEIGHT, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
   noPhotoIcon:     { fontSize: 60 },
@@ -158,5 +175,7 @@ const d = StyleSheet.create({
   policyText:      { fontSize: 14, color: '#475569', marginBottom: 4 },
   footer:          { padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#fff' },
   bookBtn:         { backgroundColor: '#1565C0', borderRadius: 12, padding: 16, alignItems: 'center' },
+  bookBtnDisabled: { backgroundColor: '#E2E8F0' },
   bookBtnText:     { color: '#fff', fontWeight: '700', fontSize: 16 },
+  bookBtnTextDisabled: { color: '#94A3B8' },
 });

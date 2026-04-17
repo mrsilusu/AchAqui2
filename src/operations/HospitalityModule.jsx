@@ -1618,9 +1618,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
     setShowBookingModal(true);
   }, []);
 
-  const handleOpenRoomDetails = useCallback((room, initialPhotoIdx = 0) => {
+  const handleOpenRoomDetails = useCallback((room, initialPhotoIdx = 0, options = {}) => {
     if (!room) return;
-    setDetailModal({ roomType: room, initialPhotoIdx });
+    setDetailModal({
+      roomType: room,
+      initialPhotoIdx,
+      isUnavailable: !!options.isUnavailable,
+      isChecking: !!options.isChecking,
+    });
   }, []);
 
   const handleOpenRoomEditor = useCallback((room) => {
@@ -2050,24 +2055,36 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                 </View>
               )}
               {isOwner && (
-                <View style={{ marginBottom: 8 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 }}>Fotos do Quarto</Text>
+                <View style={hS.roomPhotoSection}>
+                  <Text style={hS.roomPhotoTitle}>Fotos do Quarto</Text>
                   {room.photos?.length > 0 ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {room.photos.slice(0, 4).map((url, idx) => (
-                        <Image
-                          key={`${room.id}-photo-${idx}`}
-                          source={{ uri: url }}
-                          style={{ width: 56, height: 42, borderRadius: 6, marginRight: 6, backgroundColor: COLORS.grayBg }}
-                        />
+                    <View style={hS.roomThumbRow}>
+                      {room.photos.slice(0, 3).map((url, idx) => (
+                        <View key={`${room.id}-photo-${idx}`} style={hS.roomThumb}>
+                          <Image
+                            source={{ uri: url }}
+                            style={hS.roomThumbImg}
+                            resizeMode="cover"
+                          />
+                        </View>
                       ))}
-                    </ScrollView>
+                      {(room.photos || []).length > 3 && (
+                        <TouchableOpacity
+                          style={[hS.roomThumb, hS.roomExtraThumb]}
+                          onPress={() => handleOpenRoomDetails(room, 0)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={hS.roomExtraText}>+{(room.photos || []).length - 3}{'\n'}fotos</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   ) : (
-                    <View style={{ height: 42, borderRadius: 6, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 12, color: COLORS.grayText }}>🛏️ Sem fotos</Text>
+                    <View style={hS.roomPhotoPlaceholder}>
+                      <Text style={hS.roomPhotoPlaceholderIcon}>🛏️</Text>
+                      <Text style={hS.roomPhotoPlaceholderText}>Sem fotos disponíveis</Text>
                     </View>
                   )}
-                  <Text style={{ fontSize: 10, color: COLORS.grayText, marginTop: 4 }}>
+                  <Text style={hS.roomPhotoCountText}>
                     {(room.photos || []).length}/10 fotos
                   </Text>
                 </View>
@@ -2114,11 +2131,19 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[hS.bookBtn, hS.detailBookBtn, { marginBottom: 8 }]}
-                onPress={() => handleOpenRoomDetails(room, 0)}
+                style={[
+                  hS.bookBtn,
+                  hS.detailBookBtn,
+                  { marginBottom: 8 },
+                  (isUnavailable || isChecking) && hS.bookBtnDisabled,
+                ]}
+                disabled={isUnavailable || isChecking}
+                onPress={() => handleOpenRoomDetails(room, 0, { isUnavailable, isChecking })}
                 activeOpacity={0.85}
               >
-                <Text style={hS.bookBtnText}>Ver detalhes e reservar</Text>
+                <Text style={[hS.bookBtnText, (isUnavailable || isChecking) && hS.bookBtnTextDisabled]}>
+                  Ver detalhes e reservar
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[hS.bookBtn, isUnavailable && hS.bookBtnDisabled]}
@@ -2173,8 +2198,11 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         roomType={detailModal?.roomType || null}
         business={business}
         initialPhotoIdx={detailModal?.initialPhotoIdx ?? 0}
+        isUnavailable={!!detailModal?.isUnavailable}
+        isChecking={!!detailModal?.isChecking}
         onClose={() => setDetailModal(null)}
         onBook={(roomType) => {
+          if (detailModal?.isUnavailable || detailModal?.isChecking) return;
           setDetailModal(null);
           handleBook(roomType || detailModal?.roomType);
         }}
@@ -2372,6 +2400,17 @@ const hS = StyleSheet.create({
   amenRowWrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   amenityTag:       { fontSize: 12, color: '#334155', backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
   amenityMore:      { fontSize: 12, color: '#94A3B8', alignSelf: 'center' },
+  roomPhotoSection: { marginBottom: 8 },
+  roomPhotoTitle:   { fontSize: 11, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 },
+  roomThumbRow:     { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  roomThumb:        { width: 80, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  roomThumbImg:     { width: '100%', height: '100%' },
+  roomExtraThumb:   { backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  roomExtraText:    { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  roomPhotoPlaceholder: { flex: 1, height: 60, borderRadius: 8, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  roomPhotoPlaceholderIcon: { fontSize: 20 },
+  roomPhotoPlaceholderText: { fontSize: 12, color: '#94A3B8' },
+  roomPhotoCountText:{ fontSize: 10, color: COLORS.grayText, marginTop: 4 },
   roomMeta:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 10,
                       borderTopWidth: 1, borderTopColor: '#EBEBEB', marginBottom: 10 },
   roomMetaItem:     { flexDirection: 'row', alignItems: 'center', gap: 4 },

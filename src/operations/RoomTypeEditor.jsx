@@ -93,7 +93,14 @@ export default function RoomTypeEditor({
               )}
               style={s.photoThumb}
             >
-              <Image source={{ uri: url }} style={s.photoImg} />
+              <Image source={{ uri: url }} style={s.photoImg} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={() => handleRemovePhoto(url)}
+                style={s.photoRemoveBtn}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Text style={s.photoRemoveBtnText}>✕</Text>
+              </TouchableOpacity>
               {idx === 0 && (
                 <View style={s.primaryBadge}>
                   <Text style={s.primaryBadgeText}>Principal</Text>
@@ -180,8 +187,8 @@ function AmenitiesModal({ visible, selected, insets, onToggle, onClose }) {
   const bottomInset = (insets?.bottom ?? 0) > 0 ? insets.bottom : (Platform.OS === 'ios' ? 12 : 16);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={s.modalSafeArea} edges={['top', 'bottom']}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" allowSwipeDismissal={false} onRequestClose={onClose}>
+      <SafeAreaView style={s.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
         <View style={[s.modalHeader, { paddingTop: topInset + 10 }]}> 
           <Text style={s.modalTitle}>Comodidades do Quarto</Text>
           <TouchableOpacity onPress={onClose}>
@@ -229,6 +236,8 @@ const s = StyleSheet.create({
   photoRow:        { flexDirection: 'row', marginBottom: 8 },
   photoThumb:      { width: 90, height: 68, borderRadius: 8, marginRight: 8, overflow: 'hidden', backgroundColor: '#E2E8F0' },
   photoImg:        { width: '100%', height: '100%' },
+  photoRemoveBtn:  { position: 'absolute', top: 5, right: 5, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(15,23,42,0.75)', alignItems: 'center', justifyContent: 'center' },
+  photoRemoveBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', lineHeight: 15 },
   primaryBadge:    { position: 'absolute', bottom: 4, left: 4, backgroundColor: 'rgba(21,101,192,0.85)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
   primaryBadgeText:{ color: '#fff', fontSize: 9, fontWeight: '700' },
   addPhotoBtn:     { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#1565C0', borderStyle: 'dashed' },
