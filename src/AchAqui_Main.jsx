@@ -1254,9 +1254,9 @@ function AppContent() {
   // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
     let cancelled = false;
-    setIsStartupLoading(true);
 
     const startup = async () => {
+      setIsStartupLoading(true);
       try {
         const userId = authSession.user?.id;
         let cachedOwnerBiz = null;
