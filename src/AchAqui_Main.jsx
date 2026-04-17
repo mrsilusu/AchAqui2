@@ -704,11 +704,11 @@ function AppContent() {
       const userId = authSession.user?.id;
       const found = userId ? merged.find(b => b?.owner?.id === userId) : null;
       if (found) {
-        AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+        AsyncStorage.setItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`, JSON.stringify(found)).catch(() => {});
         setBusinesses(merged);
       } else {
         try {
-          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+          const raw = await AsyncStorage.getItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`);
           const cached = raw ? JSON.parse(raw) : null;
           setBusinesses(cached?.owner?.id === userId ? [cached, ...merged] : merged);
         } catch {
@@ -744,11 +744,11 @@ function AppContent() {
     const userId = authSession.user.id;
     const found = safeList.find((b) => b?.owner?.id === userId);
     if (found) {
-      AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+      AsyncStorage.setItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`, JSON.stringify(found)).catch(() => {});
       return safeList;
     }
     try {
-      const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+      const raw = await AsyncStorage.getItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`);
       const cached = raw ? JSON.parse(raw) : null;
       if (cached?.owner?.id === userId) {
         return dedupeById([cached, ...safeList]);
@@ -1254,9 +1254,27 @@ function AppContent() {
   // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
     let cancelled = false;
+    setIsStartupLoading(true);
 
     const startup = async () => {
       try {
+        const userId = authSession.user?.id;
+        let cachedOwnerBiz = null;
+        try {
+          const raw = userId ? await AsyncStorage.getItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`) : null;
+          cachedOwnerBiz = raw ? JSON.parse(raw) : null;
+        } catch {
+          cachedOwnerBiz = null;
+        }
+
+        // Injectar imediatamente da cache para evitar flash do onboarding
+        if (cachedOwnerBiz && !cancelled) {
+          setBusinesses(prev => {
+            if (userId && prev.some(b => b?.owner?.id === userId)) return prev;
+            return [cachedOwnerBiz, ...prev];
+          });
+        }
+
         // allSettled: cada chamada falha de forma independente
         const [meSettled, dashSettled, bizSettled, recSettled, hybridSettled] =
           await Promise.allSettled([
@@ -1466,6 +1484,7 @@ function AppContent() {
           {isBusinessMode && !isStaff && !authSession.isAdmin && (
             <OwnerModule
               businesses={businesses}
+              isLoading={isStartupLoading}
               activeBusinessTab={activeBusinessTab}
               setActiveBusinessTab={setActiveBusinessTab}
               insets={insets}

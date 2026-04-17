@@ -236,6 +236,7 @@ const calS = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export function OwnerModule({
   businesses = [],
+  isLoading = false,
   activeBusinessTab,
   setActiveBusinessTab,
   insets,
@@ -1526,7 +1527,7 @@ export function OwnerModule({
     <View style={{ flex: 1 }}>
 
       {/* ── ONBOARDING: sem negócio associado ─────────────────────────────── */}
-      {!ownerBiz && !showSettings && (
+      {!ownerBiz && !showSettings && !isLoading && (
         <View style={[profS.overlay, { top: insets.top, bottom: (insets.bottom || 0) + 58.5 }]}>
           <View style={profS.header}>
             <TouchableOpacity style={profS.backBtn} onPress={onExitOwnerMode}>
