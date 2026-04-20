@@ -645,18 +645,17 @@ function AppContent() {
       const mocksNotInApi = MOCK_BUSINESSES_INITIAL.filter(b => !apiIds.has(b.id));
       const merged = [...fromApi, ...mocksNotInApi];
 
-      // Garantir que o negócio do dono está na lista + actualizar cache
       const userId = authSession.user?.id;
       const found = userId ? merged.find(b => b?.owner?.id === userId) : null;
       if (found) {
-        AsyncStorage.setItem(OWNER_BIZ_CACHE_KEY, JSON.stringify(found)).catch(() => {});
+        AsyncStorage.setItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`, JSON.stringify(found)).catch(() => {});
         setBusinesses(merged);
       } else {
-        // Tentar recuperar da cache se a API não devolveu o negócio do dono
         try {
-          const raw = await AsyncStorage.getItem(OWNER_BIZ_CACHE_KEY);
+          const raw = userId ? await AsyncStorage.getItem(`${OWNER_BIZ_CACHE_KEY}:${userId}`) : null;
           const cached = raw ? JSON.parse(raw) : null;
-          setBusinesses(cached?.owner?.id === userId ? [cached, ...merged] : merged);
+          const jaExiste = cached?.id && merged.some((b) => b?.id === cached.id);
+          setBusinesses(cached?.owner?.id === userId && !jaExiste ? [cached, ...merged] : merged);
         } catch {
           setBusinesses(merged);
         }
@@ -1205,6 +1204,9 @@ function AppContent() {
         }
         // Não encontrado na lista (API falhou ou não retornou owner) — injectar da cache
         if (cachedOwnerBiz?.owner?.id === userId) {
+          // Verificar por ID — negócio pode estar na lista sem o campo owner (ex: feed híbrido)
+          const jaExiste = cachedOwnerBiz.id && list.some((b) => b?.id === cachedOwnerBiz.id);
+          if (jaExiste) return list;
           return [cachedOwnerBiz, ...list];
         }
         return list;
