@@ -842,7 +842,7 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: [ImagePicker.MediaType.images],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.8,
       });
@@ -864,7 +864,7 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: [ImagePicker.MediaType.images],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.8,
       });

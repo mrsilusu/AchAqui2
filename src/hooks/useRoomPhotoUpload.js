@@ -64,7 +64,7 @@ export function useRoomPhotoUpload() {
     let result;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: [ImagePicker.MediaType.images],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 1,
       });
