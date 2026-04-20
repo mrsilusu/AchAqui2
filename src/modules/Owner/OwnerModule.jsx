@@ -25,7 +25,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
   SafeAreaView, Image, TextInput, Alert, Switch,
   Dimensions, Platform, Animated, PanResponder,
-  KeyboardAvoidingView, Linking,
+  KeyboardAvoidingView, Linking, ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -590,6 +590,7 @@ export function OwnerModule({
     address: OWNER_BUSINESS.address||'', phone: OWNER_BUSINESS.phone||'',
     hours: OWNER_BUSINESS.hours||'', description: OWNER_BUSINESS.description||'', isPublic: true,
   });
+  const [isBusinessPhotoUploading, setIsBusinessPhotoUploading] = useState(false);
 
   // ── findOwnerBiz — resolve o negócio dono da lista de businesses ──────────
   // Prioridade: 1º negócio da BD com este owner, 2º negócio com o ID fixo do mock, 3º mock local
@@ -785,43 +786,52 @@ export function OwnerModule({
     }
   }, []);
 
-  const appendOwnerPhoto = useCallback((uri) => {
-    if (!uri || typeof uri !== 'string') return;
-    const current = ownerPhotos || [];
-    if (current.includes(uri)) {
-      Alert.alert('Foto já adicionada', 'Esta foto já existe na galeria do negócio.');
+  const appendOwnerPhoto = useCallback(async (localUri) => {
+    if (!localUri || typeof localUri !== 'string') return;
+    if (!ownerBusinessId) {
+      Alert.alert('Negócio não encontrado', 'Guarda o negócio antes de adicionar fotos.');
       return;
     }
-    const updated = [...current, uri];
-    OWNER_BUSINESS.photos = updated;
-    setOwnerPhotos(updated);
-    updateOwnerBiz({ photos: updated });
-    AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
-  }, [ownerPhotos, ownerPhotosStorageKey, updateOwnerBiz]);
 
-  const uploadAndAppendPhoto = useCallback(async (localUri) => {
-    if (!localUri) return;
-    if (!ownerBusinessId || !accessToken) {
-      Alert.alert('Sessão inválida', 'Volta a fazer login para adicionar fotos.');
-      return;
-    }
+    const current = ownerPhotos || [];
+    if (current.includes(localUri)) return;
+
+    setIsBusinessPhotoUploading(true);
     try {
-      const compressed = await ImageManipulator.manipulateAsync(
-        localUri,
-        [{ resize: { width: 1280, height: 720 } }],
-        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-      );
-      const fileName = `business-${Date.now()}.jpg`;
-      const result = await backendApi.uploadBusinessPhoto(
-        ownerBusinessId,
-        { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
+      const fileName = `biz-${Date.now()}.jpg`;
+      const { signedUrl, publicUrl } = await backendApi.getSignedUploadUrl(
+        `businesses/${ownerBusinessId}`,
+        fileName,
         accessToken,
       );
-      appendOwnerPhoto(result.publicUrl);
+
+      const blob = await fetch(localUri).then((r) => r.blob());
+      const uploadRes = await fetch(signedUrl, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+
+      if (!uploadRes.ok) throw new Error(`Upload falhou (${uploadRes.status})`);
+
+      const updated = [...current, publicUrl];
+      OWNER_BUSINESS.photos = updated;
+      setOwnerPhotos(updated);
+      updateOwnerBiz({ photos: updated });
+
+      // Persistir na BD — visível em todos os dispositivos
+      await backendApi.updateBusiness(ownerBusinessId, { photos: updated }, accessToken);
     } catch (err) {
-      Alert.alert('Erro no upload', err?.message || 'Não foi possível guardar a foto.');
+      const is503 = err?.status === 503 || String(err?.message).toLowerCase().includes('storage');
+      if (is503) {
+        Alert.alert('Storage não configurado', 'Configura SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no backend para guardar fotos remotamente.');
+      } else {
+        Alert.alert('Erro no upload', err?.message || 'Não foi possível fazer upload da foto.');
+      }
+    } finally {
+      setIsBusinessPhotoUploading(false);
     }
-  }, [ownerBusinessId, accessToken, appendOwnerPhoto]);
+  }, [ownerPhotos, ownerBusinessId, accessToken, updateOwnerBiz]);
 
   const pickPhotoFromGallery = useCallback(async () => {
     try {
@@ -832,18 +842,18 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: [ImagePicker.MediaType.images],
         allowsEditing: true,
         quality: 0.8,
       });
 
       if (result.canceled) return;
       const uri = result.assets?.[0]?.uri;
-      if (uri) uploadAndAppendPhoto(uri);
+      if (uri) appendOwnerPhoto(uri);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível abrir a galeria.');
     }
-  }, [uploadAndAppendPhoto]);
+  }, [appendOwnerPhoto]);
 
   const takePhotoWithCamera = useCallback(async () => {
     try {
@@ -854,18 +864,18 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: [ImagePicker.MediaType.images],
         allowsEditing: true,
         quality: 0.8,
       });
 
       if (result.canceled) return;
       const uri = result.assets?.[0]?.uri;
-      if (uri) uploadAndAppendPhoto(uri);
+      if (uri) appendOwnerPhoto(uri);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível abrir a câmera.');
     }
-  }, [uploadAndAppendPhoto]);
+  }, [appendOwnerPhoto]);
 
   const handleAddPhotoAction = useCallback(() => {
     Alert.alert('Adicionar foto', 'Escolha de onde importar a foto.', [
@@ -5383,8 +5393,11 @@ export function OwnerModule({
               onPress={handleAddPhotoAction}
               style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.grayBg, alignItems: 'center', justifyContent: 'center' }}
               activeOpacity={0.7}
+              disabled={isBusinessPhotoUploading}
             >
-              <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
+              {isBusinessPhotoUploading
+                ? <ActivityIndicator size="small" color={COLORS.red} />
+                : <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />}
             </TouchableOpacity>
           </View>
 

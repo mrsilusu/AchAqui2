@@ -369,6 +369,7 @@ model Business {
   htFolioItems   HtFolioItem[]
   // DI — Dining (reservas de mesa já existentes)
   diBookings     DiTableBooking[]
+  photos         String[]               @default([])
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 }

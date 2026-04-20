@@ -43,6 +43,14 @@ export class MediaController {
     );
   }
 
+  @Post('signed-url')
+  @Roles(UserRole.OWNER)
+  getGenericSignedUrl(
+    @Body() body: { folder: string; fileName: string },
+  ) {
+    return this.mediaService.createGenericSignedUrl(body.folder, body.fileName);
+  }
+
   @Post('room-type/:roomTypeId/upload')
   @Roles(UserRole.OWNER)
   uploadRoomTypePhoto(

@@ -179,6 +179,27 @@ export class MediaService {
     return { path: filePath, publicUrl: `${backendUrl}/uploads/${filePath}` };
   }
 
+  async createGenericSignedUrl(folder: string, fileName: string) {
+    if (!this.supabase) {
+      throw new ServiceUnavailableException('Storage não configurado.');
+    }
+    const safeFolder = folder.replace(/\.\./g, '').replace(/[^a-zA-Z0-9/_-]/g, '');
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${safeFolder}/${Date.now()}-${safeFileName}`;
+
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUploadUrl(filePath);
+
+    if (error || !data) throw new Error('Erro ao gerar signed URL.');
+
+    const { data: urlData } = this.supabase.storage
+      .from(this.bucket)
+      .getPublicUrl(filePath);
+
+    return { signedUrl: data.signedUrl, filePath, publicUrl: urlData.publicUrl };
+  }
+
   private async upload(filePath: string, dto: UploadBase64Dto) {
     if (!this.supabase) {
       return this.uploadToLocalDisk(filePath, dto);

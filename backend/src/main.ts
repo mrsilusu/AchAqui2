@@ -22,6 +22,7 @@ async function bootstrap() {
     }),
   );
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  app.use(require('express').json({ limit: '50mb' }));
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

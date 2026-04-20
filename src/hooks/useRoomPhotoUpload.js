@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { backendApi } from '../lib/backendApi';
 import { BACKEND_URL } from '../lib/runtimeConfig';
 
 export function useRoomPhotoUpload() {
@@ -39,17 +38,6 @@ export function useRoomPhotoUpload() {
     return response.json();
   };
 
-  const isStorageUnavailable = (error) => {
-    const status = Number(error?.status || 0);
-    const message = String(error?.message || '').toLowerCase();
-    const raw = String(error?.rawError || '').toLowerCase();
-    return status === 503
-      || message.includes('storage não configurado')
-      || message.includes('storage nao configurado')
-      || raw.includes('storage não configurado')
-      || raw.includes('storage nao configurado');
-  };
-
   const pickAndUpload = async ({ roomTypeId, businessId, accessToken, currentCount = 0 }) => {
     if (!roomTypeId || !businessId) {
       Alert.alert('Dados em falta', 'Não foi possível identificar o tipo de quarto para adicionar fotos.');
@@ -76,7 +64,7 @@ export function useRoomPhotoUpload() {
     let result;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: [ImagePicker.MediaType.images],
         allowsEditing: true,
         quality: 1,
       });
@@ -123,19 +111,6 @@ export function useRoomPhotoUpload() {
           if (!uploadRes.ok) throw new Error(`Falha no upload da foto ${i + 1}.`);
           uploadedUrls.push(publicUrl);
         } catch (error) {
-          if (isStorageUnavailable(error) && compressed?.base64) {
-            try {
-              const fallback = await backendApi.uploadRoomTypePhoto(
-                roomTypeId,
-                { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
-                accessToken,
-              );
-              uploadedUrls.push(fallback.publicUrl);
-              continue;
-            } catch {
-              // se o fallback também falhar, continua para o throw
-            }
-          }
           throw error;
         }
       }
