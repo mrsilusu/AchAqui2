@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { StaffRole } from '@prisma/client';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadBase64Dto } from './dto/upload-base64.dto';
@@ -37,7 +39,7 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste estabelecimento.');
     }
 
-    const filePath = `business/${businessId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `imagens/business/${businessId}/${Date.now()}-${dto.fileName}`;
     return this.upload(filePath, dto);
   }
 
@@ -62,7 +64,7 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste item.');
     }
 
-    const filePath = `item/${itemId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `imagens/item/${itemId}/${Date.now()}-${dto.fileName}`;
     return this.upload(filePath, dto);
   }
 
@@ -87,14 +89,85 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste tipo de quarto.');
     }
 
-    const filePath = `room-type/${roomTypeId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `imagens/room-type/${roomTypeId}/${Date.now()}-${dto.fileName}`;
     return this.upload(filePath, dto);
+  }
+
+  async createRoomPhotoSignedUrl(
+    requesterId: string,
+    requesterRole: string,
+    dto: { roomTypeId: string; businessId: string; fileName: string },
+  ) {
+    if (!this.supabase) {
+      throw new ServiceUnavailableException('Storage não configurado.');
+    }
+
+    if (!dto?.roomTypeId || !dto?.businessId || !dto?.fileName) {
+      throw new BadRequestException('roomTypeId, businessId e fileName são obrigatórios.');
+    }
+
+    const roomType = await this.prisma.htRoomType.findFirst({
+      where: { id: dto.roomTypeId, businessId: dto.businessId },
+      include: { business: { select: { ownerId: true } } },
+    });
+
+    if (!roomType) {
+      throw new NotFoundException('Tipo de quarto não encontrado.');
+    }
+
+    const isOwner = requesterRole === 'OWNER' && roomType.business.ownerId === requesterId;
+
+    let isManager = false;
+    if (requesterRole === 'STAFF') {
+      const staffAccess = await this.prisma.coreBusinessStaff.findFirst({
+        where: {
+          businessId: dto.businessId,
+          userId: requesterId,
+          revokedAt: null,
+          OR: [
+            { role: StaffRole.GENERAL_MANAGER },
+            { role: StaffRole.HT_MANAGER, OR: [{ module: 'HT' }, { module: null }] },
+          ],
+        },
+        select: { id: true },
+      });
+      isManager = !!staffAccess;
+    }
+
+    if (!isOwner && !isManager) {
+      throw new ForbiddenException('Sem permissão.');
+    }
+
+    if ((roomType.photos ?? []).length >= 10) {
+      throw new BadRequestException('Máximo de 10 fotos por tipo de quarto atingido.');
+    }
+
+    const safeFileName = dto.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `imagens/quartos/${dto.businessId}/${dto.roomTypeId}/${Date.now()}-${safeFileName}`;
+
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .createSignedUploadUrl(filePath);
+
+    if (error || !data) {
+      throw new Error('Erro ao gerar signed URL.');
+    }
+
+    const { data: urlData } = this.supabase.storage
+      .from(this.bucket)
+      .getPublicUrl(filePath);
+
+    return {
+      signedUrl: data.signedUrl,
+      filePath,
+      publicUrl: urlData.publicUrl,
+    };
   }
 
   private async upload(filePath: string, dto: UploadBase64Dto) {
     if (!this.supabase) {
       throw new ServiceUnavailableException(
-        'Media service não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.',
+        'Storage não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.',
       );
     }
 
