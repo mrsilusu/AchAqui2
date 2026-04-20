@@ -799,39 +799,38 @@ export function OwnerModule({
     setIsBusinessPhotoUploading(true);
     try {
       const fileName = `biz-${Date.now()}.jpg`;
-      const { signedUrl, publicUrl } = await backendApi.getSignedUploadUrl(
-        `businesses/${ownerBusinessId}`,
-        fileName,
+
+      // Comprimir e converter para base64
+      const compressed = await ImageManipulator.manipulateAsync(
+        localUri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+
+      // Upload base64 — usa disco local como fallback quando Supabase não está configurado
+      const result = await backendApi.uploadBusinessPhoto(
+        ownerBusinessId,
+        { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
         accessToken,
       );
 
-      const blob = await fetch(localUri).then((r) => r.blob());
-      const uploadRes = await fetch(signedUrl, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': 'image/jpeg' },
-      });
-
-      if (!uploadRes.ok) throw new Error(`Upload falhou (${uploadRes.status})`);
+      const publicUrl = result?.publicUrl;
+      if (!publicUrl) throw new Error('URL pública não retornada pelo servidor.');
 
       const updated = [...current, publicUrl];
       OWNER_BUSINESS.photos = updated;
       setOwnerPhotos(updated);
       updateOwnerBiz({ photos: updated });
+      AsyncStorage.setItem(ownerPhotosStorageKey, JSON.stringify(updated)).catch(() => {});
 
       // Persistir na BD — visível em todos os dispositivos
       await backendApi.updateBusiness(ownerBusinessId, { photos: updated }, accessToken);
     } catch (err) {
-      const is503 = err?.status === 503 || String(err?.message).toLowerCase().includes('storage');
-      if (is503) {
-        Alert.alert('Storage não configurado', 'Configura SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no backend para guardar fotos remotamente.');
-      } else {
-        Alert.alert('Erro no upload', err?.message || 'Não foi possível fazer upload da foto.');
-      }
+      Alert.alert('Erro no upload', err?.message || 'Não foi possível fazer upload da foto.');
     } finally {
       setIsBusinessPhotoUploading(false);
     }
-  }, [ownerPhotos, ownerBusinessId, accessToken, updateOwnerBiz]);
+  }, [ownerPhotos, ownerBusinessId, accessToken, updateOwnerBiz, ownerPhotosStorageKey]);
 
   const pickPhotoFromGallery = useCallback(async () => {
     try {
@@ -842,7 +841,7 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
       });
@@ -864,7 +863,7 @@ export function OwnerModule({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
       });

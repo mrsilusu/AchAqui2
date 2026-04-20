@@ -2,41 +2,11 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { BACKEND_URL } from '../lib/runtimeConfig';
+import { backendApi } from '../lib/backendApi';
 
 export function useRoomPhotoUpload() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-
-  const requestRoomPhotoSignedUrl = async ({ roomTypeId, businessId, fileName, accessToken }) => {
-    const response = await fetch(`${BACKEND_URL}/media/room-type/signed-url`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ roomTypeId, businessId, fileName }),
-    });
-
-    if (!response.ok) {
-      const raw = await response.text();
-      let message = raw || `Erro HTTP ${response.status}`;
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed?.message) {
-          message = Array.isArray(parsed.message) ? parsed.message.join('; ') : String(parsed.message);
-        }
-      } catch {
-        // noop: keep raw message
-      }
-      const error = new Error(message);
-      error.status = response.status;
-      error.rawError = raw;
-      throw error;
-    }
-
-    return response.json();
-  };
 
   const pickAndUpload = async ({ roomTypeId, businessId, accessToken, currentCount = 0 }) => {
     if (!roomTypeId || !businessId) {
@@ -64,7 +34,7 @@ export function useRoomPhotoUpload() {
     let result;
     try {
       result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 1,
       });
@@ -94,21 +64,14 @@ export function useRoomPhotoUpload() {
         const fileName = `room-${Date.now()}-${i}.jpg`;
 
         try {
-          const { signedUrl, publicUrl } = await requestRoomPhotoSignedUrl({
+          const uploadResult = await backendApi.uploadRoomTypePhoto(
             roomTypeId,
-            businessId,
-            fileName,
+            { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
             accessToken,
-          });
+          );
 
-          const photoBlob = await fetch(compressed.uri).then((r) => r.blob());
-          const uploadRes = await fetch(signedUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'image/jpeg' },
-            body: photoBlob,
-          });
-
-          if (!uploadRes.ok) throw new Error(`Falha no upload da foto ${i + 1}.`);
+          const publicUrl = uploadResult?.publicUrl;
+          if (!publicUrl) throw new Error(`Falha no upload da foto ${i + 1}.`);
           uploadedUrls.push(publicUrl);
         } catch (error) {
           throw error;
