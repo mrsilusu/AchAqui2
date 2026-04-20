@@ -28,6 +28,7 @@ import {
   KeyboardAvoidingView, Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { useRoomPhotoUpload } from '../../hooks/useRoomPhotoUpload';
 
 import {
   Icon, COLORS, OWNER_BUSINESS,
@@ -391,6 +392,7 @@ export function OwnerModule({
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({ name: '', description: '', pricePerNight: '', maxGuests: '', totalRooms: '1', amenities: [], available: true, photos: [] });
   const [isRoomPhotoUploading, setIsRoomPhotoUploading] = useState(false);
+  const { pickAndUpload: pickRoomPhoto, uploading: roomPhotoUploading } = useRoomPhotoUpload();
   const [showRoomTypesEditor, setShowRoomTypesEditor] = useState(false);
   // Reservas de Quartos — estado partilhado com o Main (e via OLR com o HospitalityModule)
   // Se o Main passou ownerRoomBookingsProp, usá-lo; senão fallback local para isolamento
@@ -2921,13 +2923,34 @@ export function OwnerModule({
                       ))}
                     </ScrollView>
                   )}
-                  {/* Inline URL input — cross-platform (funciona em iOS e Android) */}
+                  {/* Galeria do dispositivo */}
+                  <TouchableOpacity
+                    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6, paddingVertical:10, borderRadius:8, backgroundColor: COLORS.grayBg, marginBottom:8, opacity: roomPhotoUploading ? 0.6 : 1}}
+                    disabled={roomPhotoUploading}
+                    onPress={async () => {
+                      const urls = await pickRoomPhoto({
+                        roomTypeId: editingRoom?.id ?? null,
+                        businessId: ownerBiz?.id ?? null,
+                        accessToken,
+                        currentCount: (roomForm.photos || []).length,
+                      });
+                      if (urls?.length) {
+                        setRoomForm(prev => ({ ...prev, photos: [...(prev.photos || []), ...urls] }));
+                      }
+                    }}
+                  >
+                    <Icon name="image" size={16} color={COLORS.darkText} strokeWidth={2} />
+                    <Text style={{fontSize:13, color: COLORS.darkText, fontWeight:'600'}}>
+                      {roomPhotoUploading ? 'A carregar...' : 'Escolher da Galeria'}
+                    </Text>
+                  </TouchableOpacity>
+                  {/* Inline URL input — cross-platform fallback */}
                   <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:8}}>
                     <TextInput
                       style={[editorS.formInput, {flex:1, marginBottom:0}]}
                       value={roomForm._photoUrlInput || ''}
                       onChangeText={(t) => setRoomForm(prev => ({...prev, _photoUrlInput: t}))}
-                      placeholder="URL da foto (https://...)"
+                      placeholder="Ou cole um URL (https://...)"
                       placeholderTextColor={COLORS.grayText}
                       keyboardType="url"
                       autoCapitalize="none"
