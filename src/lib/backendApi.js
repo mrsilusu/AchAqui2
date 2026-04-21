@@ -388,11 +388,11 @@ export const backendApi = {
     apiRequest(`/media/business/${businessId}/upload`, { method: 'POST', body: dto, accessToken }),
   uploadRoomTypePhoto: (roomTypeId, dto, accessToken) =>
     apiRequest(`/media/room-type/${roomTypeId}/upload`, { method: 'POST', body: dto, accessToken }),
-  // Signed URL genérico — para fotos de negócios, perfis, etc.
-  getSignedUploadUrl: (folder, fileName, accessToken) =>
+  // Signed URL genérico — para uploads por módulo/entidade
+  getSignedUploadUrl: (dto, accessToken) =>
     apiRequest('/media/signed-url', {
       method: 'POST',
-      body: { folder, fileName },
+      body: dto,
       accessToken,
     }),
 

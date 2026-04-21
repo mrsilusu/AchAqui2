@@ -7,14 +7,38 @@ import {
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
 import { createClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as nodePath from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadBase64Dto } from './dto/upload-base64.dto';
 
+const VALID_MODULES = [
+  'gallery', 'cover', 'documents',
+  'ht', 'di', 'bw', 'rt', 'ev', 'he', 'ed', 'ps',
+  'staff', 'avatar',
+] as const;
+
+type MediaModule = typeof VALID_MODULES[number];
+
+const UPLOAD_FOLDERS = {
+  businessCover: (bizId: string) =>
+    `businesses/${bizId}/cover`,
+  businessGallery: (bizId: string) =>
+    `businesses/${bizId}/gallery`,
+  module: (bizId: string, mod: string, entityId?: string) =>
+    entityId
+      ? `businesses/${bizId}/${mod}/${entityId}`
+      : `businesses/${bizId}/${mod}`,
+  userAvatar: (userId: string) =>
+    `users/${userId}/avatar`,
+  platform: (section: string) =>
+    `platform/${section}`,
+};
+
 @Injectable()
 export class MediaService {
-  private readonly bucket = process.env.SUPABASE_STORAGE_BUCKET ?? 'achaqui-public';
+  private readonly bucket = process.env.SUPABASE_STORAGE_BUCKET ?? 'achaqui-media';
   private readonly supabaseUrl = process.env.SUPABASE_URL ?? '';
   private readonly supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
   private readonly supabase = this.supabaseUrl && this.supabaseServiceRoleKey
@@ -41,7 +65,7 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste estabelecimento.');
     }
 
-    const filePath = `business/${businessId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `${UPLOAD_FOLDERS.businessGallery(businessId)}/${crypto.randomUUID()}.jpg`;
     return this.upload(filePath, dto);
   }
 
@@ -66,7 +90,7 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste item.');
     }
 
-    const filePath = `item/${itemId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `${UPLOAD_FOLDERS.module(item.business.id, 'di', itemId)}/${crypto.randomUUID()}.jpg`;
     return this.upload(filePath, dto);
   }
 
@@ -91,35 +115,36 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste tipo de quarto.');
     }
 
-    const filePath = `room-type/${roomTypeId}/${Date.now()}-${dto.fileName}`;
+    const filePath = `${UPLOAD_FOLDERS.module(roomType.business.id, 'ht', roomTypeId)}/${crypto.randomUUID()}.jpg`;
     return this.upload(filePath, dto);
   }
 
-  async createRoomPhotoSignedUrl(
+  async createSignedUploadUrl(
     requesterId: string,
     requesterRole: string,
-    dto: { roomTypeId: string; businessId: string; fileName: string },
-  ) {
-    if (!this.supabase) {
-      throw new ServiceUnavailableException('Storage não configurado.');
+    dto: {
+      businessId: string;
+      module: string;
+      entityId?: string;
+      fileName: string;
+    },
+  ): Promise<{ signedUrl: string; publicUrl: string; filePath: string }> {
+    if (!VALID_MODULES.includes(dto.module as MediaModule)) {
+      throw new BadRequestException(`Módulo inválido: ${dto.module}`);
     }
 
-    if (!dto?.roomTypeId || !dto?.businessId || !dto?.fileName) {
-      throw new BadRequestException('roomTypeId, businessId e fileName são obrigatórios.');
-    }
-
-    const roomType = await this.prisma.htRoomType.findFirst({
-      where: { id: dto.roomTypeId, businessId: dto.businessId },
-      include: { business: { select: { ownerId: true } } },
+    const business = await this.prisma.business.findUnique({
+      where: { id: dto.businessId },
+      select: { id: true, ownerId: true },
     });
 
-    if (!roomType) {
-      throw new NotFoundException('Tipo de quarto não encontrado.');
+    if (!business) {
+      throw new NotFoundException('Estabelecimento não encontrado.');
     }
 
-    const isOwner = requesterRole === 'OWNER' && roomType.business.ownerId === requesterId;
+    const isOwner = requesterRole === 'OWNER' && business.ownerId === requesterId;
 
-    let isManager = false;
+    let isAllowedStaff = false;
     if (requesterRole === 'STAFF') {
       const staffAccess = await this.prisma.coreBusinessStaff.findFirst({
         where: {
@@ -128,24 +153,28 @@ export class MediaService {
           revokedAt: null,
           OR: [
             { role: StaffRole.GENERAL_MANAGER },
-            { role: StaffRole.HT_MANAGER, OR: [{ module: 'HT' }, { module: null }] },
+            ...(dto.module === 'ht' ? [{ role: StaffRole.HT_MANAGER }] : []),
           ],
         },
         select: { id: true },
       });
-      isManager = !!staffAccess;
+      isAllowedStaff = !!staffAccess;
     }
 
-    if (!isOwner && !isManager) {
+    if (!isOwner && !isAllowedStaff) {
       throw new ForbiddenException('Sem permissão.');
     }
 
-    if ((roomType.photos ?? []).length >= 10) {
-      throw new BadRequestException('Máximo de 10 fotos por tipo de quarto atingido.');
+    if (!this.supabase) {
+      throw new ServiceUnavailableException('Storage não configurado.');
     }
 
-    const safeFileName = dto.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `rooms/${dto.businessId}/${dto.roomTypeId}/${Date.now()}-${safeFileName}`;
+    const ext = dto.fileName.includes('.')
+      ? `.${dto.fileName.split('.').pop()!.toLowerCase()}`
+      : '.jpg';
+
+    const folder = UPLOAD_FOLDERS.module(dto.businessId, dto.module, dto.entityId);
+    const filePath = `${folder}/${crypto.randomUUID()}${ext}`;
 
     const { data, error } = await this.supabase.storage
       .from(this.bucket)
@@ -161,8 +190,8 @@ export class MediaService {
 
     return {
       signedUrl: data.signedUrl,
-      filePath,
       publicUrl: urlData.publicUrl,
+      filePath,
     };
   }
 
@@ -177,27 +206,6 @@ export class MediaService {
     const backendUrl = (process.env.BACKEND_URL ?? '').replace(/\/$/, '')
       || `http://localhost:${process.env.PORT ?? 3000}`;
     return { path: filePath, publicUrl: `${backendUrl}/uploads/${filePath}` };
-  }
-
-  async createGenericSignedUrl(folder: string, fileName: string) {
-    if (!this.supabase) {
-      throw new ServiceUnavailableException('Storage não configurado.');
-    }
-    const safeFolder = folder.replace(/\.\./g, '').replace(/[^a-zA-Z0-9/_-]/g, '');
-    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${safeFolder}/${Date.now()}-${safeFileName}`;
-
-    const { data, error } = await this.supabase.storage
-      .from(this.bucket)
-      .createSignedUploadUrl(filePath);
-
-    if (error || !data) throw new Error('Erro ao gerar signed URL.');
-
-    const { data: urlData } = this.supabase.storage
-      .from(this.bucket)
-      .getPublicUrl(filePath);
-
-    return { signedUrl: data.signedUrl, filePath, publicUrl: urlData.publicUrl };
   }
 
   private async upload(filePath: string, dto: UploadBase64Dto) {

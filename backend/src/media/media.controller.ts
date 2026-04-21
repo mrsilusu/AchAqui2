@@ -1,7 +1,6 @@
 import { Body, Controller, Param, Post, Req } from '@nestjs/common';
-import { AppModule, StaffRole, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { StaffAccess } from '../auth/decorators/staff-access.decorator';
 import { UploadBase64Dto } from './dto/upload-base64.dto';
 import { MediaService } from './media.service';
 
@@ -29,26 +28,22 @@ export class MediaController {
     return this.mediaService.uploadItemPhoto(req.user.userId, itemId, dto);
   }
 
-  @Post('room-type/signed-url')
+  @Post('signed-url')
   @Roles(UserRole.OWNER, UserRole.STAFF)
-  @StaffAccess({ module: AppModule.HT, roles: [StaffRole.HT_MANAGER] })
-  getRoomPhotoSignedUrl(
+  getSignedUploadUrl(
     @Req() req: { user: { userId: string; role: string } },
-    @Body() body: { roomTypeId: string; businessId: string; fileName: string },
+    @Body() body: {
+      businessId: string;
+      module: string;
+      entityId?: string;
+      fileName: string;
+    },
   ) {
-    return this.mediaService.createRoomPhotoSignedUrl(
+    return this.mediaService.createSignedUploadUrl(
       req.user.userId,
       req.user.role,
       body,
     );
-  }
-
-  @Post('signed-url')
-  @Roles(UserRole.OWNER)
-  getGenericSignedUrl(
-    @Body() body: { folder: string; fileName: string },
-  ) {
-    return this.mediaService.createGenericSignedUrl(body.folder, body.fileName);
   }
 
   @Post('room-type/:roomTypeId/upload')
