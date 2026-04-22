@@ -503,9 +503,16 @@ export function sanitizeBusinessData(business) {
     neighborhood: sanitizeInput(stripped.neighborhood, 100),
     hours:        sanitizeInput(stripped.hours, 200),
     phone:        sanitizeInput(stripped.phone, 30),
-    // Fotos: manter apenas URLs https://
     photos: Array.isArray(stripped.photos)
-      ? stripped.photos.filter(u => validateExternalUrl(u))
+      ? stripped.photos
+          .map(u => {
+            if (typeof u !== 'string' || !u.trim()) return null;
+            // promover http → https para CDNs de fotos do Google/Outscraper
+            return u.trim().startsWith('http://')
+              ? u.trim().replace(/^http:\/\//i, 'https://')
+              : u.trim();
+          })
+          .filter(u => u !== null && u.startsWith('https://'))
       : [],
   };
 }
