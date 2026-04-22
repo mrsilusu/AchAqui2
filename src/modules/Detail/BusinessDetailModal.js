@@ -260,13 +260,16 @@ export function BusinessDetailModal({
   const sectionOffsets = useRef({});
   const gestureStartY  = useRef(0);        // Y onde o gesto começou
   const carouselAtStart = useRef(true);    // true = carrossel na primeira foto
+  const [failedPhotoUris, setFailedPhotoUris] = useState(() => new Set());
 
   // ── Derived ────────────────────────────────────────────────────────────────
   if (!business) return null;
 
   const bookmarked     = bookmarkedIds.includes(business.id);
   const status         = getBusinessStatus(business.statusText, business.isOpen);
-  const photos         = business.photos?.length > 0 ? business.photos : null;
+  const rawPhotos      = business.photos?.length > 0 ? business.photos : null;
+  const validPhotos    = rawPhotos?.filter(uri => !failedPhotoUris.has(uri));
+  const photos         = validPhotos?.length > 0 ? validPhotos : null;
   const badge          = getBusinessBadge(business);
   const activeModules  = OPERATIONAL_MODULES.filter(m => business.modules?.[m.id]);
   // dedupe por layer
@@ -517,7 +520,13 @@ export function BusinessDetailModal({
               onScrollBeginDrag={() => { /* ScrollView está a capturar — não interferir */ }}
             >
               {photos.map((uri, idx) => (
-                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT + safeTop }} source={{ uri }} resizeMode="cover" />
+                <Image
+                  key={idx}
+                  style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT + safeTop }}
+                  source={{ uri }}
+                  resizeMode="cover"
+                  onError={() => setFailedPhotoUris(prev => new Set([...prev, uri]))}
+                />
               ))}
             </ScrollView>
           ) : (

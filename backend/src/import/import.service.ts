@@ -24,6 +24,7 @@ export interface OutscraperRow {
   reviews?: string | number;
   photo?: string;
   logo?: string;
+  photos_sample?: string | unknown[];
   working_hours?: string;
   working_hours_old_format?: string;
   description?: string;
@@ -439,10 +440,29 @@ export class ImportService {
     // Município — extrai do borough ou city
     const municipality = String(row.borough || row.city || '').trim() || null;
 
-    // Fotos — principal + logo
+    // Fotos — foto principal + amostras da galeria (photos_sample é array JSON do Outscraper)
+    // row.logo é um avatar 44px do Google — não serve como foto de negócio
     const photos: string[] = [];
     if (row.photo) photos.push(String(row.photo));
-    if (row.logo)  photos.push(String(row.logo));
+    const photosSampleRaw = row['photos_sample'];
+    if (photosSampleRaw) {
+      let sampleArr: unknown[] = [];
+      if (Array.isArray(photosSampleRaw)) {
+        sampleArr = photosSampleRaw;
+      } else if (typeof photosSampleRaw === 'string') {
+        try { sampleArr = JSON.parse(photosSampleRaw); } catch { /* ignore */ }
+      }
+      for (const entry of sampleArr) {
+        const url = typeof entry === 'string' ? entry
+          : typeof entry === 'object' && entry !== null && typeof (entry as Record<string, unknown>)['photo_url'] === 'string'
+            ? String((entry as Record<string, unknown>)['photo_url'])
+            : null;
+        if (url && url.startsWith('https://') && !photos.includes(url)) {
+          photos.push(url);
+          if (photos.length >= 6) break;
+        }
+      }
+    }
 
     // Email do dono/negócio (campo owner_title às vezes tem email)
     const email = row.email

@@ -194,7 +194,10 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
   const [reviewSort,        setReviewSort]          = useState('recent');
   const [reviewFilter,      setReviewFilter]        = useState('all');
 
-  const photos   = (business.photos && business.photos.length > 0) ? business.photos : null;
+  const [failedPhotoUris, setFailedPhotoUris] = useState(() => new Set());
+  const rawPhotos  = (business.photos && business.photos.length > 0) ? business.photos : null;
+  const validPhotos = rawPhotos?.filter(uri => !failedPhotoUris.has(uri));
+  const photos   = validPhotos?.length > 0 ? validPhotos : null;
   const bookmarked = bookmarkedIds?.includes(business.id);
 
   // ── Tabs dinâmicas ────────────────────────────────────────────────────────
@@ -294,7 +297,13 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
               onMomentumScrollEnd={e => setCurrentPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}
             >
               {photos.map((photo, idx) => (
-                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }} source={{ uri: photo }} resizeMode="cover" />
+                <Image
+                  key={idx}
+                  style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }}
+                  source={{ uri: photo }}
+                  resizeMode="cover"
+                  onError={() => setFailedPhotoUris(prev => new Set([...prev, photo]))}
+                />
               ))}
             </ScrollView>
           ) : (
