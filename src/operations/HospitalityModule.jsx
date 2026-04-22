@@ -2022,8 +2022,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           const occupancyPct  = avail?.total ? Math.round(((avail.total - avail.available) / avail.total) * 100) : 0;
           const isNearFull    = !isUnavailable && occupancyPct >= 85;
           const roomPhotos    = room.photos || [];
+          const TOTAL_SLOTS   = 4;
           const MAX_VISIBLE   = 3;
-          const visiblePhotos = roomPhotos.slice(0, MAX_VISIBLE);
           const extraPhotos   = Math.max(roomPhotos.length - MAX_VISIBLE, 0);
           return (
             <View key={room.id} style={[hS.roomCard, isUnavailable && hS.roomCardUnavailable]}>
@@ -2052,25 +2052,31 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                   <Text style={hS.roomPhotoTitle}>Fotos do Quarto</Text>
                   {roomPhotos.length > 0 ? (
                     <View style={hS.roomThumbRow}>
-                      {visiblePhotos.map((url, idx) => (
-                        <View key={`${room.id}-photo-${idx}`} style={hS.roomThumb}>
-                          <Image
-                            source={{ uri: url }}
-                            style={hS.roomThumbImg}
-                            resizeMode="cover"
-                          />
-                        </View>
-                      ))}
-                      {extraPhotos > 0 && (
-                        <TouchableOpacity
-                          style={[hS.roomThumb, hS.roomExtraThumb]}
-                          onPress={() => handleOpenRoomDetails(room, 0)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={hS.roomExtraCount}>+{extraPhotos}</Text>
-                          <Text style={hS.roomExtraLabel}>fotos</Text>
-                        </TouchableOpacity>
-                      )}
+                      {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+                        if (i < MAX_VISIBLE) {
+                          const url = roomPhotos[i];
+                          return url ? (
+                            <View key={i} style={hS.roomThumb}>
+                              <Image source={{ uri: url }} style={hS.roomThumbImg} resizeMode="cover" />
+                            </View>
+                          ) : (
+                            <View key={i} style={hS.roomThumbPlaceholder} />
+                          );
+                        }
+                        return extraPhotos > 0 ? (
+                          <TouchableOpacity
+                            key={i}
+                            style={[hS.roomThumb, hS.roomExtraThumb]}
+                            onPress={() => handleOpenRoomDetails(room, 0)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={hS.roomExtraCount}>+{extraPhotos}</Text>
+                            <Text style={hS.roomExtraLabel}>fotos</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View key={i} style={hS.roomThumbPlaceholder} />
+                        );
+                      })}
                     </View>
                   ) : (
                     <View style={hS.roomPhotoPlaceholder}>
@@ -2398,6 +2404,7 @@ const hS = StyleSheet.create({
   roomPhotoTitle:   { fontSize: 11, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 },
   roomThumbRow:     { flexDirection: 'row', gap: 6, marginVertical: 8, overflow: 'hidden' },
   roomThumb:        { flex: 1, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  roomThumbPlaceholder: { flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: '#F1F5F9' },
   roomThumbImg:     { width: '100%', height: '100%' },
   roomExtraThumb:   { backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center' },
   roomExtraCount:   { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },

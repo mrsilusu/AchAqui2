@@ -161,8 +161,8 @@ const AMENITY_ICON_MAP = {
 
 function RoomTypeCard({ roomType, onPressDetails }) {
   const photos = roomType.photos ?? [];
+  const TOTAL_SLOTS = 4;
   const MAX_VISIBLE = 3;
-  const visible = photos.slice(0, MAX_VISIBLE);
   const extra = Math.max(photos.length - MAX_VISIBLE, 0);
   const { preview: amenityPreview, remaining: amenityRemaining } =
     getAmenitiesPreview(roomType.amenities ?? [], 4);
@@ -175,20 +175,28 @@ function RoomTypeCard({ roomType, onPressDetails }) {
       </Text>
 
       <View style={{ flexDirection: 'row', gap: 6, marginVertical: 8, overflow: 'hidden' }}>
-        {visible.length > 0 ? (
-          <>
-            {visible.map((url, idx) => (
-              <TouchableOpacity key={`${url}-${idx}`} onPress={() => onPressDetails(roomType, idx)} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
-                <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-              </TouchableOpacity>
-            ))}
-            {extra > 0 && (
-              <TouchableOpacity style={{ flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center' }} onPress={() => onPressDetails(roomType, MAX_VISIBLE)}>
+        {photos.length > 0 ? (
+          Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+            if (i < MAX_VISIBLE) {
+              const uri = photos[i];
+              return uri ? (
+                <TouchableOpacity key={i} onPress={() => onPressDetails(roomType, i)} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                  <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                </TouchableOpacity>
+              ) : (
+                <View key={i} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: '#F1F5F9' }} />
+              );
+            }
+            // slot 4 — extra counter or placeholder
+            return extra > 0 ? (
+              <TouchableOpacity key={i} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center' }} onPress={() => onPressDetails(roomType, MAX_VISIBLE)}>
                 <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>+{extra}</Text>
                 <Text style={{ color: '#FFF', fontSize: 10 }}>fotos</Text>
               </TouchableOpacity>
-            )}
-          </>
+            ) : (
+              <View key={i} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: '#F1F5F9' }} />
+            );
+          })
         ) : (
           <View style={{ flex: 1, height: 60, backgroundColor: '#F8FAFC', borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
             <Text style={{ fontSize: 20 }}>🛏️</Text>
