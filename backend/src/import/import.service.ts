@@ -24,6 +24,7 @@ export interface OutscraperRow {
   reviews?: string | number;
   photo?: string;
   logo?: string;
+  photos_sample?: string | string[];
   working_hours?: string;
   working_hours_old_format?: string;
   description?: string;
@@ -439,10 +440,34 @@ export class ImportService {
     // Município — extrai do borough ou city
     const municipality = String(row.borough || row.city || '').trim() || null;
 
-    // Fotos — principal + logo
     const photos: string[] = [];
-    if (row.photo) photos.push(String(row.photo));
-    if (row.logo)  photos.push(String(row.logo));
+
+    // foto principal e logo
+    if (row.photo && typeof row.photo === 'string' && row.photo.trim())
+      photos.push(row.photo.trim());
+    if (row.logo  && typeof row.logo  === 'string' && row.logo.trim()
+        && !photos.includes(row.logo.trim()))
+      photos.push(row.logo.trim());
+
+    // fotos adicionais: campo photos_sample (pode ser string JSON ou array)
+    const rawSample = row['photos_sample'];
+    if (rawSample) {
+      let sample: string[] = [];
+      if (Array.isArray(rawSample)) {
+        sample = rawSample.map(String);
+      } else if (typeof rawSample === 'string' && rawSample.trim().startsWith('[')) {
+        try { sample = JSON.parse(rawSample); } catch { /* ignorar */ }
+      } else if (typeof rawSample === 'string' && rawSample.trim()) {
+        sample = [rawSample.trim()];
+      }
+      for (const u of sample) {
+        const url = typeof u === 'string' ? u.trim() : '';
+        if (url && !photos.includes(url)) photos.push(url);
+      }
+    }
+
+    // limitar a 10 fotos por negócio
+    const photosLimited = photos.slice(0, 10);
 
     // Email do dono/negócio (campo owner_title às vezes tem email)
     const email = row.email
@@ -473,7 +498,7 @@ export class ImportService {
       email,
       rating,
       reviewsCount,
-      photos,                              // array com photo + logo
+      photos: photosLimited,
       workingHours: workingHoursRaw,       // formato raw Outscraper
       hours,
       isOpen: computedStatus.isOpen,
