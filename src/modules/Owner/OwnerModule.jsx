@@ -37,6 +37,7 @@ import {
   OPERATIONAL_MODULES, NAV_BAR_STYLES,
   renderStars, getBusinessStatus, AMENITY_ICON_MAP,
 } from '../../core/AchAqui_Core';
+import { usePhotoUpload } from '../../hooks/usePhotoUpload';
 import { HospitalityModule }  from '../../operations/HospitalityModule';
 import { ReceptionScreen }    from '../../operations/ReceptionScreen';
 import { DashboardPMS }       from '../../operations/DashboardPMS';
@@ -372,13 +373,13 @@ export function OwnerModule({
   const [showMenuEditor, setShowMenuEditor] = useState(false);
   const [showMenuItemForm, setShowMenuItemForm] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState(null);
-  const [menuItemForm, setMenuItemForm] = useState({ name: '', description: '', price: '', category: '', available: true });
+  const [menuItemForm, setMenuItemForm] = useState({ name: '', description: '', price: '', category: '', available: true, photo: '' });
   const [isMenuItemLoading, setIsMenuItemLoading] = useState(false);
   const [inventoryItems, setInventoryItems] = useState(OWNER_BUSINESS.inventoryItems || []);
   const [showInventoryEditor, setShowInventoryEditor] = useState(false);
   const [showInventoryForm, setShowInventoryForm] = useState(false);
   const [editingInventoryItem, setEditingInventoryItem] = useState(null);
-  const [inventoryForm, setInventoryForm] = useState({ name: '', price: '', stock: '', category: '', available: true });
+  const [inventoryForm, setInventoryForm] = useState({ name: '', price: '', stock: '', category: '', available: true, photo: '' });
   const [isInventoryItemLoading, setIsInventoryItemLoading] = useState(false);
   const [servicesList, setServicesList] = useState(OWNER_BUSINESS.servicesList || []);
   const [showServicesEditor, setShowServicesEditor] = useState(false);
@@ -795,6 +796,10 @@ export function OwnerModule({
 
     const current = ownerPhotos || [];
     if (current.includes(localUri)) return;
+    if (current.length >= 10) {
+      Alert.alert('Limite atingido', 'Máximo de 10 fotos por negócio.');
+      return;
+    }
 
     setIsBusinessPhotoUploading(true);
     try {
@@ -807,14 +812,26 @@ export function OwnerModule({
         { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
 
-      // Upload base64 — usa disco local como fallback quando Supabase não está configurado
-      const result = await backendApi.uploadBusinessPhoto(
-        ownerBusinessId,
-        { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
-        accessToken,
-      );
+      let publicUrl;
+      try {
+        const result = await backendApi.uploadBusinessPhoto(
+          ownerBusinessId,
+          { fileName, mimeType: 'image/jpeg', base64: compressed.base64 },
+          accessToken,
+        );
+        publicUrl = result?.publicUrl;
+      } catch (uploadErr) {
+        const is503 = uploadErr?.status === 503
+          || uploadErr?.message?.includes('503')
+          || uploadErr?.message?.toLowerCase().includes('storage');
+        if (is503) {
+          Alert.alert('Foto guardada localmente', 'Será enviada quando o servidor estiver configurado.');
+          publicUrl = localUri;
+        } else {
+          throw uploadErr;
+        }
+      }
 
-      const publicUrl = result?.publicUrl;
       if (!publicUrl) throw new Error('URL pública não retornada pelo servidor.');
 
       const updated = [...current, publicUrl];
@@ -1139,13 +1156,13 @@ export function OwnerModule({
       };
 
       if (editingMenuItem) {
-        // Update existing menu item
-        await backendApi.updateMenuItem(editingMenuItem.id, payload, accessToken);
-        
+        // Include photo if already a publicUrl (starts with http)
+        const photoPayload = menuItemForm.photo?.startsWith('http') ? { ...payload, photo: menuItemForm.photo } : payload;
+        await backendApi.updateMenuItem(editingMenuItem.id, photoPayload, accessToken);
         setMenuItems((prev) => {
           const updated = prev.map((item) =>
             item.id === editingMenuItem.id
-              ? { ...item, ...payload }
+              ? { ...item, ...photoPayload }
               : item,
           );
           OWNER_BUSINESS.menuItems = updated;
@@ -1153,10 +1170,29 @@ export function OwnerModule({
           return updated;
         });
       } else {
-        // Create new menu item
         const response = await backendApi.createMenuItem(payload, accessToken);
+        let finalItem = response;
+        // Upload local URI after getting the item ID
+        if (menuItemForm.photo && !menuItemForm.photo.startsWith('http') && response?.id) {
+          try {
+            const compressed = await ImageManipulator.manipulateAsync(
+              menuItemForm.photo,
+              [{ resize: { width: 1280 } }],
+              { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+            );
+            const uploadRes = await backendApi.uploadItemPhoto(
+              response.id,
+              { fileName: `item-${Date.now()}.jpg`, mimeType: 'image/jpeg', base64: compressed.base64 },
+              accessToken,
+            );
+            if (uploadRes?.publicUrl) {
+              await backendApi.updateMenuItem(response.id, { ...payload, photo: uploadRes.publicUrl }, accessToken);
+              finalItem = { ...response, photo: uploadRes.publicUrl };
+            }
+          } catch (_) { /* falha de upload não bloqueia guardado */ }
+        }
         setMenuItems((prev) => {
-          const updated = [...prev, response];
+          const updated = [...prev, finalItem];
           OWNER_BUSINESS.menuItems = updated;
           updateOwnerBiz({ menuItems: updated });
           return updated;
@@ -1165,7 +1201,7 @@ export function OwnerModule({
 
       setShowMenuItemForm(false);
       setEditingMenuItem(null);
-      setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+      setMenuItemForm({ name: '', description: '', price: '', category: '', available: true, photo: '' });
       Alert.alert('Sucesso', editingMenuItem ? 'Item atualizado.' : 'Item criado.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível guardar o item.');
@@ -1227,22 +1263,42 @@ export function OwnerModule({
       };
 
       if (editingInventoryItem) {
-        await backendApi.updateInventoryItem(editingInventoryItem.id, payload, accessToken);
+        const photoPayload = inventoryForm.photo?.startsWith('http') ? { ...payload, photo: inventoryForm.photo } : payload;
+        await backendApi.updateInventoryItem(editingInventoryItem.id, photoPayload, accessToken);
         setInventoryItems((prev) =>
           prev.map((item) =>
             item.id === editingInventoryItem.id
-              ? { ...item, ...payload }
+              ? { ...item, ...photoPayload }
               : item,
           ),
         );
       } else {
         const response = await backendApi.createInventoryItem(payload, accessToken);
-        setInventoryItems((prev) => [...prev, response]);
+        let finalItem = response;
+        if (inventoryForm.photo && !inventoryForm.photo.startsWith('http') && response?.id) {
+          try {
+            const compressed = await ImageManipulator.manipulateAsync(
+              inventoryForm.photo,
+              [{ resize: { width: 1280 } }],
+              { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+            );
+            const uploadRes = await backendApi.uploadItemPhoto(
+              response.id,
+              { fileName: `item-${Date.now()}.jpg`, mimeType: 'image/jpeg', base64: compressed.base64 },
+              accessToken,
+            );
+            if (uploadRes?.publicUrl) {
+              await backendApi.updateInventoryItem(response.id, { ...payload, photo: uploadRes.publicUrl }, accessToken);
+              finalItem = { ...response, photo: uploadRes.publicUrl };
+            }
+          } catch (_) { /* falha de upload não bloqueia guardado */ }
+        }
+        setInventoryItems((prev) => [...prev, finalItem]);
       }
 
       setShowInventoryForm(false);
       setEditingInventoryItem(null);
-      setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+      setInventoryForm({ name: '', price: '', stock: '', category: '', available: true, photo: '' });
       Alert.alert('Sucesso', editingInventoryItem ? 'Produto atualizado.' : 'Produto criado.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível guardar o produto.');
@@ -2392,7 +2448,7 @@ export function OwnerModule({
             <Text style={profS.headerTitle}>Editor de Menu</Text>
             <TouchableOpacity onPress={() => {
               setEditingMenuItem(null);
-              setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+              setMenuItemForm({ name: '', description: '', price: '', category: '', available: true, photo: '' });
               setShowMenuItemForm(true);
             }}>
               <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
@@ -2417,7 +2473,7 @@ export function OwnerModule({
                         style={editorS.itemActionBtn}
                         onPress={() => {
                           setEditingMenuItem(item);
-                          setMenuItemForm(item);
+                          setMenuItemForm({ ...item, photo: item?.photo || '' });
                           setShowMenuItemForm(true);
                         }}
                       >
@@ -2457,7 +2513,7 @@ export function OwnerModule({
           onRequestClose={() => {
             setShowMenuItemForm(false);
             setEditingMenuItem(null);
-            setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+            setMenuItemForm({ name: '', description: '', price: '', category: '', available: true, photo: '' });
           }}
         >
           <KeyboardAvoidingView 
@@ -2515,13 +2571,43 @@ export function OwnerModule({
                     keyboardType="numeric"
                   />
 
+                  {/* Foto do item */}
+                  <Text style={editorS.formLabel}>Foto do Prato</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    {menuItemForm.photo ? (
+                      <View style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                        <Image source={{ uri: menuItemForm.photo }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                      </View>
+                    ) : (
+                      <View style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="camera" size={24} color={COLORS.grayText} strokeWidth={1.5} />
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: COLORS.red, alignItems: 'center' }}
+                      onPress={async () => {
+                        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (status !== 'granted') { Alert.alert('Permissão necessária', 'Permita acesso à galeria.'); return; }
+                        const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9 });
+                        if (!res.canceled && res.assets?.[0]?.uri) setMenuItemForm(f => ({ ...f, photo: res.assets[0].uri }));
+                      }}
+                    >
+                      <Text style={{ color: COLORS.red, fontWeight: '600', fontSize: 13 }}>Escolher da Galeria</Text>
+                    </TouchableOpacity>
+                    {menuItemForm.photo ? (
+                      <TouchableOpacity onPress={() => setMenuItemForm(f => ({ ...f, photo: '' }))} style={{ padding: 8 }}>
+                        <Icon name="x" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
                   <View style={editorS.formActions}>
                     <TouchableOpacity 
                       style={editorS.formBtnCancel}
                       onPress={() => {
                         setShowMenuItemForm(false);
                         setEditingMenuItem(null);
-                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true });
+                        setMenuItemForm({ name: '', description: '', price: '', category: '', available: true, photo: '' });
                       }}
                     >
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
@@ -2554,7 +2640,7 @@ export function OwnerModule({
             <Text style={profS.headerTitle}>Editor de Inventário</Text>
             <TouchableOpacity onPress={() => {
               setEditingInventoryItem(null);
-              setInventoryForm({ name: '', price: '', stock: '', category: '', available: true });
+              setInventoryForm({ name: '', price: '', stock: '', category: '', available: true, photo: '' });
               setShowInventoryForm(true);
             }}>
               <Icon name="plusCircle" size={24} color={COLORS.red} strokeWidth={2.5} />
@@ -2581,7 +2667,7 @@ export function OwnerModule({
                         style={editorS.itemActionBtn}
                         onPress={() => {
                           setEditingInventoryItem(item);
-                          setInventoryForm(item);
+                          setInventoryForm({ ...item, photo: item?.photo || '' });
                           setShowInventoryForm(true);
                         }}
                       >
@@ -2629,8 +2715,39 @@ export function OwnerModule({
                   <TextInput style={editorS.formInput} value={inventoryForm.price} onChangeText={(text) => setInventoryForm({...inventoryForm, price: text})} placeholder="Ex: 2500 (opcional)" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
                   <Text style={editorS.formLabel}>Stock</Text>
                   <TextInput style={editorS.formInput} value={inventoryForm.stock} onChangeText={(text) => setInventoryForm({...inventoryForm, stock: text})} placeholder="Ex: 50" placeholderTextColor={COLORS.grayText} keyboardType="numeric" />
+
+                  {/* Foto do produto */}
+                  <Text style={editorS.formLabel}>Foto do Produto</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    {inventoryForm.photo ? (
+                      <View style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                        <Image source={{ uri: inventoryForm.photo }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                      </View>
+                    ) : (
+                      <View style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="camera" size={24} color={COLORS.grayText} strokeWidth={1.5} />
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: COLORS.red, alignItems: 'center' }}
+                      onPress={async () => {
+                        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (status !== 'granted') { Alert.alert('Permissão necessária', 'Permita acesso à galeria.'); return; }
+                        const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9 });
+                        if (!res.canceled && res.assets?.[0]?.uri) setInventoryForm(f => ({ ...f, photo: res.assets[0].uri }));
+                      }}
+                    >
+                      <Text style={{ color: COLORS.red, fontWeight: '600', fontSize: 13 }}>Escolher da Galeria</Text>
+                    </TouchableOpacity>
+                    {inventoryForm.photo ? (
+                      <TouchableOpacity onPress={() => setInventoryForm(f => ({ ...f, photo: '' }))} style={{ padding: 8 }}>
+                        <Icon name="x" size={18} color={COLORS.grayText} strokeWidth={2} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
                   <View style={editorS.formActions}>
-                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true }); }}>
+                    <TouchableOpacity style={editorS.formBtnCancel} onPress={() => { setShowInventoryForm(false); setEditingInventoryItem(null); setInventoryForm({ name: '', price: '', stock: '', category: '', available: true, photo: '' }); }}>
                       <Text style={editorS.formBtnCancelText}>Cancelar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
@@ -5609,9 +5726,47 @@ export function OwnerModule({
               <Icon name="x" size={20} color={COLORS.darkText} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={profS.headerTitle}>Portfólio</Text>
-            <TouchableOpacity onPress={() => Alert.alert('Upload', 'Funcionalidade de upload disponível em breve.')}>
-              <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
-            </TouchableOpacity>
+            {ownerPortfolio.length < 20 && (
+              <TouchableOpacity
+                onPress={async () => {
+                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (status !== 'granted') { Alert.alert('Permissão necessária', 'Permita acesso à galeria.'); return; }
+                  const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9 });
+                  if (res.canceled || !res.assets?.[0]?.uri) return;
+                  try {
+                    const localUri = res.assets[0].uri;
+                    const compressed = await ImageManipulator.manipulateAsync(
+                      localUri,
+                      [{ resize: { width: 1280 } }],
+                      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+                    );
+                    let publicUrl;
+                    try {
+                      const r = await backendApi.uploadPortfolioPhoto(
+                        ownerBusinessId,
+                        { fileName: `portfolio-${Date.now()}.jpg`, mimeType: 'image/jpeg', base64: compressed.base64 },
+                        accessToken,
+                      );
+                      publicUrl = r?.publicUrl;
+                    } catch (e) {
+                      if (e?.status === 503 || e?.message?.toLowerCase().includes('storage')) {
+                        Alert.alert('Foto guardada localmente', 'Será enviada quando o servidor de armazenamento estiver configurado.');
+                        publicUrl = localUri;
+                      } else throw e;
+                    }
+                    if (!publicUrl) return;
+                    const updated = [...ownerPortfolio, publicUrl];
+                    setOwnerPortfolio(updated);
+                    OWNER_BUSINESS.portfolio = updated;
+                    updateOwnerBiz({ portfolio: updated });
+                  } catch (err) {
+                    Alert.alert('Erro', err?.message || 'Não foi possível fazer upload.');
+                  }
+                }}
+              >
+                <Icon name="plusCircle" size={26} color={COLORS.red} strokeWidth={2.5} />
+              </TouchableOpacity>
+            )}
           </View>
           <ScrollView style={profS.scroll} showsVerticalScrollIndicator={false}>
             <View style={{padding:16}}>
@@ -5624,7 +5779,41 @@ export function OwnerModule({
                   <Text style={{fontSize:15, color:COLORS.grayText, marginTop:16}}>Nenhuma foto no portfólio</Text>
                   <TouchableOpacity
                     style={{marginTop:20, paddingHorizontal:24, paddingVertical:12, backgroundColor:COLORS.red, borderRadius:10}}
-                    onPress={() => Alert.alert('Upload', 'Funcionalidade disponível em breve.')}
+                    onPress={async () => {
+                      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (status !== 'granted') { Alert.alert('Permissão necessária', 'Permita acesso à galeria.'); return; }
+                      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9 });
+                      if (res.canceled || !res.assets?.[0]?.uri) return;
+                      try {
+                        const localUri = res.assets[0].uri;
+                        const compressed = await ImageManipulator.manipulateAsync(
+                          localUri,
+                          [{ resize: { width: 1280 } }],
+                          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+                        );
+                        let publicUrl;
+                        try {
+                          const r = await backendApi.uploadPortfolioPhoto(
+                            ownerBusinessId,
+                            { fileName: `portfolio-${Date.now()}.jpg`, mimeType: 'image/jpeg', base64: compressed.base64 },
+                            accessToken,
+                          );
+                          publicUrl = r?.publicUrl;
+                        } catch (e) {
+                          if (e?.status === 503 || e?.message?.toLowerCase().includes('storage')) {
+                            Alert.alert('Foto guardada localmente', 'Será enviada quando o servidor de armazenamento estiver configurado.');
+                            publicUrl = localUri;
+                          } else throw e;
+                        }
+                        if (!publicUrl) return;
+                        const updated = [publicUrl];
+                        setOwnerPortfolio(updated);
+                        OWNER_BUSINESS.portfolio = updated;
+                        updateOwnerBiz({ portfolio: updated });
+                      } catch (err) {
+                        Alert.alert('Erro', err?.message || 'Não foi possível fazer upload.');
+                      }
+                    }}
                   >
                     <Text style={{color:COLORS.white, fontWeight:'700'}}>+ Adicionar Foto</Text>
                   </TouchableOpacity>
@@ -5633,7 +5822,18 @@ export function OwnerModule({
                 <View style={{flexDirection:'row', flexWrap:'wrap', gap:8}}>
                   {ownerPortfolio.map((img, idx) => (
                     <View key={idx} style={{width:'31%', aspectRatio:1, borderRadius:8, backgroundColor:COLORS.grayBg}}>
-                      <Image source={{uri:img}} style={{width:'100%', height:'100%', borderRadius:8}} />
+                      <Image source={{uri:img}} style={{width:'100%', height:'100%', borderRadius:8}} resizeMode="cover" />
+                      <TouchableOpacity
+                        style={{position:'absolute', top:4, right:4, backgroundColor:'rgba(0,0,0,0.6)', borderRadius:10, width:20, height:20, alignItems:'center', justifyContent:'center'}}
+                        onPress={() => {
+                          const updated = ownerPortfolio.filter((_, i) => i !== idx);
+                          setOwnerPortfolio(updated);
+                          OWNER_BUSINESS.portfolio = updated;
+                          updateOwnerBiz({ portfolio: updated });
+                        }}
+                      >
+                        <Icon name="x" size={12} color="#FFF" strokeWidth={3} />
+                      </TouchableOpacity>
                     </View>
                   ))}
                 </View>
