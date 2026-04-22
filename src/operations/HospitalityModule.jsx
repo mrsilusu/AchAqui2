@@ -2021,6 +2021,10 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           const isUnavailable = !isChecking && avail ? avail.available < 1 : false;
           const occupancyPct  = avail?.total ? Math.round(((avail.total - avail.available) / avail.total) * 100) : 0;
           const isNearFull    = !isUnavailable && occupancyPct >= 85;
+          const roomPhotos    = room.photos || [];
+          const MAX_VISIBLE   = 3;
+          const visiblePhotos = roomPhotos.slice(0, MAX_VISIBLE);
+          const extraPhotos   = Math.max(roomPhotos.length - MAX_VISIBLE, 0);
           return (
             <View key={room.id} style={[hS.roomCard, isUnavailable && hS.roomCardUnavailable]}>
               <View style={hS.roomHeader}>
@@ -2046,9 +2050,9 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
               {isOwner && (
                 <View style={hS.roomPhotoSection}>
                   <Text style={hS.roomPhotoTitle}>Fotos do Quarto</Text>
-                  {room.photos?.length > 0 ? (
+                  {roomPhotos.length > 0 ? (
                     <View style={hS.roomThumbRow}>
-                      {room.photos.slice(0, 3).map((url, idx) => (
+                      {visiblePhotos.map((url, idx) => (
                         <View key={`${room.id}-photo-${idx}`} style={hS.roomThumb}>
                           <Image
                             source={{ uri: url }}
@@ -2057,13 +2061,14 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
                           />
                         </View>
                       ))}
-                      {(room.photos || []).length > 3 && (
+                      {extraPhotos > 0 && (
                         <TouchableOpacity
                           style={[hS.roomThumb, hS.roomExtraThumb]}
                           onPress={() => handleOpenRoomDetails(room, 0)}
                           activeOpacity={0.85}
                         >
-                          <Text style={hS.roomExtraText}>+{(room.photos || []).length - 3}{'\n'}fotos</Text>
+                          <Text style={hS.roomExtraCount}>+{extraPhotos}</Text>
+                          <Text style={hS.roomExtraLabel}>fotos</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -2377,7 +2382,7 @@ const hS = StyleSheet.create({
   roomsSection:     { paddingHorizontal: 16, paddingBottom: 24 },
   sectionTitle:     { fontSize: 14, fontWeight: '700', color: '#111111', marginBottom: 12 },
   roomCard:         { backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1,
-                      borderColor: '#EBEBEB', padding: 14, marginBottom: 12,
+                      borderColor: '#EBEBEB', padding: 14, marginBottom: 12, overflow: 'hidden',
                       elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
   roomCardUnavailable: { opacity: 0.75, borderColor: '#FCA5A5' },
   roomHeader:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
@@ -2391,11 +2396,12 @@ const hS = StyleSheet.create({
   amenityMore:      { fontSize: 12, color: '#94A3B8', alignSelf: 'center' },
   roomPhotoSection: { marginBottom: 8 },
   roomPhotoTitle:   { fontSize: 11, fontWeight: '700', color: COLORS.grayText, marginBottom: 6 },
-  roomThumbRow:     { flexDirection: 'row', gap: 6, marginBottom: 10 },
-  roomThumb:        { width: 80, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  roomThumbRow:     { flexDirection: 'row', gap: 6, marginVertical: 8, overflow: 'hidden' },
+  roomThumb:        { flex: 1, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' },
   roomThumbImg:     { width: '100%', height: '100%' },
-  roomExtraThumb:   { backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
-  roomExtraText:    { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  roomExtraThumb:   { backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center' },
+  roomExtraCount:   { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  roomExtraLabel:   { color: '#FFFFFF', fontSize: 10 },
   roomPhotoPlaceholder: { flex: 1, height: 60, borderRadius: 8, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   roomPhotoPlaceholderIcon: { fontSize: 20 },
   roomPhotoPlaceholderText: { fontSize: 12, color: '#94A3B8' },

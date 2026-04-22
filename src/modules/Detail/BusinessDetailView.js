@@ -161,29 +161,31 @@ const AMENITY_ICON_MAP = {
 
 function RoomTypeCard({ roomType, onPressDetails }) {
   const photos = roomType.photos ?? [];
-  const visible = photos.slice(0, 3);
-  const extra = photos.length - 3;
+  const MAX_VISIBLE = 3;
+  const visible = photos.slice(0, MAX_VISIBLE);
+  const extra = Math.max(photos.length - MAX_VISIBLE, 0);
   const { preview: amenityPreview, remaining: amenityRemaining } =
     getAmenitiesPreview(roomType.amenities ?? [], 4);
 
   return (
-    <View style={[vS.roomCard, { padding: 14 }]}> 
+    <View style={vS.roomCard}>
       <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.darkText }}>{roomType.name}</Text>
       <Text style={{ fontSize: 12, color: COLORS.grayText, marginTop: 2, marginBottom: 8 }}>
         {roomType.pricePerNight?.toLocaleString('pt-AO')} Kz / noite · Até {roomType.maxGuests} hóspedes
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+      <View style={{ flexDirection: 'row', gap: 6, marginVertical: 8, overflow: 'hidden' }}>
         {visible.length > 0 ? (
           <>
             {visible.map((url, idx) => (
-              <TouchableOpacity key={`${url}-${idx}`} onPress={() => onPressDetails(roomType, idx)} style={{ width: 80, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
-                <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} />
+              <TouchableOpacity key={`${url}-${idx}`} onPress={() => onPressDetails(roomType, idx)} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </TouchableOpacity>
             ))}
             {extra > 0 && (
-              <TouchableOpacity style={{ width: 80, height: 60, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }} onPress={() => onPressDetails(roomType, 3)}>
-                <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' }}>+{extra}{'\n'}fotos</Text>
+              <TouchableOpacity style={{ flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center' }} onPress={() => onPressDetails(roomType, MAX_VISIBLE)}>
+                <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>+{extra}</Text>
+                <Text style={{ color: '#FFF', fontSize: 10 }}>fotos</Text>
               </TouchableOpacity>
             )}
           </>
@@ -1007,7 +1009,7 @@ const vS = StyleSheet.create({
   availabilityDayUnavailable:{ backgroundColor: '#EBEBEB' },
   availabilityDayText:     { fontSize: 10, fontWeight: '700', color: '#8A8A8A' },
   availabilityDayTextAvailable:{ color: '#FFFFFF' },
-  roomCard:                { borderRadius: 12, borderWidth: 1, borderColor: '#EBEBEB', padding: 14, marginBottom: 0 },
+  roomCard:                { borderRadius: 12, borderWidth: 1, borderColor: '#EBEBEB', padding: 14, marginBottom: 0, overflow: 'hidden' },
   mapCard:                 { flexDirection: 'row', alignItems: 'flex-start', padding: 12, backgroundColor: '#F7F7F8', borderRadius: 12, marginBottom: 8 },
   infoActionRow:           { flexDirection: 'row', gap: 8, marginBottom: 12 },
   actionOutline:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#EBEBEB' },
