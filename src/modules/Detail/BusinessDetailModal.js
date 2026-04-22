@@ -5,7 +5,7 @@
  * Motor de animação + shell visual completo.
  *
  * ✅ Hero foto full-bleed com scroll que desaparece
- * ✅ Header fixo animado (transparente → branco com scroll-reveal do nome)
+ * ✅ Header fixo animado (transparente › branco com scroll-reveal do nome)
  * ✅ Botões flutuantes fora da safe area (só a foto invade o safe area)
  * ✅ Botões funcionais: back, share, bookmark
  * ✅ Info strip: nome, categoria, rating, status, distância, badges
@@ -152,7 +152,7 @@ export function BusinessDetailModal({
   const translateX = useRef(new Animated.Value(0)).current;
   const scrollY    = useRef(new Animated.Value(0)).current;
 
-  // Header animado: bg opacity 0→1 e título opacity 0→1 conforme scroll
+  // Header animado: bg opacity 0›1 e título opacity 0›1 conforme scroll
   const headerBgOpacity = scrollY.interpolate({
     inputRange: [HEADER_SCROLL_THRESHOLD - 60, HEADER_SCROLL_THRESHOLD + 20],
     outputRange: [0, 1], extrapolate: 'clamp',
@@ -322,7 +322,7 @@ export function BusinessDetailModal({
   //  1. Sem layer operacional activa
   //  2. Gesto claramente horizontal (dx > dy * 2.5) e para a direita
   //  3. Se o gesto começa na zona do hero (Y < HERO_HEIGHT) E o carrossel
-  //     NÃO está na primeira foto → NÃO capturar (é navegação do carrossel)
+  //     NÃO está na primeira foto › NÃO capturar (é navegação do carrossel)
   //  4. Threshold de dx mínimo mais alto (12px) para evitar falsos positivos
   const panResponder = useRef(
     PanResponder.create({
@@ -332,7 +332,7 @@ export function BusinessDetailModal({
         return false; // não captura no início — só em movimento
       },
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
-        // Layer operacional activa → não interferir
+        // Layer operacional activa › não interferir
         if (layer.activeLayer) return false;
 
         // Movimento mínimo horizontal
@@ -346,7 +346,7 @@ export function BusinessDetailModal({
         if (dx <= 0) return false;
 
         // Se o gesto começou na zona do hero E o carrossel não está na 1ª foto
-        // → é navegação do carrossel, não fechar o modal
+        // › é navegação do carrossel, não fechar o modal
         const safeTopVal = gestureStartY.current;
         const heroZoneBottom = HERO_HEIGHT + 60; // margem extra de segurança
         if (safeTopVal < heroZoneBottom && !carouselAtStart.current) return false;
@@ -808,7 +808,7 @@ export function BusinessDetailModal({
                 Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`)
                   .catch(() => Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`));
               }}>
-                <Text style={s.directionsBtnText}>Direcoes →</Text>
+                <Text style={s.directionsBtnText}>Direcoes ›</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -952,7 +952,7 @@ export function BusinessDetailModal({
           </View>
 
           <TouchableOpacity style={s.viewAllBtn} onPress={() => Alert.alert('Avaliações', `Ver todas as ${filteredReviews.length} avaliações`)}>
-            <Text style={s.viewAllText}>Ver todas as avaliações ({filteredReviews.length}) →</Text>
+            <Text style={s.viewAllText}>Ver todas as avaliações ({filteredReviews.length}) ›</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={s.addPhotoBtn} onPress={() => requireAuth(() => { setPendingStars(0); setReviewComment(''); setShowReviewModal(true); })}>
@@ -1004,13 +1004,13 @@ export function BusinessDetailModal({
                     style={{ marginTop: 4 }}
                     onPress={() => { setAskText(''); setShowAskModal(qa.id); }}
                   >
-                    <Text style={{ fontSize: 12, color: COLORS.red, fontWeight: '600' }}>Responder →</Text>
+                    <Text style={{ fontSize: 12, color: COLORS.red, fontWeight: '600' }}>Responder ›</Text>
                   </TouchableOpacity>
                 )}
               </View>
             ))}
             <TouchableOpacity onPress={() => {}}>
-              <Text style={s.viewAllText}>Ver todas as perguntas ({questions.length}) →</Text>
+              <Text style={s.viewAllText}>Ver todas as perguntas ({questions.length}) ›</Text>
             </TouchableOpacity>
           </View>
 

@@ -385,7 +385,7 @@ export function CalendarPicker({ value, onChange, label, minDate, isOpen, onTogg
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BOOKING MODAL — 2 passos: datas/quartos → dados do hóspede
+// BOOKING MODAL — 2 passos: datas/quartos › dados do hóspede
 // SF_H2: implementação completa
 // ─────────────────────────────────────────────────────────────────────────────
 function BookingModal({
@@ -704,7 +704,7 @@ function BookingModal({
                       setCheckOut(fmtDate(out));
                     }}>
                       <Text style={hS.unavailSuggest}>
-                        Ver disponibilidade a partir de {nextDate} →
+                        Ver disponibilidade a partir de {nextDate} ›
                       </Text>
                     </TouchableOpacity>
                   ) : (
@@ -800,7 +800,7 @@ function BookingModal({
                 style={[hS.primaryBtn, (isUnavailable || checkingAvail || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)) && hS.primaryBtnOff]}
                 disabled={isUnavailable || checkingAvail || !ownerRoom || nights <= 0 || nights < (room.minNights || 1)}
                 onPress={() => setStep(2)}>
-                <Text style={hS.primaryBtnText}>Continuar →</Text>
+                <Text style={hS.primaryBtnText}>Continuar ›</Text>
               </TouchableOpacity>
             </>
           )}
@@ -1119,7 +1119,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onCancelBooking,
                   <View style={{ flex: 1 }}>
                     <Text style={hS.bookingGuestName}>{rb.guestName}</Text>
                     <Text style={hS.bookingGuestPhone}>
-                      {rb.checkIn} → {rb.checkOut}
+                      {rb.checkIn} – {rb.checkOut}
                       {rb.nights ? ` · ${rb.nights}n` : ''}
                     </Text>
                   </View>
@@ -1150,7 +1150,7 @@ function BookingsManager({ bookings, roomTypes, onStatusChange, onCancelBooking,
                 {isOpen && (
                   <View style={{ marginTop: 10, gap: 4 }}>
                     <Text style={hS.bookingRoomName}>{room?.name || 'Quarto'}</Text>
-                    <Text style={hS.bookingDates}>📅 {rb.checkIn} → {rb.checkOut} · {rb.nights} noite{rb.nights !== 1 ? 's' : ''}</Text>
+                    <Text style={hS.bookingDates}>📅 {rb.checkIn} – {rb.checkOut} · {rb.nights} noite{rb.nights !== 1 ? 's' : ''}</Text>
                     {(rb.adults || rb.children > 0) && (
                       <Text style={hS.bookingGuests}>
                         👤 {rb.adults || 1} adulto{(rb.adults || 1) !== 1 ? 's' : ''}
@@ -1422,7 +1422,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
   const [statusOverrides, setStatusOverrides] = useState({});
 
   // ── Reservas — fonte única de verdade ─────────────────────────────────────
-  // Prioridade (maior → menor):
+  // Prioridade (maior › menor):
   //   1. Supabase Realtime (liveBookings do backend) — produção
   //   2. ownerRoomBookingsProp (estado elevado no Main) — desenvolvimento local
   //   3. localBookings (fallback isolado, sem Main)
@@ -1658,7 +1658,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
           rooms:       booking.rooms       ?? 1,
           // SEGURANÇA: totalPrice NÃO é enviado ao backend.
           // O backend recalcula sempre o preço a partir das tarifas na DB.
-          // Enviar o preço do frontend permitiria manipulação de valor (ex: 50.000 Kz → 1 Kz).
+          // Enviar o preço do frontend permitiria manipulação de valor (ex: 50.000 Kz › 1 Kz).
           notes:       booking.notes       || undefined,
           roomTypeId:  booking.roomTypeId  || undefined,
         });
@@ -1679,7 +1679,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
         const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
         Alert.alert(
           'Reserva Enviada! 🎉',
-          `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz\n\n📩 O dono será notificado em tempo real.`,
+          `${booking.guestName}\n${booking.checkIn} – ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz\n\n📩 O dono será notificado em tempo real.`,
           [{ text: 'OK' }],
         );
       } catch (err) {
@@ -1708,7 +1708,7 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
       const voucher = `ACH-${String(Math.floor(Math.random() * 900000) + 100000)}`;
       Alert.alert(
         'Reserva Confirmada! 🎉',
-        `${booking.guestName}\n${booking.checkIn} → ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
+        `${booking.guestName}\n${booking.checkIn} – ${booking.checkOut}\nVoucher: ${voucher}\n\nTotal: ${booking.totalPrice.toLocaleString()} Kz`,
         [{ text: 'OK' }],
       );
     }
@@ -1747,8 +1747,8 @@ export function HospitalityModule({ business, ownerMode, tenantId, ownerBusiness
 
   const allRooms = business?.roomTypes || [];
   // Regra 1: cliente só vê tipos de quarto com quartos físicos configurados.
-  // physicalRoomsCount=0  → sem quartos físicos → esconder do cliente
-  // physicalRoomsCount=null → backend antigo, não sabemos → mostrar (permissivo)
+  // physicalRoomsCount=0  › sem quartos físicos › esconder do cliente
+  // physicalRoomsCount=null › backend antigo, não sabemos › mostrar (permissivo)
   // O dono vê sempre todos para poder gerir.
   const rooms = isOwner
     ? allRooms

@@ -24,7 +24,7 @@
  *   selectedAmenities / toggleAmenity
  *   hasActiveFilters / activeFiltersCount
  *   onOpenSortModal    — fn()
- *   onOpenFilters      — fn() → abre AdvancedFiltersModal
+ *   onOpenFilters      — fn() › abre AdvancedFiltersModal
  *   compareList / toggleCompare
  *
  * Props de sistema:
@@ -1208,7 +1208,7 @@ function ProfileTab({
                       <View key={b.id} style={profAccS.bookingItem}>
                         <View style={{ flex: 1 }}>
                           <Text style={profAccS.bookingBiz} numberOfLines={1}>{b.business?.name || b.businessId || '—'}</Text>
-                          <Text style={profAccS.bookingDates}>{b.startDate ? new Date(b.startDate).toLocaleDateString('pt-PT') : '—'} → {b.endDate ? new Date(b.endDate).toLocaleDateString('pt-PT') : '—'}</Text>
+                          <Text style={profAccS.bookingDates}>{b.startDate ? new Date(b.startDate).toLocaleDateString('pt-PT') : '—'} – {b.endDate ? new Date(b.endDate).toLocaleDateString('pt-PT') : '—'}</Text>
                         </View>
                         <View style={[profAccS.statusBadge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
                           <Text style={[profAccS.statusBadgeTxt, { color: statusColor }]}>{statusLabel}</Text>

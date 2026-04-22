@@ -12,10 +12,10 @@
  *   - AppContext: estado de autenticação e alternância Modo Cliente / Modo Dono
  *
  * CONTRATOS DE API (prontos para NestJS):
- *   GET /businesses          → MOCK_BUSINESSES_INITIAL[]
- *   GET /businesses/:id      → Business
- *   GET /auth/me             → { user, ownerBusiness? }
- *   POST /auth/switch-mode   → { isBusinessMode: bool }
+ *   GET /businesses          › MOCK_BUSINESSES_INITIAL[]
+ *   GET /businesses/:id      › Business
+ *   GET /auth/me             › { user, ownerBusiness? }
+ *   POST /auth/switch-mode   › { isBusinessMode: bool }
  *
  * PROPS QUE EXPÕE (via AppContext):
  *   - businesses, setBusinesses
@@ -67,12 +67,12 @@ export function Icon({ name, size = 20, color = '#1F1F1F', strokeWidth = 1.5 }) 
     const FALLBACK = {
       search:'⌕', location:'◎', filter:'⊟', sort:'≡', map:'◈', star:'★',
       bookmark:'♡', bookmarkFilled:'♥', share:'↗', back:'‹', close:'×',
-      check:'✓', plus:'+', minus:'−', phone:'☎', web:'↗', directions:'→',
+      check:'✓', plus:'+', minus:'−', phone:'☎', web:'↗', directions:'›',
       clock:'○', payment:'$', wifi:'◉', parking:'P', delivery:'⚡',
       wheelchair:'♿', outdoor:'◐', reservation:'◷', camera:'⊙', like:'↑',
       moon:'◑', sun:'○', bell:'◔', analytics:'▦', crown:'♛', verified:'✓',
       tag:'⊛', fire:'▲', user:'○', checkin:'◉', save:'◈', certified:'✓',
-      professional:'▪', warning:'△', arrow:'→', chevronDown:'∨',
+      professional:'▪', warning:'△', arrow:'›', chevronDown:'∨',
       chevronRight:'›', info:'ⓘ', heart:'♡', heartFilled:'♥', edit:'✎',
       trash:'⊠', x:'×', briefcase:'▪', settings:'⚙', hotel:'⌂',
     };
@@ -192,7 +192,7 @@ export const formatCurrency = (value) => {
   return `${Number(value).toLocaleString('pt-AO')} Kz`;
 };
 
-/** Formata dd/mm/yyyy → "15 de Março" */
+/** Formata dd/mm/yyyy › "15 de Março" */
 export const formatDateLabel = (ddmmyyyy) => {
   if (!ddmmyyyy) return '';
   const months = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -295,7 +295,7 @@ export const ALL_CAT_IDS   = new Set(ALL_CATEGORIES.flatMap(s => s.items.map(i =
 export const ALL_CAT_LABEL = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.label])));
 export const ALL_CAT_ICON  = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.icon])));
 
-/** Map: chipId → businessType[] do dono */
+/** Map: chipId › businessType[] do dono */
 export const CATEGORY_TO_BUSINESS_TYPES = {
   restaurants: ['food'],      delivery: ['food','retail','logistics'],
   hotels: ['accommodation'],  shopping: ['retail'],

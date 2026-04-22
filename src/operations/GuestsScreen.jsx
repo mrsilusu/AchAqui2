@@ -536,7 +536,7 @@ function GuestProfile({ guest, businessId, accessToken, onClose, onGuestUpdated 
                   <View style={[gS.stayDot, { backgroundColor: bst.color }]} />
                   <View style={gS.stayBody}>
                     <Text style={gS.stayRoom}>{b.roomType?.name || 'Quarto'}{b.room?.number ? ` · Nº ${b.room.number}` : ''}</Text>
-                    <Text style={gS.stayDate}>{fmtDate(b.startDate || b.checkIn)} → {fmtDate(b.endDate || b.checkOut)}</Text>
+                    <Text style={gS.stayDate}>{fmtDate(b.startDate || b.checkIn)} – {fmtDate(b.endDate || b.checkOut)}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <View style={[gS.badge, { backgroundColor: bst.bg }]}>

@@ -1210,7 +1210,7 @@ export function OwnerModule({
 
   /**
    * Adiciona uma foto ao tipo de quarto.
-   * Fluxo principal: tenta upload para o backend (Supabase Storage) → guarda URL pública.
+   * Fluxo principal: tenta upload para o backend (Supabase Storage) › guarda URL pública.
    * Fallback: se storage não configurado (503) ou sem roomTypeId, guarda a URI local/remota
    *           tal como foi fornecida — funciona no dispositivo actual mas não é URL pública.
    *
@@ -1218,7 +1218,7 @@ export function OwnerModule({
    * @param {string|null} roomTypeId - ID do tipo de quarto (null quando ainda não criado)
    * @param {string} fileName - nome do ficheiro (ex: "foto.jpg")
    * @param {string} mimeType - tipo MIME (ex: "image/jpeg")
-   * @param {string|null} base64 - conteúdo em base64 (null → upload não tentado, URI guardada directamente)
+   * @param {string|null} base64 - conteúdo em base64 (null › upload não tentado, URI guardada directamente)
    */
   const handleAddRoomPhoto = useCallback(async (uri, roomTypeId, fileName, mimeType, base64) => {
     if (!uri) return;
@@ -2734,7 +2734,7 @@ export function OwnerModule({
                     {blocks.map((block, idx) => (
                       <View key={idx} style={polS.blockItem}>
                         <Icon name="calendar" size={14} color={COLORS.grayText} strokeWidth={2} />
-                        <Text style={polS.blockItemText}>{block.start} → {block.end} · {block.rooms || 1} quarto{(block.rooms || 1) !== 1 ? 's' : ''}</Text>
+                        <Text style={polS.blockItemText}>{block.start} – {block.end} · {block.rooms || 1} quarto{(block.rooms || 1) !== 1 ? 's' : ''}</Text>
                         <TouchableOpacity onPress={() => {
                           const updated = { ...roomBlockings, [room.id]: blocks.filter((_, i) => i !== idx) };
                           setRoomBlockings(updated);
@@ -3065,7 +3065,7 @@ export function OwnerModule({
                       <View style={{marginTop:10, gap:4}}>
                         <Text style={{fontSize:13, fontWeight:'600', color:COLORS.darkText}}>{room?.name || 'Quarto'}</Text>
                         <View style={{flexDirection:'row', gap:16}}>
-                          <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} → {rb.checkOut}</Text>
+                          <Text style={{fontSize:12, color:COLORS.grayText}}>📅 {rb.checkIn} – {rb.checkOut}</Text>
                           <Text style={{fontSize:12, color:COLORS.grayText}}>{rb.nights} noite{rb.nights!==1?'s':''}</Text>
                         </View>
                         {(rb.adults || rb.children > 0) && (
@@ -4082,7 +4082,7 @@ export function OwnerModule({
                     <View style={{flex:1}}>
                       <Text style={bizS.promoItemTitle}>{promo.title}</Text>
                       {promo.description ? <Text style={bizS.promoItemDesc} numberOfLines={2}>{promo.description}</Text> : null}
-                      <Text style={bizS.promoItemDates}>{promo.startDate} → {promo.endDate}</Text>
+                      <Text style={bizS.promoItemDates}>{promo.startDate} – {promo.endDate}</Text>
                     </View>
                     {/* Toggle active */}
                     <TouchableOpacity
@@ -4607,14 +4607,14 @@ export function OwnerModule({
                 <TouchableOpacity
                   style={[bizS.promoFormInput, {flexDirection:'row', alignItems:'center', justifyContent:'space-between', height:44}]}
                   onPress={() => {
-                    // Converte DD/MM/YYYY → YYYY-MM-DD para o picker
+                    // Converte DD/MM/YYYY › YYYY-MM-DD para o picker
                     let iso = '';
                     if (promoExpiry && promoExpiry.includes('/')) {
                       const parts = promoExpiry.split('/');
                       if (parts.length === 3) iso = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
                     }
                     openCal('Validade da Promoção', iso, (v) => {
-                      // Converte de volta YYYY-MM-DD → DD/MM/YYYY para guardar
+                      // Converte de volta YYYY-MM-DD › DD/MM/YYYY para guardar
                       const [y,m,d] = v.split('-');
                       setPromoExpiry(`${d}/${m}/${y}`);
                     });

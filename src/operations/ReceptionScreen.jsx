@@ -756,7 +756,7 @@ function GuestProfileModal({ visible, businessId, accessToken, prefilledName, pr
                     (selectedGuest.bookings || []).map((b) => (
                       <View key={b.id} style={[rpS.roomRow, { paddingVertical: 10 }]}> 
                         <View style={{ flex: 1 }}>
-                          <Text style={rpS.roomNum}>{fmt(b.startDate)} → {fmt(b.endDate)}</Text>
+                          <Text style={rpS.roomNum}>{fmt(b.startDate)} – {fmt(b.endDate)}</Text>
                           <Text style={rpS.roomFloor}>
                             {b.roomType?.name || 'Quarto'}{b.room?.number ? ` · Nº ${b.room.number}` : ''} · {b.status}
                             {b.totalPrice ? ` · ${Math.round(b.totalPrice).toLocaleString()} Kz` : ''}
@@ -1487,7 +1487,7 @@ function BookingCard({ booking, tab, roomTypes, onAction, actionLoading }) {
 
           <View style={rS.row}>
             <Icon name="calendar" size={13} color={COLORS.grayText} strokeWidth={2} />
-            <Text style={rS.rowText}>{fmt(booking.startDate)} → {fmt(booking.endDate)}</Text>
+            <Text style={rS.rowText}>{fmt(booking.startDate)} – {fmt(booking.endDate)}</Text>
           </View>
           <View style={rS.row}>
             <Icon name="users" size={13} color={COLORS.grayText} strokeWidth={2} />
@@ -2049,7 +2049,7 @@ function NewBookingModal({ visible, businessId, accessToken, onClose, onCreated 
                     <Text style={{ fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 6 }}>RESUMO</Text>
                     <Text style={{ fontSize: 13, color: '#111' }}>{selType.name}</Text>
                     <Text style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                      {startDate} → {endDate} · {nightsCount} noite{nightsCount!==1?'s':''}
+                      {startDate} – {endDate} · {nightsCount} noite{nightsCount!==1?'s':''}
                     </Text>
                     {ppn > 0 && (
                       <Text style={{ fontSize: 16, fontWeight: '700', color: '#1565C0', marginTop: 6 }}>

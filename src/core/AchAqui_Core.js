@@ -21,11 +21,11 @@
  *   ✅ zero console.log       — removidos todos os logs de debug
  *
  * CONTRATOS DE API (prontos para NestJS):
- *   GET /businesses          → BusinessPublicDTO[] (sem campos privados)
- *   GET /businesses/:id/private → BusinessPrivateDTO (requer JWT owner role)
- *   GET /auth/me             → { user, tenantId?, role }
- *   POST /auth/switch-mode   → { isBusinessMode: bool }
- *   DELETE /auth/session     → logout + clear
+ *   GET /businesses          › BusinessPublicDTO[] (sem campos privados)
+ *   GET /businesses/:id/private › BusinessPrivateDTO (requer JWT owner role)
+ *   GET /auth/me             › { user, tenantId?, role }
+ *   POST /auth/switch-mode   › { isBusinessMode: bool }
+ *   DELETE /auth/session     › logout + clear
  *
  * FASE 2+: Para ligar ao backend, substituir MOCK_BUSINESSES_INITIAL
  *          por uma chamada TanStack Query: useQuery(['businesses'], fetchBusinesses)
@@ -66,12 +66,12 @@ export function Icon({ name, size = 20, color = '#1F1F1F', strokeWidth = 1.5 }) 
     const FALLBACK = {
       search:'⌕', location:'◎', filter:'⊟', sort:'≡', map:'◈', star:'★',
       bookmark:'♡', bookmarkFilled:'♥', share:'↗', back:'‹', close:'×',
-      check:'✓', plus:'+', minus:'−', phone:'☎', web:'↗', directions:'→',
+      check:'✓', plus:'+', minus:'−', phone:'☎', web:'↗', directions:'›',
       clock:'○', payment:'$', wifi:'◉', parking:'P', delivery:'⚡',
       wheelchair:'♿', outdoor:'◐', reservation:'◷', camera:'⊙', like:'↑',
       moon:'◑', sun:'○', bell:'◔', analytics:'▦', crown:'♛', verified:'✓',
       tag:'⊛', fire:'▲', user:'○', checkin:'◉', save:'◈', certified:'✓',
-      professional:'▪', warning:'△', arrow:'→', chevronDown:'∨',
+      professional:'▪', warning:'△', arrow:'›', chevronDown:'∨',
       chevronRight:'›', info:'ⓘ', heart:'♡', heartFilled:'♥', edit:'✎',
       trash:'⊠', x:'×', briefcase:'▪', settings:'⚙', hotel:'⌂',
     };
@@ -192,7 +192,7 @@ export const formatCurrency = (value) => {
   return `${Number(value).toLocaleString('pt-AO')} Kz`;
 };
 
-/** Formata dd/mm/yyyy → "15 de Março" */
+/** Formata dd/mm/yyyy › "15 de Março" */
 export const formatDateLabel = (ddmmyyyy) => {
   if (!ddmmyyyy) return '';
   const months = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -295,7 +295,7 @@ export const ALL_CAT_IDS   = new Set(ALL_CATEGORIES.flatMap(s => s.items.map(i =
 export const ALL_CAT_LABEL = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.label])));
 export const ALL_CAT_ICON  = Object.fromEntries(ALL_CATEGORIES.flatMap(s => s.items.map(i => [i.id, i.icon])));
 
-/** Map: chipId → businessType[] do dono */
+/** Map: chipId › businessType[] do dono */
 export const CATEGORY_TO_BUSINESS_TYPES = {
   restaurants: ['food'],      delivery: ['food','retail','logistics'],
   hotels: ['accommodation'],  shopping: ['retail'],
@@ -418,13 +418,13 @@ export const OWNER_BUSINESS = {
  * antes de ser exposto no contexto público (AppContext.businesses[]).
  *
  * CAMPOS REMOVIDOS:
- *   - commissionRate    → taxa financeira interna AchAqui
- *   - roomTypes[].taxRate      → IVA configurado pelo dono
- *   - roomTypes[].seasonalRates → preços sazonais internos
- *   - roomTypes[].bookedRanges  → dados de reservas de hóspedes (GDPR)
- *   - icalLink / icalSync       → URL privado de sincronização
- *   - autoConfirmBookings       → configuração operacional interna
- *   - invoicePrefix / bankDetails / vatNumber → dados fiscais
+ *   - commissionRate    › taxa financeira interna AchAqui
+ *   - roomTypes[].taxRate      › IVA configurado pelo dono
+ *   - roomTypes[].seasonalRates › preços sazonais internos
+ *   - roomTypes[].bookedRanges  › dados de reservas de hóspedes (GDPR)
+ *   - icalLink / icalSync       › URL privado de sincronização
+ *   - autoConfirmBookings       › configuração operacional interna
+ *   - invoicePrefix / bankDetails / vatNumber › dados fiscais
  *
  * FASE 2+: O backend NestJS devolve um BusinessPublicDTO já sanitizado.
  *          Esta função actua como guard frontend adicional.
@@ -932,7 +932,7 @@ export const AMENITY_FILTER_CATEGORIES = [
 ];
 export const AMENITY_FILTERS = AMENITY_FILTER_CATEGORIES.flatMap(c => c.items);
 
-// Mapeamento amenidade-id → nome de ícone do IconSystem
+// Mapeamento amenidade-id › nome de ícone do IconSystem
 export const AMENITY_ICON_MAP = {
   wifi: 'wifi',         outdoor: 'outdoor',       parking: 'parking',
   delivery: 'delivery', takeaway: 'fastdelivery', vegan: 'heart',

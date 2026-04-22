@@ -163,7 +163,7 @@ export function ImportModal({ visible, onClose, accessToken }) {
             <TextInput style={s.pasteArea} placeholder="Cole aqui o conteúdo exportado do Outscraper..." placeholderTextColor={COLORS.grayText} value={content} onChangeText={setContent} multiline textAlignVertical="top" autoCapitalize="none" autoCorrect={false} />
             {error ? <Text style={s.errorText}>{error}</Text> : null}
             <TouchableOpacity style={[s.primaryBtn, !content.trim() && s.primaryBtnDisabled]} onPress={handlePreview} disabled={!content.trim()} activeOpacity={0.8}>
-              <Text style={s.primaryBtnText}>Ver preview →</Text>
+              <Text style={s.primaryBtnText}>Ver preview ›</Text>
             </TouchableOpacity>
           </View>
         )}

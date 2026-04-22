@@ -115,7 +115,7 @@ function BookingDetailModal({ bk, onClose, onAction }) {
               <View style={dS.row}>
                 <Icon name="calendar" size={13} color="#888" strokeWidth={2} />
                 <Text style={dS.rowText}>
-                  {fmtDate(bk.startDate)} → {fmtDate(bk.endDate)}
+                  {fmtDate(bk.startDate)} – {fmtDate(bk.endDate)}
                 </Text>
               </View>
               {bk.adults != null && (

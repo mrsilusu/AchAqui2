@@ -4,7 +4,7 @@
  * ============================================================================
  * Sprint 1: Canvas estático com demo data
  * Sprint 2: Integração com API real + iCal blocks
- * Sprint 3: Interacções (tap célula → criar reserva, tap barra → detalhe)
+ * Sprint 3: Interacções (tap célula › criar reserva, tap barra › detalhe)
  * Sprint 4: Integrado em DashboardPMS (ver DashboardPMS.jsx + HospitalityModule.jsx)
  *
  * Segurança multi-tenant: businessId + accessToken obrigatórios em todos os
@@ -600,7 +600,7 @@ function BookingDetailSheet({ booking, rooms, onClose, onAction, onUpdateRooms }
               <Text style={gS.sheetMeta}>📞 {booking.guestPhone}</Text>
             ) : null}
             <Text style={gS.sheetMeta}>
-              📅 {fmtFull(booking.checkIn)} → {fmtFull(booking.checkOut)}
+              📅 {fmtFull(booking.checkIn)} – {fmtFull(booking.checkOut)}
             </Text>
             <Text style={gS.sheetMeta}>🌙 {booking.nights} noite{booking.nights !== 1 ? 's' : ''}</Text>
             {room && (
@@ -1160,7 +1160,7 @@ export function RoomGanttScreen({
     setStartDate((prev) => addDays(prev, days));
   }, []);
 
-  // ── Tap em célula vazia → criar reserva ─────────────────────────────────────
+  // ── Tap em célula vazia › criar reserva ─────────────────────────────────────
   const handleCellPress = useCallback((room, date) => {
     if (onOpenBooking) {
       onOpenBooking({ roomId: room.id, roomNumber: room.roomNumber, checkIn: date, checkOut: addDays(date, 1) });
@@ -1178,12 +1178,12 @@ export function RoomGanttScreen({
     }
   }, [onOpenBooking]);
 
-  // ── Tap em barra → detalhe ───────────────────────────────────────────────────
+  // ── Tap em barra › detalhe ───────────────────────────────────────────────────
   const handleBarPress = useCallback((booking) => {
     setSelectedBooking(booking);
   }, []);
 
-  // ── Long press barra → housekeeping ─────────────────────────────────────────
+  // ── Long press barra › housekeeping ─────────────────────────────────────────
   const handleBarLongPress = useCallback((booking) => {
     if (!booking.roomId) return;
     Alert.alert('Housekeeping', `Quarto ${booking.roomId}`, [

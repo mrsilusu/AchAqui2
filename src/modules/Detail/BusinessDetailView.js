@@ -239,7 +239,7 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── FIXED HEADER BACKGROUND — transparente → branco com scroll ── */}
+      {/* ── FIXED HEADER BACKGROUND — transparente › branco com scroll ── */}
       <Animated.View
         style={[vS.fixedHeader, { opacity: headerBgOpacity, height: safeTop + 52 }]}
         pointerEvents="none"
@@ -797,7 +797,7 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
             })}
           </View>
           <TouchableOpacity style={vS.qaViewAll} onPress={() => Alert.alert('Avaliações', `Ver todas as ${filteredReviews.length} avaliações`)}>
-            <Text style={vS.qaViewAllText}>Ver todas as avaliações ({filteredReviews.length}) →</Text>
+            <Text style={vS.qaViewAllText}>Ver todas as avaliações ({filteredReviews.length}) ›</Text>
           </TouchableOpacity>
           <TouchableOpacity style={vS.uploadPhotoBtn} onPress={() => onOpenSubLayer?.('photoOptions')}>
             <Icon name="camera" size={18} color={COLORS.darkText} strokeWidth={1.5} />
@@ -827,7 +827,7 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
               </View>
             ))}
             <TouchableOpacity style={vS.qaViewAll} onPress={() => onOpenSubLayer?.('qa')}>
-              <Text style={vS.qaViewAllText}>Ver todas as perguntas →</Text>
+              <Text style={vS.qaViewAllText}>Ver todas as perguntas ›</Text>
             </TouchableOpacity>
           </View>
           {/* Referral */}

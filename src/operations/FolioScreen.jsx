@@ -336,7 +336,7 @@ function ReceiptModal({ visible, receipt, onClose }) {
             <Text style={fS.receiptSectionTitle}>Estadia</Text>
             <Text style={fS.receiptLine}>Quarto Nº {receipt.stay?.room || '—'}</Text>
             <Text style={fS.receiptMeta}>
-              {fmtDate(receipt.stay?.startDate)} → {fmtDate(receipt.stay?.endDate)} · {nts} noite{nts !== 1 ? 's' : ''}
+              {fmtDate(receipt.stay?.startDate)} – {fmtDate(receipt.stay?.endDate)} · {nts} noite{nts !== 1 ? 's' : ''}
             </Text>
           </View>
 
@@ -495,7 +495,7 @@ export function FolioScreen({ booking, businessId, accessToken, onClose }) {
               <View style={fS.stayRow}>
                 <Icon name="calendar" size={13} color={COLORS.grayText} strokeWidth={2} />
                 <Text style={fS.stayText}>
-                  {fmtDate(data?.booking?.startDate)} → {fmtDate(data?.booking?.endDate)}
+                  {fmtDate(data?.booking?.startDate)} – {fmtDate(data?.booking?.endDate)}
                   {' · '}{nights(data?.booking?.startDate, data?.booking?.endDate)} noite{nights(data?.booking?.startDate, data?.booking?.endDate) !== 1 ? 's' : ''}
                 </Text>
               </View>

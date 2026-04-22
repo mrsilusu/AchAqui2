@@ -266,7 +266,7 @@ export default function StaffProfileSheet({
               style={[s.section, s.logLink]}
               onPress={() => onOpenActivity && onOpenActivity(staff)}
             >
-              <Text style={s.logLinkText}>Ver Log de Atividade →</Text>
+              <Text style={s.logLinkText}>Ver Log de Atividade ›</Text>
             </TouchableOpacity>
 
             {/* SUSPENDER / REATIVAR */}
