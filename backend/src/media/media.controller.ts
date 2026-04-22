@@ -29,7 +29,7 @@ export class MediaController {
   }
 
   @Post('review/upload')
-  @Roles(UserRole.OWNER, UserRole.CUSTOMER)
+  @Roles(UserRole.OWNER, UserRole.CLIENT)
   uploadReviewPhoto(
     @Req() req: { user: { userId: string } },
     @Body() dto: UploadBase64Dto,
