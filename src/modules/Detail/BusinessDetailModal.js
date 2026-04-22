@@ -26,13 +26,15 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Image, Animated, PanResponder, Linking, Share, Alert,
+  Image, Animated, PanResponder, Linking, Share, Alert, ActivityIndicator,
   Dimensions, Platform, TextInput, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
 import { apiRequest, backendApi } from '../../lib/backendApi';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import RoomDetailModal from '../../components/RoomDetailModal';
 import { getAmenitiesPreview } from '../../lib/roomAmenities';
 
@@ -246,6 +248,8 @@ export function BusinessDetailModal({
   const [pendingStars,      setPendingStars]        = useState(0);
   const [reviewComment,     setReviewComment]       = useState('');
   const [reviewSubmitting,  setReviewSubmitting]    = useState(false);
+  const [reviewPhotos,      setReviewPhotos]        = useState([]);   // publicUrls prontas para enviar
+  const [reviewPhotoUploading, setReviewPhotoUploading] = useState(false);
   // Q&A (Sprint B/C)
   const [questions,         setQuestions]           = useState([]);
   const [showAskModal,      setShowAskModal]        = useState(false);
@@ -659,7 +663,7 @@ export function BusinessDetailModal({
             <Text style={s.ratingTitle}>Avaliar</Text>
             <View style={s.starsRow}>
               {[1,2,3,4,5].map(i => (
-                <TouchableOpacity key={i} onPress={() => requireAuth(() => { setPendingStars(i); setReviewComment(''); setShowReviewModal(true); })} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <TouchableOpacity key={i} onPress={() => requireAuth(() => { setPendingStars(i); setReviewComment(''); setReviewPhotos([]); setShowReviewModal(true); })} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
                   <Text style={{ fontSize: 20, color: i <= ratingStars ? '#F59E0B' : '#E5E7EB' }}>★</Text>
                 </TouchableOpacity>
               ))}
@@ -1031,7 +1035,7 @@ export function BusinessDetailModal({
             <Text style={s.viewAllText}>Ver todas as avaliações ({filteredReviews.length}) →</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.addPhotoBtn} onPress={() => requireAuth(() => { setPendingStars(0); setReviewComment(''); setShowReviewModal(true); })}>
+          <TouchableOpacity style={s.addPhotoBtn} onPress={() => requireAuth(() => { setPendingStars(0); setReviewComment(''); setReviewPhotos([]); setShowReviewModal(true); })}>
             <Icon name="camera" size={18} color={COLORS.darkText} strokeWidth={1.5} />
             <Text style={s.addPhotoText}>Escrever avaliação</Text>
           </TouchableOpacity>
@@ -1221,23 +1225,82 @@ export function BusinessDetailModal({
             <Text style={{ fontSize: 11, color: COLORS.grayText, textAlign: 'right', marginBottom: 12 }}>
               {reviewComment.length}/500
             </Text>
+
+            {/* Fotos da avaliação — máx 3 */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+              {reviewPhotos.map((uri, i) => (
+                <View key={i} style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9' }}>
+                  <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  <TouchableOpacity
+                    style={{ position: 'absolute', top: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}
+                    onPress={() => setReviewPhotos(p => p.filter((_, idx) => idx !== i))}
+                  >
+                    <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {reviewPhotos.length < 3 && (
+                <TouchableOpacity
+                  style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed' }}
+                  disabled={reviewPhotoUploading}
+                  onPress={async () => {
+                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (status !== 'granted') { Alert.alert('Permissão necessária', 'Permita acesso à galeria.'); return; }
+                    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9 });
+                    if (res.canceled || !res.assets?.[0]?.uri) return;
+                    setReviewPhotoUploading(true);
+                    try {
+                      const localUri = res.assets[0].uri;
+                      const compressed = await ImageManipulator.manipulateAsync(
+                        localUri,
+                        [{ resize: { width: 1280 } }],
+                        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+                      );
+                      let publicUrl;
+                      try {
+                        const r = await backendApi.uploadReviewPhoto(
+                          { fileName: `review-${Date.now()}.jpg`, mimeType: 'image/jpeg', base64: compressed.base64 },
+                          authSession?.accessToken,
+                        );
+                        publicUrl = r?.publicUrl;
+                      } catch (e) {
+                        if (e?.status === 503 || e?.message?.toLowerCase().includes('storage')) {
+                          Alert.alert('Foto guardada localmente', 'Será enviada quando o servidor de armazenamento estiver configurado.');
+                          publicUrl = localUri;
+                        } else throw e;
+                      }
+                      if (publicUrl) setReviewPhotos(p => [...p, publicUrl]);
+                    } catch (err) {
+                      Alert.alert('Erro', err?.message || 'Não foi possível fazer upload da foto.');
+                    } finally {
+                      setReviewPhotoUploading(false);
+                    }
+                  }}
+                >
+                  {reviewPhotoUploading
+                    ? <ActivityIndicator size="small" color={COLORS.grayText} />
+                    : <Text style={{ fontSize: 22, color: COLORS.grayText }}>+</Text>}
+                </TouchableOpacity>
+              )}
+            </View>
+
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity
                 style={[s.sheetBtn, { flex: 1, backgroundColor: '#F3F4F6' }]}
-                onPress={() => setShowReviewModal(false)}
+                onPress={() => { setShowReviewModal(false); setReviewPhotos([]); }}
               >
                 <Text style={[s.sheetBtnText, { color: COLORS.darkText }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.sheetBtn, { flex: 2, backgroundColor: pendingStars > 0 && reviewComment.trim().length >= 5 ? COLORS.red : '#E5E7EB' }]}
-                disabled={reviewSubmitting || pendingStars === 0 || reviewComment.trim().length < 5}
+                disabled={reviewSubmitting || reviewPhotoUploading || pendingStars === 0 || reviewComment.trim().length < 5}
                 onPress={async () => {
                   if (reviewSubmitting || pendingStars === 0 || reviewComment.trim().length < 5) return;
                   setReviewSubmitting(true);
                   try {
                     const newReview = await backendApi.createReview(
                       business.id,
-                      { rating: pendingStars, comment: reviewComment.trim() },
+                      { rating: pendingStars, comment: reviewComment.trim(), photos: reviewPhotos },
                       authSession.accessToken,
                     );
                     setReviews(prev => {
@@ -1246,6 +1309,7 @@ export function BusinessDetailModal({
                     });
                     setRatingStars(pendingStars);
                     setShowReviewModal(false);
+                    setReviewPhotos([]);
                   } catch (err) {
                     Alert.alert('Erro', err?.message || 'Não foi possível guardar a avaliação.');
                   } finally {
@@ -1254,7 +1318,7 @@ export function BusinessDetailModal({
                 }}
               >
                 <Text style={[s.sheetBtnText, { color: pendingStars > 0 && reviewComment.trim().length >= 5 ? '#FFF' : COLORS.grayText }]}>
-                  {reviewSubmitting ? 'A enviar...' : 'Publicar avaliação'}
+                  {reviewSubmitting || reviewPhotoUploading ? 'A processar...' : 'Publicar avaliação'}
                 </Text>
               </TouchableOpacity>
             </View>

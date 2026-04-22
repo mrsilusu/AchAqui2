@@ -247,7 +247,7 @@ export class BusinessController {
   createReview(
     @Param('id') id: string,
     @Req() req: { user: { userId: string } },
-    @Body() body: { rating: number; comment: string },
+    @Body() body: { rating: number; comment: string; photos?: string[] },
   ) {
     return this.businessService.createReview(id, req.user.userId, body);
   }

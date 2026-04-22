@@ -1281,7 +1281,7 @@ export class BusinessService {
     }
   }
 
-  async createReview(businessId: string, userId: string, dto: { rating: number; comment: string }) {
+  async createReview(businessId: string, userId: string, dto: { rating: number; comment: string; photos?: string[] }) {
     if (!Number.isFinite(dto.rating) || dto.rating < 1 || dto.rating > 5) {
       throw new BadRequestException('rating deve ser entre 1 e 5.');
     }
@@ -1292,8 +1292,8 @@ export class BusinessService {
     try {
       const review = await this.prisma.review.upsert({
         where: { userId_businessId: { userId, businessId } },
-        update: { rating: dto.rating, comment: dto.comment.trim() },
-        create: { businessId, userId, rating: dto.rating, comment: dto.comment.trim() },
+        update: { rating: dto.rating, comment: dto.comment.trim(), photos: dto.photos || [] },
+        create: { businessId, userId, rating: dto.rating, comment: dto.comment.trim(), photos: dto.photos || [] },
         include: { user: { select: { id: true, name: true } } },
       });
 

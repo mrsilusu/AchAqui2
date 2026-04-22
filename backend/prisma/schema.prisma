@@ -586,6 +586,7 @@ model Review {
   rating         Int             // 1-5
   comment        String
   helpfulCount   Int             @default(0)
+  photos         String[]        @default([])
   ownerReply     String?
   ownerReplyDate DateTime?
   helpful        ReviewHelpful[]
