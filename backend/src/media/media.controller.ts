@@ -18,6 +18,25 @@ export class MediaController {
     return this.mediaService.uploadBusinessPhoto(req.user.userId, businessId, dto);
   }
 
+  @Post('business/:businessId/portfolio/upload')
+  @Roles(UserRole.OWNER)
+  uploadPortfolioPhoto(
+    @Req() req: { user: { userId: string } },
+    @Param('businessId') businessId: string,
+    @Body() dto: UploadBase64Dto,
+  ) {
+    return this.mediaService.uploadPortfolioPhoto(req.user.userId, businessId, dto);
+  }
+
+  @Post('review/upload')
+  @Roles(UserRole.OWNER, UserRole.CUSTOMER)
+  uploadReviewPhoto(
+    @Req() req: { user: { userId: string } },
+    @Body() dto: UploadBase64Dto,
+  ) {
+    return this.mediaService.uploadReviewPhoto(req.user.userId, dto);
+  }
+
   @Post('item/:itemId/upload')
   @Roles(UserRole.OWNER)
   uploadItemPhoto(

@@ -69,6 +69,33 @@ export class MediaService {
     return this.upload(filePath, dto);
   }
 
+  async uploadPortfolioPhoto(
+    ownerId: string,
+    businessId: string,
+    dto: UploadBase64Dto,
+  ) {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, ownerId: true },
+    });
+
+    if (!business) {
+      throw new NotFoundException('Estabelecimento não encontrado.');
+    }
+
+    if (business.ownerId !== ownerId) {
+      throw new ForbiddenException('Sem permissão para upload neste estabelecimento.');
+    }
+
+    const filePath = `businesses/${businessId}/portfolio/${crypto.randomUUID()}.jpg`;
+    return this.upload(filePath, dto);
+  }
+
+  async uploadReviewPhoto(userId: string, dto: UploadBase64Dto) {
+    const filePath = `reviews/${userId}/${crypto.randomUUID()}.jpg`;
+    return this.upload(filePath, dto);
+  }
+
   async uploadItemPhoto(ownerId: string, itemId: string, dto: UploadBase64Dto) {
     const item = await this.prisma.item.findUnique({
       where: { id: itemId },
