@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadBase64Dto } from './dto/upload-base64.dto';
@@ -39,7 +40,8 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste estabelecimento.');
     }
 
-    const filePath = `imagens/business/${businessId}/${Date.now()}-${dto.fileName}`;
+    const ext = dto.fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `businesses/${businessId}/misc/${randomUUID()}.${ext}`;
     return this.upload(filePath, dto);
   }
 
@@ -64,7 +66,8 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste item.');
     }
 
-    const filePath = `imagens/item/${itemId}/${Date.now()}-${dto.fileName}`;
+    const ext = dto.fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `businesses/${item.business.id}/items/${itemId}/${randomUUID()}.${ext}`;
     return this.upload(filePath, dto);
   }
 
@@ -89,7 +92,8 @@ export class MediaService {
       throw new ForbiddenException('Sem permissão para upload neste tipo de quarto.');
     }
 
-    const filePath = `imagens/room-type/${roomTypeId}/${Date.now()}-${dto.fileName}`;
+    const ext = dto.fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `businesses/${roomType.business.id}/ht/${roomTypeId}/${randomUUID()}.${ext}`;
     return this.upload(filePath, dto);
   }
 
@@ -142,8 +146,7 @@ export class MediaService {
       throw new BadRequestException('Máximo de 10 fotos por tipo de quarto atingido.');
     }
 
-    const safeFileName = dto.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `imagens/quartos/${dto.businessId}/${dto.roomTypeId}/${Date.now()}-${safeFileName}`;
+    const filePath = `businesses/${dto.businessId}/ht/${dto.roomTypeId}/${randomUUID()}.jpg`;
 
     const { data, error } = await this.supabase.storage
       .from(this.bucket)
