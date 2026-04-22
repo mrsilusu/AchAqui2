@@ -1477,7 +1477,7 @@ export function OwnerModule({
               <Text style={bizS.metricValue}>{ownerMetrics.views}</Text>
               <Text style={bizS.metricLabel}>Alcance</Text>
               <Text style={[bizS.metricChange, ownerMetrics.viewsChange > 0 && bizS.metricChangePositive]}>
-                {ownerMetrics.viewsChange > 0 ? '↑' : '↓'} {Math.abs(ownerMetrics.viewsChange)}%
+                {ownerMetrics.viewsChange > 0 ? '▲' : '▼'} {Math.abs(ownerMetrics.viewsChange)}%
               </Text>
             </View>
 
@@ -1486,7 +1486,7 @@ export function OwnerModule({
               <Text style={bizS.metricValue}>{ownerMetrics.clicks}</Text>
               <Text style={bizS.metricLabel}>Cliques</Text>
               <Text style={[bizS.metricChange, ownerMetrics.clicksChange > 0 && bizS.metricChangePositive]}>
-                {ownerMetrics.clicksChange > 0 ? '↑' : '↓'} {Math.abs(ownerMetrics.clicksChange)}%
+                {ownerMetrics.clicksChange > 0 ? '▲' : '▼'} {Math.abs(ownerMetrics.clicksChange)}%
               </Text>
             </View>
 
@@ -1495,7 +1495,7 @@ export function OwnerModule({
               <Text style={bizS.metricValue}>{ownerMetrics.checkIns}</Text>
               <Text style={bizS.metricLabel}>Check-ins</Text>
               <Text style={[bizS.metricChange, ownerMetrics.checkInsChange > 0 && bizS.metricChangePositive]}>
-                {ownerMetrics.checkInsChange > 0 ? '↑' : '↓'} {Math.abs(ownerMetrics.checkInsChange)}%
+                {ownerMetrics.checkInsChange > 0 ? '▲' : '▼'} {Math.abs(ownerMetrics.checkInsChange)}%
               </Text>
             </View>
 
@@ -1504,7 +1504,7 @@ export function OwnerModule({
               <Text style={bizS.metricValue}>{ownerMetrics.favorites}</Text>
               <Text style={bizS.metricLabel}>Favoritos</Text>
               <Text style={[bizS.metricChange, ownerMetrics.favoritesChange > 0 && bizS.metricChangePositive]}>
-                {ownerMetrics.favoritesChange > 0 ? '↑' : '↓'} {Math.abs(ownerMetrics.favoritesChange)}%
+                {ownerMetrics.favoritesChange > 0 ? '▲' : '▼'} {Math.abs(ownerMetrics.favoritesChange)}%
               </Text>
             </View>
           </View>

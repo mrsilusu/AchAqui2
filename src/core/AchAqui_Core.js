@@ -68,7 +68,7 @@ export function Icon({ name, size = 20, color = '#1F1F1F', strokeWidth = 1.5 }) 
       bookmark:'♡', bookmarkFilled:'♥', share:'↗', back:'‹', close:'×',
       check:'✓', plus:'+', minus:'−', phone:'☎', web:'↗', directions:'›',
       clock:'○', payment:'$', wifi:'◉', parking:'P', delivery:'⚡',
-      wheelchair:'♿', outdoor:'◐', reservation:'◷', camera:'⊙', like:'↑',
+      wheelchair:'♿', outdoor:'◐', reservation:'◷', camera:'⊙', like:'▲',
       moon:'◑', sun:'○', bell:'◔', analytics:'▦', crown:'♛', verified:'✓',
       tag:'⊛', fire:'▲', user:'○', checkin:'◉', save:'◈', certified:'✓',
       professional:'▪', warning:'△', arrow:'›', chevronDown:'∨',
