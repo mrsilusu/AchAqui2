@@ -1177,6 +1177,11 @@ function AppContent() {
   // Adicionalmente, o negócio do dono é persistido em AsyncStorage (OWNER_BIZ_CACHE_KEY)
   // e injectado na lista sempre que não seja encontrado na resposta da API.
   useEffect(() => {
+    // Aguardar que a sessão seja lida do AsyncStorage antes de arrancar.
+    // Sem este guard, no Android o startup corria com accessToken=null enquanto
+    // a sessão ainda estava a ser carregada — causava flash de onboarding.
+    if (authSession.loading) return;
+
     let cancelled = false;
 
     const startup = async () => {
@@ -1317,7 +1322,8 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.accessToken, authSession.isOwner, authSession.user?.id, userLocation?.latitude, userLocation?.longitude]);
+  }, [authSession.loading, authSession.accessToken, authSession.isOwner, authSession.user?.id,
+      userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     if (!authSession.accessToken) return;
@@ -1346,7 +1352,9 @@ function AppContent() {
   }, [authSession.isOwner, authSession.isStaff]);
 
   useEffect(() => {
-    if (authSession.loading) return;
+    // Também aguardar o startup — no Android, isOwner pode ser false
+    // transitoriamente durante a segunda passagem do startup effect.
+    if (authSession.loading || isStartupLoading) return;
     if (!authSession.isOwner && !authSession.isStaff && isBusinessMode) {
       setIsBusinessMode(false);
       setActiveNavTab('home');
@@ -1354,7 +1362,8 @@ function AppContent() {
     if (!authSession.isStaff && isStaffMode) {
       setIsStaffMode(false);
     }
-  }, [authSession.loading, authSession.isOwner, authSession.isStaff, isBusinessMode, isStaffMode]);
+  }, [authSession.loading, authSession.isOwner, authSession.isStaff,
+      isBusinessMode, isStaffMode, isStartupLoading]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
