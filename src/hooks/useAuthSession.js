@@ -35,7 +35,8 @@ export function useAuthSession() {
       const parsed = raw ? JSON.parse(raw) : null;
       setSession(parsed);
     } catch {
-      setSession(null);
+      // No Android, erros de RocksDB podem ocorrer transitoriamente.
+      // Manter session inalterada em vez de forcar null e deslogar o utilizador.
     } finally {
       setLoading(false);
     }

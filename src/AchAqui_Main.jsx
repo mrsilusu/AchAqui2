@@ -1253,6 +1253,11 @@ function AppContent() {
 
   // ── Startup — carrega perfil, dashboard do dono e negócios em paralelo ────
   useEffect(() => {
+    // Aguardar que a sessão seja lida do AsyncStorage antes de arrancar.
+    // Sem este guard, no Android o startup corria com accessToken=null enquanto
+    // a sessão ainda estava a ser carregada — causava flash de onboarding.
+    if (authSession.loading) return;
+
     let cancelled = false;
 
     const startup = async () => {
@@ -1377,7 +1382,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [authSession.accessToken, authSession.isOwner, authSession.user?.id, ensureOwnerBizInList,
+  }, [authSession.loading, authSession.accessToken, authSession.isOwner, authSession.user?.id, ensureOwnerBizInList,
       userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
@@ -1407,7 +1412,11 @@ function AppContent() {
   }, [authSession.isOwner, authSession.isStaff]);
 
   useEffect(() => {
-    if (authSession.loading) return;
+    // Aguardar sessão E startup antes de forçar saída do modo negócio.
+    // No Android, authSession.loading ainda é true enquanto o AsyncStorage está
+    // a ser lido — executar este guard antes causaria saída prematura com
+    // isOwner=false transitório.
+    if (authSession.loading || isStartupLoading) return;
     if (!authSession.isOwner && !authSession.isStaff && isBusinessMode) {
       setIsBusinessMode(false);
       setActiveNavTab('home');
@@ -1415,7 +1424,7 @@ function AppContent() {
     if (!authSession.isStaff && isStaffMode) {
       setIsStaffMode(false);
     }
-  }, [authSession.loading, authSession.isOwner, authSession.isStaff, isBusinessMode, isStaffMode]);
+  }, [authSession.loading, authSession.isOwner, authSession.isStaff, isBusinessMode, isStaffMode, isStartupLoading]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
