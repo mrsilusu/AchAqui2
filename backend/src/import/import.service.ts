@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MediaService } from '../media/media.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,10 @@ export interface ImportResult {
 
 @Injectable()
 export class ImportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mediaService: MediaService,
+  ) {}
 
   private readonly dayKeyByLabel: Record<string, string> = {
     monday: 'monday',
@@ -440,34 +444,38 @@ export class ImportService {
     // Município — extrai do borough ou city
     const municipality = String(row.borough || row.city || '').trim() || null;
 
-    const photos: string[] = [];
+    // ── Fotos de galeria (NÃO incluir logo — é avatar 44px) ──────────────────
+    const galleryPhotos: string[] = [];
 
-    // foto principal e logo
-    if (row.photo && typeof row.photo === 'string' && row.photo.trim())
-      photos.push(row.photo.trim());
-    if (row.logo  && typeof row.logo  === 'string' && row.logo.trim()
-        && !photos.includes(row.logo.trim()))
-      photos.push(row.logo.trim());
+    // 1. Foto principal do negócio
+    if (row.photo && typeof row.photo === 'string' && row.photo.trim()) {
+      galleryPhotos.push(row.photo.trim());
+    }
 
-    // fotos adicionais: campo photos_sample (pode ser string JSON ou array)
-    const rawSample = row['photos_sample'];
+    // 2. Fotos adicionais do campo photos_sample (Outscraper premium)
+    //    Pode vir como string JSON '["url1","url2"]' ou como array directo
+    const rawSample = (row as Record<string, unknown>)['photos_sample'];
     if (rawSample) {
       let sample: string[] = [];
       if (Array.isArray(rawSample)) {
         sample = rawSample.map(String);
       } else if (typeof rawSample === 'string' && rawSample.trim().startsWith('[')) {
-        try { sample = JSON.parse(rawSample); } catch { /* ignorar */ }
+        try { sample = JSON.parse(rawSample); } catch { /* ignorar JSON inválido */ }
       } else if (typeof rawSample === 'string' && rawSample.trim()) {
-        sample = [rawSample.trim()];
+        sample = rawSample.split(',').map(s => s.trim()).filter(Boolean);
       }
       for (const u of sample) {
         const url = typeof u === 'string' ? u.trim() : '';
-        if (url && !photos.includes(url)) photos.push(url);
+        if (url && !galleryPhotos.includes(url)) galleryPhotos.push(url);
       }
     }
 
-    // limitar a 10 fotos por negócio
-    const photosLimited = photos.slice(0, 10);
+    // 3. Logo guardado separadamente (não na galeria principal)
+    const logoUrl = row.logo && typeof row.logo === 'string'
+      ? row.logo.trim() : null;
+
+    // Limitar a 10 fotos de galeria
+    const photosLimited = galleryPhotos.slice(0, 10);
 
     // Email do dono/negócio (campo owner_title às vezes tem email)
     const email = row.email
@@ -498,7 +506,8 @@ export class ImportService {
       email,
       rating,
       reviewsCount,
-      photos: photosLimited,
+      photos: photosLimited,             // galeria de fotos do negócio
+      logo: logoUrl || undefined,        // avatar/perfil (usado para thumbnail circular)
       workingHours: workingHoursRaw,       // formato raw Outscraper
       hours,
       isOpen: computedStatus.isOpen,
@@ -516,11 +525,53 @@ export class ImportService {
       latitude:     lat,
       longitude:    lng,
       municipality,
-      // CLOSED_TEMPORARILY continua visível; só removemos CLOSED_PERMANENTLY acima.
       isActive:     true,
       googlePlaceId: row.place_id ? String(row.place_id) : null,
       metadata,
     };
+  }
+
+  private isGooglePhotoUrl(url: string): boolean {
+    return (
+      url.includes('googleusercontent.com') ||
+      url.includes('googleapis.com') ||
+      url.includes('gstatic.com')
+    );
+  }
+
+  private async mirrorMetadataPhotosBestEffort(
+    businessId: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const originalPhotos = Array.isArray(metadata.photos)
+        ? (metadata.photos as string[])
+        : [];
+
+      if (originalPhotos.length === 0) return;
+
+      const mirroredPhotos: string[] = [];
+      for (const url of originalPhotos) {
+        if (typeof url !== 'string') continue;
+
+        if (!this.isGooglePhotoUrl(url)) {
+          mirroredPhotos.push(url);
+          continue;
+        }
+
+        const mirrored = await this.mediaService.uploadFromUrl(url, businessId);
+        mirroredPhotos.push(mirrored ?? url);
+      }
+
+      if (!mirroredPhotos.some((u, i) => u !== originalPhotos[i])) return;
+
+      await this.prisma.business.update({
+        where: { id: businessId },
+        data: { metadata: { ...metadata, photos: mirroredPhotos } as object },
+      });
+    } catch {
+      return;
+    }
   }
 
   // ── Importação principal ─────────────────────────────────────────────────────
@@ -557,7 +608,7 @@ export class ImportService {
     try {
       // Sem place_id — não conseguimos deduplicar, importa sempre
       if (!mapped.googlePlaceId) {
-        await this.prisma.business.create({
+          const created = await this.prisma.business.create({
           data: {
             name:      mapped.name,
             category:  mapped.category,
@@ -571,6 +622,7 @@ export class ImportService {
             isClaimed: false,
           },
         });
+          await this.mirrorMetadataPhotosBestEffort(created.id, mapped.metadata as Record<string, unknown>);
         result.imported++;
         result.details.imported.push(mapped.name);
         return;
@@ -583,7 +635,7 @@ export class ImportService {
 
       if (!existing) {
         // Novo negócio — importa directamente
-        await this.prisma.business.create({
+          const created = await this.prisma.business.create({
           data: {
             name:          mapped.name,
             category:      mapped.category,
@@ -598,6 +650,7 @@ export class ImportService {
             isClaimed:     false,
           },
         });
+          await this.mirrorMetadataPhotosBestEffort(created.id, mapped.metadata as Record<string, unknown>);
         result.imported++;
         result.details.imported.push(mapped.name);
         return;
@@ -627,6 +680,7 @@ export class ImportService {
           source:       'GOOGLE',
         },
       });
+        await this.mirrorMetadataPhotosBestEffort(existing.id, mapped.metadata as Record<string, unknown>);
       result.updated++;
       result.details.updated.push(mapped.name);
 

@@ -4,6 +4,7 @@ import { ImportService } from '../import/import.service';
 import { ClaimStatus, UserRole } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { JwtService } from '@nestjs/jwt';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class AdminService {
@@ -11,6 +12,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly importService: ImportService,
     private readonly jwtService: JwtService,
+    private readonly mediaService: MediaService,
   ) {}
 
   private isSuspensionColumnMissing(error: unknown): boolean {
@@ -888,5 +890,77 @@ export class AdminService {
         isRead:  false,
       },
     });
+  }
+
+  async repairGooglePhotos(): Promise<{
+    total: number;
+    repaired: number;
+    failed: number;
+    alreadyClean: number;
+  }> {
+    const businesses = await this.prisma.$queryRaw<
+      Array<{ id: string; name: string; metadata: unknown }>
+    >`
+      SELECT id, name, metadata
+      FROM "Business"
+      WHERE "isActive" = true
+        AND metadata::text ILIKE '%googleusercontent%'
+      ORDER BY "createdAt" ASC
+    `;
+
+    let repaired = 0;
+    let failed = 0;
+    let alreadyClean = 0;
+
+    for (const biz of businesses) {
+      const meta = (biz.metadata ?? {}) as Record<string, unknown>;
+      const photos = Array.isArray(meta.photos) ? (meta.photos as string[]) : [];
+
+      if (!photos.length) {
+        alreadyClean++;
+        continue;
+      }
+
+      const mirroredPhotos: string[] = [];
+      let anyMirrored = false;
+
+      for (const url of photos) {
+        if (typeof url !== 'string') continue;
+        const isGoogleUrl =
+          url.includes('googleusercontent.com') ||
+          url.includes('googleapis.com') ||
+          url.includes('gstatic.com');
+
+        if (!isGoogleUrl) {
+          mirroredPhotos.push(url);
+          continue;
+        }
+
+        const mirrored = await this.mediaService.uploadFromUrl(url, biz.id);
+        if (mirrored) {
+          mirroredPhotos.push(mirrored);
+          anyMirrored = true;
+        } else {
+          mirroredPhotos.push(url);
+        }
+      }
+
+      if (!anyMirrored) {
+        failed++;
+        continue;
+      }
+
+      try {
+        await this.prisma.business.update({
+          where: { id: biz.id },
+          data: { metadata: { ...meta, photos: mirroredPhotos } as object },
+        });
+        repaired++;
+      } catch {
+        failed++;
+      }
+    }
+
+    return { total: businesses.length, repaired, failed, alreadyClean };
   }
 }

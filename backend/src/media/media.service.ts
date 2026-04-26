@@ -235,6 +235,43 @@ export class MediaService {
     return { path: filePath, publicUrl: `${backendUrl}/uploads/${filePath}` };
   }
 
+  async uploadFromUrl(photoUrl: string, businessId: string): Promise<string | null> {
+    if (!this.supabase) return null;
+
+    try {
+      const res = await fetch(photoUrl, {
+        signal: AbortSignal.timeout(15_000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AchAqui-Bot/1.0)' },
+      });
+
+      if (!res.ok) return null;
+
+      const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+      if (!contentType.startsWith('image/')) return null;
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > 5 * 1024 * 1024) return null;
+
+      const ext = contentType.includes('png')
+        ? 'png'
+        : contentType.includes('webp')
+          ? 'webp'
+          : 'jpg';
+
+      const filePath = `businesses/${businessId}/gallery/${crypto.randomUUID()}.${ext}`;
+      const { error } = await this.supabase.storage
+        .from(this.bucket)
+        .upload(filePath, buffer, { contentType, upsert: false });
+
+      if (error) return null;
+
+      const { data } = this.supabase.storage.from(this.bucket).getPublicUrl(filePath);
+      return data.publicUrl;
+    } catch {
+      return null;
+    }
+  }
+
   private async upload(filePath: string, dto: UploadBase64Dto) {
     if (!this.supabase) {
       return this.uploadToLocalDisk(filePath, dto);

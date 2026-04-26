@@ -189,6 +189,11 @@ export class AdminController {
     );
   }
 
+  @Post('repair-google-photos')
+  async repairGooglePhotos() {
+    return this.adminService.repairGooglePhotos();
+  }
+
   // ─── Users ─────────────────────────────────────────────────────────────────
 
   @Get('users')

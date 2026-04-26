@@ -83,6 +83,21 @@ function getDistanceBadge(km) {
   return { label: 'Noutra zona', color: '#6b7280' };
 }
 
+function CardPhoto({ uri, style, fallback }) {
+  const [failed, setFailed] = React.useState(false);
+
+  if (failed || !uri) return fallback;
+
+  return (
+    <Image
+      source={{ uri }}
+      style={style}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SKELETON — shimmer pulsante enquanto os dados carregam
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,7 +217,11 @@ const BusinessListCell = React.memo(function BusinessListCell({
           </View>
         )}
         {b.photos?.[0]
-          ? <Image source={{ uri: b.photos[0] }} style={hS.listCellPhoto} resizeMode="cover" />
+            ? <CardPhoto
+                uri={b.photos[0]}
+                style={hS.listCellPhoto}
+                fallback={<Text style={hS.listCellIcon}>{b.icon}</Text>}
+              />
           : <Text style={hS.listCellIcon}>{b.icon}</Text>
         }
         <TouchableOpacity style={hS.bookmarkIcon} onPress={() => onToggleBookmark(b.id)}>
@@ -881,7 +900,7 @@ function SearchTab({
             {businesses.map(b=>(
               <TouchableOpacity key={b.id} style={{flexDirection:'row',backgroundColor:COLORS.white,marginHorizontal:16,marginBottom:8,borderRadius:14,padding:12,borderWidth:1,borderColor:COLORS.grayLine}} onPress={()=>onSelectBusiness(b)}>
                 <View style={{width:56,height:56,borderRadius:10,marginRight:12,overflow:'hidden',backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}>
-                  {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:'100%'}} resizeMode="cover"/>:<Text style={{fontSize:24}}>{b.icon}</Text>}
+                    {b.photos?.[0]?<CardPhoto uri={b.photos[0]} style={{width:'100%',height:'100%'}} fallback={<Text style={{fontSize:24}}>{b.icon}</Text>}/>:<Text style={{fontSize:24}}>{b.icon}</Text>}
                 </View>
                 <View style={{flex:1}}>
                   <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText}} numberOfLines={1}>{b.name}</Text>
@@ -929,7 +948,7 @@ function FeaturedTab({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:16,gap:12,paddingBottom:8}}>
           {BASE_FEATURED.filter(b => b.isPublic !== false && b.id !== OWNER_BUSINESS.id).filter(b=>b.isPremium).map(b=>(
             <TouchableOpacity key={b.id} style={{width:220,backgroundColor:COLORS.white,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:COLORS.grayLine}} onPress={()=>onSelectBusiness(b)}>
-              {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:120}} resizeMode="cover"/>:<View style={{width:'100%',height:120,backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:40}}>{b.icon}</Text></View>}
+                {b.photos?.[0]?<CardPhoto uri={b.photos[0]} style={{width:'100%',height:120}} fallback={<View style={{width:'100%',height:120,backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:40}}>{b.icon}</Text></View>}/>:<View style={{width:'100%',height:120,backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:40}}>{b.icon}</Text></View>}
               <View style={{padding:10}}>
                 <Text style={{fontSize:13,fontWeight:'700',color:COLORS.darkText}} numberOfLines={1}>{b.name}</Text>
                 <Text style={{fontSize:11,color:COLORS.grayText,marginTop:2}} numberOfLines={1}>{b.subcategory}</Text>
@@ -946,7 +965,7 @@ function FeaturedTab({
         {[...BASE_FEATURED].filter(b=>b.isPublic!==false&&b.id!==OWNER_BUSINESS.id).sort((a,b)=>b.rating-a.rating).slice(0,5).map(b=>(
           <TouchableOpacity key={b.id} style={{flexDirection:'row',backgroundColor:COLORS.white,marginHorizontal:16,marginBottom:8,borderRadius:14,padding:12,borderWidth:1,borderColor:COLORS.grayLine}} onPress={()=>onSelectBusiness(b)}>
             <View style={{width:56,height:56,borderRadius:10,marginRight:12,overflow:'hidden',backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}>
-              {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:'100%'}} resizeMode="cover"/>:<Text style={{fontSize:24}}>{b.icon}</Text>}
+                {b.photos?.[0]?<CardPhoto uri={b.photos[0]} style={{width:'100%',height:'100%'}} fallback={<Text style={{fontSize:24}}>{b.icon}</Text>}/>:<Text style={{fontSize:24}}>{b.icon}</Text>}
             </View>
             <View style={{flex:1}}>
               <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText}} numberOfLines={1}>{b.name}</Text>
@@ -968,7 +987,7 @@ function FeaturedTab({
             </View>
             <View style={{flexDirection:'row',alignItems:'center',padding:12,gap:10}}>
               <View style={{width:44,height:44,borderRadius:10,overflow:'hidden',backgroundColor:COLORS.grayBg,alignItems:'center',justifyContent:'center'}}>
-                {b.photos?.[0]?<Image source={{uri:b.photos[0]}} style={{width:'100%',height:'100%'}} resizeMode="cover"/>:<Text style={{fontSize:22}}>{b.icon}</Text>}
+                  {b.photos?.[0]?<CardPhoto uri={b.photos[0]} style={{width:'100%',height:'100%'}} fallback={<Text style={{fontSize:22}}>{b.icon}</Text>}/>:<Text style={{fontSize:22}}>{b.icon}</Text>}
               </View>
               <View style={{flex:1}}>
                 <Text style={{fontSize:14,fontWeight:'700',color:COLORS.darkText}}>{b.name}</Text>
@@ -1178,7 +1197,11 @@ function ProfileTab({
                     <View key={b.id} style={profAccS.bookmarkItem}>
                       <View style={profAccS.bookmarkPhoto}>
                         {b.photos?.[0]
-                          ? <Image source={{ uri: b.photos[0] }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                            ? <CardPhoto
+                                uri={b.photos[0]}
+                                style={{ width: '100%', height: '100%' }}
+                                fallback={<Text style={{ fontSize: 28 }}>{b.icon}</Text>}
+                              />
                           : <Text style={{ fontSize: 28 }}>{b.icon}</Text>
                         }
                       </View>
