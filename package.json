@@ -3,6 +3,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
+    "start:tunnel": "EXPO_PUBLIC_BACKEND_URL=https://${CODESPACE_NAME}-3000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN} expo start --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

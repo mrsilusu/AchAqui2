@@ -26,6 +26,7 @@ import { RoomGanttScreen } from './RoomGanttScreen';
 import StaffManagementModal from './StaffManagementModal';
 import StaffProfileSheet from './StaffProfileSheet';
 import StaffActivityLog from './StaffActivityLog';
+import { FinancasScreen } from './FinancasScreen';
 import { canDoSectionAction, canSeeSection } from '../lib/staffPermissions';
 
 // ─── Constantes de cor por estado do quarto ──────────────────────────────────
@@ -271,6 +272,7 @@ export function DashboardPMS({
   const [cancelMapLoading, setCancelMapLoading] = useState(false);
   // ── Staff state (self-contained inside this modal) ───────────────────────
   const [showStaffMgmt, setShowStaffMgmt]       = useState(false);
+  const [showFinancials, setShowFinancials]     = useState(false);
   const [selectedStaff, setSelectedStaff]       = useState(null);
   const [showStaffProfile, setShowStaffProfile] = useState(false);
   const [showStaffActivity, setShowStaffActivity] = useState(false);
@@ -696,6 +698,16 @@ export function DashboardPMS({
                 <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
               </TouchableOpacity>
               )}
+              {canAccessFinancials && (
+              <TouchableOpacity
+                style={[dS.receptionBtn, { backgroundColor: '#15803D' }]}
+                onPress={() => setShowFinancials(true)}
+              >
+                <Icon name="analytics" size={18} color="#fff" strokeWidth={2.5} />
+                <Text style={dS.receptionBtnText}>Finanças</Text>
+                <Icon name="chevronRight" size={16} color="#fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              )}
             </View>
 
             {/* ── Room Calendar (vista semanal) ── */}
@@ -933,6 +945,13 @@ export function DashboardPMS({
           setShowStaffProfile(true);
         }}
       />
+      {showFinancials && (
+        <FinancasScreen
+          businessId={businessId}
+          accessToken={effectiveAccessToken}
+          onClose={() => { setShowFinancials(false); load(true); }}
+        />
+      )}
       <StaffProfileSheet
         visible={showStaffProfile}
         staff={selectedStaff}

@@ -45,6 +45,7 @@ import {
 } from 'react-native';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
+import { ImageWithFallback } from '../../shared/ImageWithFallback';
 import { BusinessEngine } from '../../core/BusinessEngine';
 import { HospitalityModule } from '../../operations/HospitalityModule';
 import RoomDetailModal from '../../components/RoomDetailModal';
@@ -256,7 +257,9 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
   const [reviewSort,        setReviewSort]          = useState('recent');
   const [reviewFilter,      setReviewFilter]        = useState('all');
 
+  const [failedPhotos, setFailedPhotos] = useState(new Set());
   const photos   = (business.photos && business.photos.length > 0) ? business.photos : null;
+  const validPhotos = (photos || []).filter(uri => !failedPhotos.has(uri));
   const bookmarked = bookmarkedIds?.includes(business.id);
 
   // ── Tabs dinâmicas ────────────────────────────────────────────────────────
@@ -356,7 +359,7 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
               onMomentumScrollEnd={e => setCurrentPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}
             >
               {photos.map((photo, idx) => (
-                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }} source={{ uri: photo }} resizeMode="cover" />
+                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }} source={{ uri: photo }} resizeMode="cover" onError={() => setFailedPhotos(prev => new Set([...prev, photo]))} />
               ))}
             </ScrollView>
           ) : (
@@ -364,9 +367,9 @@ export const BusinessDetailView = React.memo(function BusinessDetailView({
               <Text style={{ fontSize: 80 }}>{business.icon || '🏢'}</Text>
             </View>
           )}
-          {photos && photos.length > 1 && (
+          {validPhotos.length > 1 && (
             <View style={vS.photoCounter}>
-              <Text style={vS.photoCounterText}>{currentPhotoIndex + 1} / {photos.length}</Text>
+              <Text style={vS.photoCounterText}>{currentPhotoIndex + 1} / {validPhotos.length}</Text>
             </View>
           )}
         </Animated.View>

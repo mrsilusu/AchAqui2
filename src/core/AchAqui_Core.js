@@ -512,7 +512,7 @@ export function sanitizeBusinessData(business) {
               ? u.trim().replace(/^http:\/\//i, 'https://')
               : u.trim();
           })
-          .filter(u => u !== null && u.startsWith('https://'))
+          .filter(u => u !== null && validateExternalUrl(u))
       : [],
   };
 }

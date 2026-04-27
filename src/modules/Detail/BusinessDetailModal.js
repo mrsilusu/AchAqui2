@@ -32,6 +32,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, COLORS } from '../../core/AchAqui_Core';
+import { ImageWithFallback } from '../../shared/ImageWithFallback';
 import { apiRequest, backendApi } from '../../lib/backendApi';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -324,7 +325,9 @@ export function BusinessDetailModal({
 
   const bookmarked     = bookmarkedIds.includes(business.id);
   const status         = getBusinessStatus(business.statusText, business.isOpen);
+  const [failedPhotos, setFailedPhotos] = useState(new Set());
   const photos         = business.photos?.length > 0 ? business.photos : null;
+  const validPhotos    = (photos || []).filter(uri => !failedPhotos.has(uri));
   const badge          = getBusinessBadge(business);
   const activeModules  = OPERATIONAL_MODULES.filter(m => business.modules?.[m.id]);
   // dedupe por layer
@@ -575,8 +578,8 @@ export function BusinessDetailModal({
               }}
               onScrollBeginDrag={() => { /* ScrollView está a capturar — não interferir */ }}
             >
-              {photos.map((uri, idx) => (
-                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT + safeTop }} source={{ uri }} resizeMode="cover" />
+              {validPhotos.map((uri, idx) => (
+                <Image key={idx} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT + safeTop }} source={{ uri }} resizeMode="cover" onError={() => setFailedPhotos(prev => new Set([...prev, uri]))} />
               ))}
             </ScrollView>
           ) : (
@@ -586,9 +589,9 @@ export function BusinessDetailModal({
           )}
           {/* Scrim bottom gradient */}
           <View style={s.heroScrim} />
-          {photos?.length > 1 && (
+          {validPhotos.length > 1 && (
             <View style={s.photoCounter}>
-              <Text style={s.photoCounterText}>{currentPhotoIndex + 1} / {photos.length}</Text>
+              <Text style={s.photoCounterText}>{currentPhotoIndex + 1} / {validPhotos.length}</Text>
             </View>
           )}
           {/* Botão reivindicar — flutuante sobre a foto, canto inferior esquerdo */}
